@@ -6,6 +6,7 @@
 export class PDFViewerEngine {
   constructor(options = {}) {
     this.container = options.container;
+    this.pagesContainer = options.pagesContainer || document.getElementById('pdf-viewer') || this.container;
     this.thumbnailsContainer = options.thumbnailsContainer;
     this.outlineContainer = options.outlineContainer;
     this.onPageChange = options.onPageChange || (() => {});
@@ -118,7 +119,7 @@ export class PDFViewerEngine {
 
   async renderAllPages() {
     if (!this.pdfDoc) return;
-    this.container.innerHTML = '';
+    this.pagesContainer.innerHTML = '';
     this.pageRenders.clear();
 
     const firstPage = await this.pdfDoc.getPage(1);
@@ -149,7 +150,7 @@ export class PDFViewerEngine {
       annotationLayer.appendChild(annotCanvas);
       pageWrapper.appendChild(annotationLayer);
 
-      this.container.appendChild(pageWrapper);
+      this.pagesContainer.appendChild(pageWrapper);
       this.observer.observe(pageWrapper);
 
       // Render the page

@@ -49,7 +49,7 @@ export class PDFOrganizerEngine {
       }
     }
 
-    return await newDoc.save();
+    return await newDoc.save({ useObjectStreams: false });
   }
 
   async rotatePage(pdfBytes, pageIndex, angleDegrees = 90) {
@@ -62,7 +62,7 @@ export class PDFOrganizerEngine {
       : 0;
     const finalAngle = (((currentRot + angleDegrees) % 360) + 360) % 360;
     page.setRotation(this.degrees(finalAngle));
-    return await doc.save();
+    return await doc.save({ useObjectStreams: false });
   }
 
   async deletePages(pdfBytes, pageIndicesToDelete) {
@@ -74,17 +74,20 @@ export class PDFOrganizerEngine {
     for (const idx of sortedIndices) {
       doc.removePage(idx);
     }
-    return await doc.save();
+    return await doc.save({ useObjectStreams: false });
   }
 
   async extractPages(pdfBytes, pageIndicesToExtract) {
     this._checkLib();
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
-    const srcDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
-    const newDoc = await this.PDFDocument.create();
-    const copiedPages = await newDoc.copyPages(srcDoc, pageIndicesToExtract);
-    copiedPages.forEach(p => newDoc.addPage(p));
-    return await newDoc.save();
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
+    const keepSet = new Set(pageIndicesToExtract);
+    for (let i = doc.getPageCount() - 1; i >= 0; i--) {
+      if (!keepSet.has(i)) {
+        doc.removePage(i);
+      }
+    }
+    return await doc.save({ useObjectStreams: false });
   }
 
   /**
@@ -94,8 +97,8 @@ export class PDFOrganizerEngine {
   async splitByRanges(pdfBytes, rangeString, baseName = 'document') {
     this._checkLib();
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
-    const srcDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
-    const totalPages = srcDoc.getPageCount();
+    const mainDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
+    const totalPages = mainDoc.getPageCount();
     const results = [];
 
     const ranges = rangeString.split(',').map(r => r.trim()).filter(Boolean);
@@ -109,15 +112,19 @@ export class PDFOrganizerEngine {
       if (isNaN(end) || end > totalPages) end = totalPages;
       if (start > end) [start, end] = [end, start];
 
-      const indices = [];
-      for (let i = start; i <= end; i++) {
-        indices.push(i - 1);
+      // Clone original document and remove pages outside [start, end] from back to front.
+      // This preserves 100% of all document fonts, XObjects, graphics, and page resources!
+      const subDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
+      const keepMin = start - 1;
+      const keepMax = end - 1;
+
+      for (let i = subDoc.getPageCount() - 1; i >= 0; i--) {
+        if (i < keepMin || i > keepMax) {
+          subDoc.removePage(i);
+        }
       }
 
-      const newDoc = await this.PDFDocument.create();
-      const copiedPages = await newDoc.copyPages(srcDoc, indices);
-      copiedPages.forEach(p => newDoc.addPage(p));
-      const bytes = await newDoc.save();
+      const bytes = await subDoc.save({ useObjectStreams: false });
 
       results.push({
         name: `${baseName}_pages_${start}-${end}.pdf`,
@@ -139,7 +146,7 @@ export class PDFOrganizerEngine {
       copiedPages.forEach(page => mergedDoc.addPage(page));
     }
 
-    return await mergedDoc.save();
+    return await mergedDoc.save({ useObjectStreams: false });
   }
 
   async insertBlankPage(pdfBytes, atIndex = -1) {
@@ -147,9 +154,9 @@ export class PDFOrganizerEngine {
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
     const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const pageCount = doc.getPageCount();
-    const targetIdx = atIndex === -1 ? pageCount : atIndex;
+    const targetIdx = atIndex === -1 ? pageCount : Math.max(0, Math.min(pageCount, atIndex));
     doc.insertPage(targetIdx, [595.28, 841.89]);
-    return await doc.save();
+    return await doc.save({ useObjectStreams: false });
   }
 }
 

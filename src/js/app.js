@@ -33,12 +33,14 @@ class PersonalPDFApp {
 
   _initEngines() {
     const viewerContainer = document.getElementById('viewer-container');
+    const pdfViewer = document.getElementById('pdf-viewer');
     const thumbnailsContainer = document.getElementById('thumbnails-container');
     const outlineContainer = document.getElementById('outline-container');
 
     // 1. Viewer Engine
     this.viewer = new PDFViewerEngine({
       container: viewerContainer,
+      pagesContainer: pdfViewer,
       thumbnailsContainer: thumbnailsContainer,
       outlineContainer: outlineContainer,
       onPageChange: (current, total) => this._onPageChange(current, total),
@@ -96,10 +98,15 @@ class PersonalPDFApp {
         this.currentPdfBytes = null;
         this.viewer.pdfDoc = null;
         if (this.wakeLock) this.wakeLock.release();
-        document.getElementById('pdf-viewer').innerHTML = '';
+        const pdfViewer = document.getElementById('pdf-viewer');
+        if (pdfViewer) {
+          pdfViewer.innerHTML = '';
+          pdfViewer.style.display = 'none';
+        }
         document.getElementById('thumbnails-container').innerHTML = '';
         document.getElementById('outline-container').innerHTML = '';
-        document.getElementById('welcome-screen').style.display = 'flex';
+        const welcomeScreen = document.getElementById('welcome-screen');
+        if (welcomeScreen) welcomeScreen.style.display = 'flex';
         document.getElementById('current-doc-name').textContent = 'No document open';
         document.getElementById('page-count').textContent = '0';
         document.getElementById('page-num-input').value = '1';
@@ -527,8 +534,11 @@ class PersonalPDFApp {
       this.currentPdfBytes = new Uint8Array(data);
     }
 
-    // Hide welcome card
-    document.getElementById('welcome-screen').style.display = 'none';
+    // Safely toggle welcome screen and viewer
+    const welcomeScreen = document.getElementById('welcome-screen');
+    const pdfViewer = document.getElementById('pdf-viewer');
+    if (welcomeScreen) welcomeScreen.style.display = 'none';
+    if (pdfViewer) pdfViewer.style.display = 'flex';
     document.getElementById('current-doc-name').textContent = docName;
     const m3Title = document.getElementById('m3-doc-title');
     if (m3Title) m3Title.textContent = docName;
@@ -603,12 +613,12 @@ class PersonalPDFApp {
       });
 
       const features = [
-        '✔ High-DPI Continuous Viewer with Crisp Text Rendering',
-        '✔ Freehand Inking, Highlighters, Sticky Notes, and Custom Stamps',
-        '✔ Drag-and-Drop Page Organizer (Reorder, Rotate, Delete, Insert)',
-        '✔ Electronic Signature Pad (Draw, Type Cursive, Upload Image)',
-        '✔ Document Security: Watermarking, Page Numbers, Redaction',
-        '✔ 100% Offline & Private (Runs on Windows, Arch Linux, and Android APK)'
+        '- High-DPI Continuous Viewer with Crisp Text Rendering',
+        '- Freehand Inking, Highlighters, Sticky Notes, and Custom Stamps',
+        '- Drag-and-Drop Page Organizer (Reorder, Rotate, Delete, Insert)',
+        '- Electronic Signature Pad (Draw, Type Cursive, Upload Image)',
+        '- Document Security: Watermarking, Page Numbers, Redaction',
+        '- 100% Offline & Private (Runs on Windows, Arch Linux, and Android APK)'
       ];
 
       let y = 630;

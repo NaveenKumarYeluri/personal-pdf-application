@@ -448,11 +448,16 @@ body {
 }
 
 .tool-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  min-width: 28px;
+  width: auto;
   height: 28px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  gap: 5px;
   border-radius: 4px;
   border: 1px solid transparent;
   background: transparent;
@@ -460,6 +465,7 @@ body {
   cursor: pointer;
   transition: all 0.12s ease;
   font-size: 12px;
+  font-weight: 500;
   flex-shrink: 0;
 }
 
