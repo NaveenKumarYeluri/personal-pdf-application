@@ -740,6 +740,7 @@ export class PDFAnnotatorEngine {
 
     // Make draggable
     this._makeDraggable(stamp, wrapper);
+    this._makeResizable(stamp, wrapper);
     wrapper.appendChild(stamp);
 
     this.undoStack.push({
@@ -839,7 +840,7 @@ export class PDFAnnotatorEngine {
   async burnAnnotationsToPdf(pdfBytes) {
     const lib = window.PDFLib || window.pdfLib;
     if (!lib) return pdfBytes;
-    const { PDFDocument } = lib;
+    const { PDFDocument, rgb } = lib;
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
     const doc = await PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const pages = doc.getPages();
@@ -909,9 +910,29 @@ export class PDFAnnotatorEngine {
           const sw = spanRect.width * scaleX;
           const sh = spanRect.height * scaleY;
 
+          const maskW = Math.max(span._originalWidth || 0, spanRect.width) * scaleX;
+          const maskH = Math.max(span._originalHeight || 0, spanRect.height) * scaleY;
+
           // Mask original PDF text underneath with crisp white rectangle
           compCtx.fillStyle = '#ffffff';
-          compCtx.fillRect(Math.floor(sx) - 1, Math.floor(sy) - 1, Math.ceil(sw) + 2, Math.ceil(sh) + 2);
+          compCtx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(maskW) + 4, Math.ceil(maskH) + 4);
+
+          // Vector mask on PDF page stream directly
+          if (typeof page.drawRectangle === 'function' && typeof rgb === 'function') {
+            const pdfScaleX = width / wrapper.clientWidth;
+            const pdfScaleY = height / wrapper.clientHeight;
+            const pdfX = (spanRect.left - wrapperRect.left) * pdfScaleX;
+            const pdfW = Math.max(span._originalWidth || 0, spanRect.width) * pdfScaleX;
+            const pdfH = Math.max(span._originalHeight || 0, spanRect.height) * pdfScaleY;
+            const pdfY = height - ((spanRect.top - wrapperRect.top + (span._originalHeight || spanRect.height)) * pdfScaleY);
+            page.drawRectangle({
+              x: Math.max(0, pdfX - 2),
+              y: Math.max(0, pdfY - 2),
+              width: pdfW + 4,
+              height: pdfH + 4,
+              color: rgb(1, 1, 1)
+            });
+          }
 
           // Render modified text using PDF's exact font, size, and styling
           const fSize = parseFloat(cs.fontSize) * scaleY;
@@ -1117,7 +1138,7 @@ export class PDFAnnotatorEngine {
 
     // Mouse drag handlers
     element.addEventListener('mousedown', (e) => {
-      if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn')) return;
+      if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn') || e.target.classList.contains('stamp-resize-handle')) return;
       if (element.classList.contains('annotation-textbox') && document.activeElement === element && e.target === element) {
         return;
       }
@@ -1137,7 +1158,7 @@ export class PDFAnnotatorEngine {
 
     // Touch drag handlers for Android and mobile
     element.addEventListener('touchstart', (e) => {
-      if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn')) return;
+      if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn') || e.target.classList.contains('stamp-resize-handle')) return;
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         startDrag(touch.clientX, touch.clientY);
@@ -1158,6 +1179,85 @@ export class PDFAnnotatorEngine {
         stopDrag(touch ? touch.clientX : undefined, touch ? touch.clientY : undefined);
       }
     });
+  }
+
+  _makeResizable(element, parent) {
+    const handle = document.createElement('div');
+    handle.className = 'stamp-resize-handle';
+    handle.title = 'Drag to resize';
+    element.appendChild(handle);
+
+    let isResizing = false;
+    let startX = 0;
+    let startY = 0;
+    let startWidth = 0;
+    let startHeight = 0;
+    let aspectRatio = 1;
+
+    const onStart = (clientX, clientY) => {
+      isResizing = true;
+      startX = clientX;
+      startY = clientY;
+      startWidth = element.offsetWidth || 180;
+      startHeight = element.offsetHeight || 60;
+      aspectRatio = startWidth / (startHeight || 1);
+      document.body.style.cursor = 'nwse-resize';
+      document.body.style.userSelect = 'none';
+    };
+
+    const onMove = (clientX, clientY) => {
+      if (!isResizing) return;
+      const dx = clientX - startX;
+      const maxW = parent ? parent.clientWidth - element.offsetLeft : 2000;
+      const newWidth = Math.max(40, Math.min(maxW, startWidth + dx));
+      const newHeight = Math.max(20, Math.round(newWidth / aspectRatio));
+
+      element.style.width = `${newWidth}px`;
+      element.style.height = `${newHeight}px`;
+    };
+
+    const onEnd = () => {
+      if (!isResizing) return;
+      isResizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    handle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      onStart(e.clientX, e.clientY);
+
+      const mouseMoveHandler = (ev) => onMove(ev.clientX, ev.clientY);
+      const mouseUpHandler = () => {
+        window.removeEventListener('mousemove', mouseMoveHandler);
+        window.removeEventListener('mouseup', mouseUpHandler);
+        onEnd();
+      };
+      window.addEventListener('mousemove', mouseMoveHandler);
+      window.addEventListener('mouseup', mouseUpHandler);
+    });
+
+    handle.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.touches.length > 0) {
+        onStart(e.touches[0].clientX, e.touches[0].clientY);
+      }
+
+      const touchMoveHandler = (ev) => {
+        if (ev.touches.length > 0) {
+          onMove(ev.touches[0].clientX, ev.touches[0].clientY);
+        }
+      };
+      const touchEndHandler = () => {
+        window.removeEventListener('touchmove', touchMoveHandler);
+        window.removeEventListener('touchend', touchEndHandler);
+        onEnd();
+      };
+      window.addEventListener('touchmove', touchMoveHandler, { passive: false });
+      window.addEventListener('touchend', touchEndHandler);
+    }, { passive: false });
   }
 }
 

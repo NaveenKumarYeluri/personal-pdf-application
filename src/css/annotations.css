@@ -210,7 +210,8 @@ body.mode-view .in-place-editor {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px dashed transparent;
+  border: 1.5px dashed rgba(239, 68, 68, 0.4);
+  box-sizing: border-box;
 }
 
 .placed-stamp:hover {
@@ -218,9 +219,46 @@ body.mode-view .in-place-editor {
 }
 
 .placed-stamp img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   pointer-events: none;
+  display: block;
+}
+
+/* Resize Handle for Placed Signatures & Stamps */
+.stamp-resize-handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+  background-color: #ffffff;
+  border: 2px solid var(--accent-red);
+  border-radius: 50%;
+  cursor: nwse-resize;
+  z-index: 30;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  touch-action: none;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.stamp-resize-handle:hover {
+  background-color: var(--accent-red);
+  transform: scale(1.2);
+}
+
+body.mode-view .stamp-resize-handle {
+  display: none !important;
+}
+
+body.mode-view .placed-stamp {
+  border-color: transparent !important;
+  cursor: default !important;
+}
+
+body.mode-view .placed-stamp .textbox-delete-btn {
+  display: none !important;
 }
 
 /* Stamp Badge Styles */

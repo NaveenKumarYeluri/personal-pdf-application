@@ -436,6 +436,9 @@ class PersonalPDFApp {
     // Save initial text once
     if (span._originalText === undefined) {
       span._originalText = span.textContent;
+      const b = span.getBoundingClientRect();
+      span._originalWidth = b.width;
+      span._originalHeight = b.height;
     }
 
     // Set as active in-place span in annotator engine
@@ -446,6 +449,9 @@ class PersonalPDFApp {
     span.spellcheck = false;
     span.classList.add('inline-editing');
     span.style.cursor = 'text';
+
+    const textLayer = span.closest('.textLayer');
+    if (textLayer) textLayer.classList.add('has-modifications');
 
     span._pageNum = pageNum;
     span._pageWrapper = pageWrapper;
@@ -478,12 +484,42 @@ class PersonalPDFApp {
       span.addEventListener('blur', () => {
         span.contentEditable = 'false';
         span.classList.remove('inline-editing');
+        const tLayer = span.closest('.textLayer');
         if (span.textContent !== span._originalText) {
           span.classList.add('in-place-modified');
+          if (tLayer) tLayer.classList.add('has-modifications');
+          if (span._originalWidth > 0) {
+            span.style.minWidth = `${span._originalWidth}px`;
+          }
+
+          // Directly erase original text pixels from underlying PDF canvas
+          const pageCanvas = pageWrapper.querySelector('canvas.pdf-canvas');
+          if (pageCanvas) {
+            const canvasCtx = pageCanvas.getContext('2d');
+            const cScaleX = pageCanvas.width / pageWrapper.clientWidth;
+            const cScaleY = pageCanvas.height / pageWrapper.clientHeight;
+            const wrapRect = pageWrapper.getBoundingClientRect();
+            const sRect = span.getBoundingClientRect();
+            const maskW = Math.max(span._originalWidth || 0, sRect.width);
+            const maskH = Math.max(span._originalHeight || 0, sRect.height);
+            const cx = (sRect.left - wrapRect.left) * cScaleX;
+            const cy = (sRect.top - wrapRect.top) * cScaleY;
+            canvasCtx.fillStyle = '#ffffff';
+            canvasCtx.fillRect(
+              Math.floor(cx) - 2,
+              Math.floor(cy) - 2,
+              Math.ceil(maskW * cScaleX) + 4,
+              Math.ceil(maskH * cScaleY) + 4
+            );
+          }
+
           this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
           this.ui.setStatus('In-place text edit saved');
         } else {
           span.classList.remove('in-place-modified');
+          if (tLayer && !tLayer.querySelector('.in-place-modified, .inline-editing')) {
+            tLayer.classList.remove('has-modifications');
+          }
           this.annotator.revertInPlaceEdit(span, pageNum);
         }
       });
@@ -507,13 +543,42 @@ class PersonalPDFApp {
     const pageEdits = this.annotator.inPlaceEdits.get(pageNum);
     if (!pageEdits || pageEdits.size === 0) return;
 
+    textLayer.classList.add('has-modifications');
+    const pageWrapper = textLayer.closest('.page-wrapper');
+    const pageCanvas = pageWrapper ? pageWrapper.querySelector('canvas.pdf-canvas') : null;
+
     const spans = textLayer.querySelectorAll('span');
     for (const [origSpan, edit] of Array.from(pageEdits.entries())) {
       for (const span of spans) {
         if (span.textContent === edit.originalText || (edit.originalText && span.textContent.includes(edit.originalText))) {
           span._originalText = edit.originalText;
+          span._originalWidth = origSpan._originalWidth || edit.originalWidth;
+          span._originalHeight = origSpan._originalHeight || edit.originalHeight;
           span.textContent = edit.newText;
           span.classList.add('in-place-modified');
+          if (span._originalWidth > 0) {
+            span.style.minWidth = `${span._originalWidth}px`;
+          }
+
+          if (pageCanvas && pageWrapper) {
+            const canvasCtx = pageCanvas.getContext('2d');
+            const cScaleX = pageCanvas.width / pageWrapper.clientWidth;
+            const cScaleY = pageCanvas.height / pageWrapper.clientHeight;
+            const wrapRect = pageWrapper.getBoundingClientRect();
+            const sRect = span.getBoundingClientRect();
+            const maskW = Math.max(span._originalWidth || 0, sRect.width);
+            const maskH = Math.max(span._originalHeight || 0, sRect.height);
+            const cx = (sRect.left - wrapRect.left) * cScaleX;
+            const cy = (sRect.top - wrapRect.top) * cScaleY;
+            canvasCtx.fillStyle = '#ffffff';
+            canvasCtx.fillRect(
+              Math.floor(cx) - 2,
+              Math.floor(cy) - 2,
+              Math.ceil(maskW * cScaleX) + 4,
+              Math.ceil(maskH * cScaleY) + 4
+            );
+          }
+
           pageEdits.delete(origSpan);
           pageEdits.set(span, edit);
           break;
@@ -1379,6 +1444,7 @@ class PersonalPDFApp {
     container.appendChild(btnDel);
 
     this.annotator._makeDraggable(container, wrapper);
+    this.annotator._makeResizable(container, wrapper);
     wrapper.appendChild(container);
 
     this.annotator.undoStack.push({
@@ -1430,6 +1496,7 @@ class PersonalPDFApp {
     container.appendChild(btnDel);
 
     this.annotator._makeDraggable(container, wrapper);
+    this.annotator._makeResizable(container, wrapper);
     wrapper.appendChild(container);
 
     this.annotator.undoStack.push({
@@ -1473,6 +1540,7 @@ class PersonalPDFApp {
     box.appendChild(btnDel);
 
     this.annotator._makeDraggable(box, wrapper);
+    this.annotator._makeResizable(box, wrapper);
     wrapper.appendChild(box);
 
     this.annotator.undoStack.push({

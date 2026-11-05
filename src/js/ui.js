@@ -989,10 +989,22 @@ export class UIController {
   _renderEditTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="btn-edit-inline" class="tool-btn active" title="In-Place Text Editing (Click existing text in document to edit)">📝 In-Place Text</button>
-        <button id="btn-edit-add-text" class="tool-btn" title="Add New Text Block">T New Text</button>
-        <button id="btn-edit-add-image" class="tool-btn" title="Insert Image onto PDF">🖼️ Image</button>
-        <button id="btn-edit-whiteout" class="tool-btn" title="Whiteout Erase">⬜ Whiteout</button>
+        <button id="btn-edit-inline" class="tool-btn active" title="In-Place Text Editing (Click existing text in document to edit)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <span>In-Place Text</span>
+        </button>
+        <button id="btn-edit-add-text" class="tool-btn" title="Add New Text Block">
+          <span style="font-weight:700; font-size:13px; line-height:1;">T</span>
+          <span>Add Text</span>
+        </button>
+        <button id="btn-edit-add-image" class="tool-btn" title="Insert Image onto PDF">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>Image</span>
+        </button>
+        <button id="btn-edit-whiteout" class="tool-btn" title="Whiteout Erase">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          <span>Whiteout</span>
+        </button>
         <input type="file" id="edit-image-file-input" accept="image/png, image/jpeg" style="display:none;">
       </div>
       <div class="divider"></div>

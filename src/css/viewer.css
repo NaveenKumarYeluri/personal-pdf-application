@@ -145,7 +145,10 @@
 }
 
 /* Edit PDF Content In-Place Mode (Adobe Acrobat Style) */
-.page-wrapper.editing-content .textLayer {
+.page-wrapper.editing-content .textLayer,
+.textLayer.has-modifications,
+.textLayer:has(.in-place-modified),
+.textLayer:has(.inline-editing) {
   opacity: 1 !important;
   z-index: 10 !important;
 }
@@ -164,26 +167,34 @@
   box-shadow: 0 0 6px rgba(59, 130, 246, 0.35);
 }
 
-.page-wrapper.editing-content .textLayer span.inline-editing {
+.page-wrapper.editing-content .textLayer span.inline-editing,
+.textLayer span.inline-editing {
   border: 1.5px solid #2563eb !important;
   background-color: #ffffff !important;
+  box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgba(37, 99, 235, 0.35) !important;
   outline: none !important;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
   z-index: 100 !important;
   white-space: pre !important;
   user-select: text !important;
   -webkit-user-select: text !important;
+  color: #111827 !important;
+  opacity: 1 !important;
+  padding: 1px 3px !important;
 }
 
 /* Modified text spans persist seamlessly across View & Edit modes */
 .textLayer span.in-place-modified {
   color: #111827 !important;
   background-color: #ffffff !important;
+  box-shadow: 0 0 0 2px #ffffff !important;
   border: 1px dashed rgba(37, 99, 235, 0.4) !important;
   border-radius: 2px !important;
   z-index: 50 !important;
   cursor: text !important;
   white-space: pre !important;
+  opacity: 1 !important;
+  display: inline-block !important;
+  padding: 1px 3px !important;
 }
 
 /* In View & Read mode, hide dashed border on modified spans so they appear as pure native PDF text */
@@ -191,7 +202,7 @@ body.mode-view .textLayer span.in-place-modified,
 body.mode-view .textLayer span.inline-editing {
   border: none !important;
   outline: none !important;
-  box-shadow: none !important;
+  box-shadow: 0 0 0 2px #ffffff !important;
   cursor: default !important;
 }
 
