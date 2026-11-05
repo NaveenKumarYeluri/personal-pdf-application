@@ -23,9 +23,9 @@ class PersonalPDFApp {
     this._bindWatermarkEvents();
     this._setupElectronBridge();
 
-    // Check if electron is present
-    if (window.electronAPI) {
-      console.log('Running in native Electron desktop mode.');
+    // Check if running in native desktop shell
+    if (window.__TAURI__) {
+      console.log('Running in native Tauri v2 desktop shell.');
     }
   }
 

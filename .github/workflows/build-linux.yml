@@ -1,4 +1,4 @@
-name: Build Linux Application (Arch Linux Compatible)
+name: Build Linux Application (Tauri v2 - Arch Linux Compatible)
 
 on:
   push:
@@ -11,33 +11,44 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libarchive-tools fuse libfuse2
-
       - name: Install dependencies
         run: npm install
 
-      - name: Build Linux AppImage and Tarball
-        run: npm run build:linux
+      - name: Build Tauri Application
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'v__VERSION__'
+          releaseBody: 'Automated personal build'
+          releaseDraft: false
+          prerelease: false
 
-      - name: Upload Linux Artifacts
+      - name: Upload Linux Artifacts (.AppImage & .deb)
         uses: actions/upload-artifact@v4
         with:
-          name: personal-pdf-suite-linux
+          name: personal-pdf-suite-linux-tauri
           path: |
-            dist/*.AppImage
-            dist/*.tar.gz
-          if-no-files-found: error
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: warn

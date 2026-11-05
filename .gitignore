@@ -7,8 +7,10 @@ node_modules/
 dist/
 out/
 bin/
+src-tauri/target/
 *.exe
 *.AppImage
+*.deb
 *.apk
 *.aab
 build/output/
