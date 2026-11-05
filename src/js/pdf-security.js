@@ -18,33 +18,46 @@ export class PDFSecurityEngine {
       this.degrees = window.PDFLib.degrees;
       this.StandardFonts = window.PDFLib.StandardFonts;
     }
+    if (!this.PDFDocument) {
+      throw new Error('PDF-lib library not loaded.');
+    }
   }
 
   async applyWatermark(pdfBytes, options = {}) {
     this._checkLib();
-    const doc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const font = await doc.embedFont(this.StandardFonts.HelveticaBold);
     const pages = doc.getPages();
 
-    const text = options.text || 'CONFIDENTIAL';
-    const angle = options.angle !== undefined ? options.angle : 45;
-    const opacity = options.opacity !== undefined ? options.opacity : 0.25;
-    const size = options.size || 50;
+    let text = (options.text || 'CONFIDENTIAL').trim();
+    // Sanitize to ASCII to prevent pdf-lib encoding crash
+    text = text.replace(/[^\x20-\x7E]/g, '?') || 'CONFIDENTIAL';
+
+    const angle = options.angle !== undefined ? parseInt(options.angle, 10) : 45;
+    const opacity = options.opacity !== undefined ? parseFloat(options.opacity) : 0.25;
+    const size = parseInt(options.size, 10) || 50;
 
     // Hex to RGB
     const hex = (options.color || '#ff0000').replace('#', '');
-    const r = parseInt(hex.substring(0, 2), 16) / 255;
-    const g = parseInt(hex.substring(2, 4), 16) / 255;
-    const b = parseInt(hex.substring(4, 6), 16) / 255;
+    const r = (parseInt(hex.substring(0, 2), 16) || 255) / 255;
+    const g = (parseInt(hex.substring(2, 4), 16) || 0) / 255;
+    const b = (parseInt(hex.substring(4, 6), 16) || 0) / 255;
+
+    const rad = (angle * Math.PI) / 180;
+    const textWidth = font.widthOfTextAtSize(text, size);
+    const textHeight = font.heightAtSize(size);
 
     for (const page of pages) {
       const { width, height } = page.getSize();
-      const textWidth = font.widthOfTextAtSize(text, size);
-      const textHeight = font.heightAtSize(size);
+
+      // Precise rotation offset so the text center aligns with page center
+      const offsetX = (textWidth / 2) * Math.cos(rad) - (textHeight / 2) * Math.sin(rad);
+      const offsetY = (textWidth / 2) * Math.sin(rad) + (textHeight / 2) * Math.cos(rad);
 
       page.drawText(text, {
-        x: width / 2 - textWidth / 2,
-        y: height / 2 - textHeight / 2,
+        x: width / 2 - offsetX,
+        y: height / 2 - offsetY,
         size: size,
         font: font,
         color: this.rgb(r, g, b),
@@ -58,22 +71,24 @@ export class PDFSecurityEngine {
 
   async addPageNumbers(pdfBytes, options = {}) {
     this._checkLib();
-    const doc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const font = await doc.embedFont(this.StandardFonts.Helvetica);
     const pages = doc.getPages();
     const total = pages.length;
 
     const format = options.format || 'Page {page} of {total}';
-    const position = options.position || 'bottom-center'; // 'top-left', 'top-center', 'top-right', 'bottom-left', 'bottom-center', 'bottom-right'
-    const startNum = options.startNumber || 1;
-    const prefix = options.prefix || '';
-    const fontSize = options.fontSize || 10;
+    const position = options.position || 'bottom-center';
+    const startNum = parseInt(options.startNumber, 10) || 1;
+    const prefix = (options.prefix || '').trim();
+    const fontSize = parseInt(options.fontSize, 10) || 10;
 
     pages.forEach((page, idx) => {
       const { width, height } = page.getSize();
       const currentNum = startNum + idx;
       let text = format.replace('{page}', currentNum.toString()).replace('{total}', (startNum + total - 1).toString());
       if (prefix) text = `${prefix} ${text}`;
+      text = text.replace(/[^\x20-\x7E]/g, '?');
 
       const textWidth = font.widthOfTextAtSize(text, fontSize);
       let x = width / 2 - textWidth / 2;
@@ -101,7 +116,7 @@ export class PDFSecurityEngine {
         y,
         size: fontSize,
         font: font,
-        color: this.rgb(0.3, 0.3, 0.3)
+        color: this.rgb(0.2, 0.2, 0.2)
       });
     });
 
@@ -110,7 +125,8 @@ export class PDFSecurityEngine {
 
   async getMetadata(pdfBytes) {
     this._checkLib();
-    const doc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     return {
       title: doc.getTitle() || '',
       author: doc.getAuthor() || '',
@@ -124,7 +140,8 @@ export class PDFSecurityEngine {
 
   async updateMetadata(pdfBytes, meta = {}) {
     this._checkLib();
-    const doc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     if (meta.title !== undefined) doc.setTitle(meta.title);
     if (meta.author !== undefined) doc.setAuthor(meta.author);
     if (meta.subject !== undefined) doc.setSubject(meta.subject);
@@ -134,13 +151,12 @@ export class PDFSecurityEngine {
   }
 
   async burnRedactions(pdfBytes, redactionList = []) {
-    // redactionList: Array<{ pageIndex: number, x: number, y: number, width: number, height: number }>
     this._checkLib();
-    const doc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     for (const r of redactionList) {
       const page = doc.getPage(r.pageIndex);
       const { height } = page.getSize();
-      // PDF coordinate system origin is bottom-left
       page.drawRectangle({
         x: r.x,
         y: height - r.y - r.height,

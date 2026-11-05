@@ -450,11 +450,14 @@ body.theme-light {
 
   /* Mobile PDF Viewport adjustments */
   .viewer-container {
-    padding: 8px 0 96px 0 !important;
+    padding: 16px 0 120px 0 !important;
+    gap: 24px !important;
   }
 
   .page-wrapper {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35) !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    margin-bottom: 24px !important;
   }
 
   /* Hide left desktop sidebar completely on mobile */

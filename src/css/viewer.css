@@ -11,7 +11,8 @@
   flex-direction: column;
   align-items: center;
   position: relative;
-  padding: 24px 0;
+  padding: 28px 0 120px 0;
+  gap: 28px;
   cursor: default;
 }
 
@@ -95,14 +96,16 @@
 .page-wrapper {
   position: relative;
   background-color: #ffffff;
-  box-shadow: var(--shadow-pdf);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 2px;
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
   user-select: text;
+  margin-bottom: 32px !important;
 }
 
 .page-wrapper:hover {
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 
 .page-wrapper canvas {

@@ -737,17 +737,35 @@
         </div>
         <input type="file" id="m3-edit-img-file" accept="image/png, image/jpeg" style="display:none;">
 
-        <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:4px;">Font Options</div>
-        <div style="display:flex; gap:8px;">
-          <select id="m3-edit-font-size" class="tool-select" style="flex:1;">
-            <option value="12">12 pt</option>
-            <option value="14">14 pt</option>
-            <option value="16" selected>16 pt</option>
-            <option value="20">20 pt</option>
-            <option value="24">24 pt</option>
-            <option value="32">32 pt</option>
+        <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:4px;">Font & Styling</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <select id="m3-edit-font-family" class="tool-select" style="width:100%;">
+            <option value="Inter, sans-serif" selected>Inter / Arial (Clean Sans)</option>
+            <option value="'Roboto', sans-serif">Roboto (Modern Sans)</option>
+            <option value="'Times New Roman', serif">Times New Roman (Serif)</option>
+            <option value="'Georgia', serif">Georgia (Editorial Serif)</option>
+            <option value="'Garamond', serif">Garamond (Classic Serif)</option>
+            <option value="'Courier New', monospace">Courier New (Monospace)</option>
+            <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+            <option value="'Verdana', sans-serif">Verdana</option>
+            <option value="'Dancing Script', cursive">Dancing Script (Handwriting)</option>
+            <option value="'Impact', sans-serif">Impact (Headline)</option>
           </select>
-          <input type="color" id="m3-edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:44px; height:32px;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select id="m3-edit-font-size" class="tool-select" style="flex:1;">
+              <option value="12">12 pt</option>
+              <option value="14">14 pt</option>
+              <option value="16" selected>16 pt</option>
+              <option value="18">18 pt</option>
+              <option value="20">20 pt</option>
+              <option value="24">24 pt</option>
+              <option value="32">32 pt</option>
+              <option value="48">48 pt</option>
+            </select>
+            <button id="m3-edit-bold" class="tool-btn" style="border:1px solid var(--border-color); width:36px; height:36px;" title="Bold">𝐁</button>
+            <button id="m3-edit-italic" class="tool-btn" style="border:1px solid var(--border-color); width:36px; height:36px;" title="Italic">𝑰</button>
+            <input type="color" id="m3-edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:44px; height:36px;">
+          </div>
         </div>
       </div>
     </div>
@@ -767,6 +785,7 @@
         <div class="m3-chip-group">
           <div class="m3-chip active" data-m3-tool="pen">✏️ Pen</div>
           <div class="m3-chip" data-m3-tool="highlighter">🖍️ Highlighter</div>
+          <div class="m3-chip" data-m3-tool="eraser">🧼 Eraser</div>
           <div class="m3-chip" data-m3-tool="select">✋ Select Text</div>
           <div class="m3-chip" data-m3-tool="note">💬 Sticky Note</div>
           <div class="m3-chip" data-m3-tool="text">T Add Text</div>

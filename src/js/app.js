@@ -9,6 +9,7 @@ import { PDFAnnotatorEngine } from './pdf-annotator.js';
 import { PDFSignatureEngine } from './pdf-signature.js';
 import { PDFSecurityEngine } from './pdf-security.js';
 import { PDFExportEngine } from './pdf-export.js';
+import { ScreenWakeLockManager } from './wake-lock.js';
 import { UIController } from './ui.js';
 
 class PersonalPDFApp {
@@ -16,6 +17,7 @@ class PersonalPDFApp {
     this.currentDocName = 'document.pdf';
     this.currentPdfBytes = null;
     this.organizerCards = [];
+    this.wakeLock = new ScreenWakeLockManager();
 
     this._initEngines();
     this._bindCoreEvents();
@@ -49,13 +51,17 @@ class PersonalPDFApp {
 
     // 3. Annotator Engine
     this.annotator = new PDFAnnotatorEngine({
-      container: viewerContainer
+      container: viewerContainer,
+      onActiveTextBoxChange: (box) => {
+        if (this.ui) this.ui.syncActiveTextBox(box);
+      }
     });
 
     // 4. Signature Engine
     this.signature = new PDFSignatureEngine({
       onSignatureReady: (dataUrl) => {
-        this.signature.placeSignatureOnPage(this.viewer.currentPage, dataUrl);
+        const target = this.getVisibleCenterTarget();
+        this.insertSignatureOnPage(target.pageNum, dataUrl, target.x, target.y);
         this.ui.setStatus('Signature placed. Drag into desired position.');
       }
     });
@@ -89,6 +95,7 @@ class PersonalPDFApp {
         e.stopPropagation();
         this.currentPdfBytes = null;
         this.viewer.pdfDoc = null;
+        if (this.wakeLock) this.wakeLock.release();
         document.getElementById('pdf-viewer').innerHTML = '';
         document.getElementById('thumbnails-container').innerHTML = '';
         document.getElementById('outline-container').innerHTML = '';
@@ -221,36 +228,45 @@ class PersonalPDFApp {
 
     // Merge Files
     const mergeInput = document.getElementById('merge-files-input');
-    const mergeList = document.getElementById('merge-files-list');
-    let mergeBuffers = [];
+    this.mergeItems = [];
 
     if (mergeInput) {
       mergeInput.onchange = async (e) => {
-        mergeBuffers = [];
-        mergeList.innerHTML = '';
         for (const file of e.target.files) {
           const buf = await file.arrayBuffer();
-          mergeBuffers.push(buf);
-          const item = document.createElement('div');
-          item.className = 'merge-item';
-          item.innerHTML = `<span>📄 ${file.name}</span> <span class="text-muted">${Math.round(file.size / 1024)} KB</span>`;
-          mergeList.appendChild(item);
+          this.mergeItems.push({
+            name: file.name,
+            bytes: buf,
+            size: file.size,
+            isCurrent: false
+          });
         }
+        this._renderMergeList();
+        mergeInput.value = '';
       };
     }
 
     const btnApplyMerge = document.getElementById('btn-apply-merge');
     if (btnApplyMerge) {
       btnApplyMerge.onclick = async () => {
-        if (mergeBuffers.length < 2) {
-          alert('Please select at least 2 PDF files to combine.');
+        if (!this.mergeItems || this.mergeItems.length < 2) {
+          alert(this.mergeItems && this.mergeItems.length === 1
+            ? 'Please add at least 1 more PDF to combine with the current document (minimum 2 PDFs required).'
+            : 'Please select at least 2 PDF files to combine.');
           return;
         }
-        this.ui.setStatus('Combining documents...');
-        const mergedBytes = await this.organizer.mergeDocuments(mergeBuffers);
-        await this.loadArrayBuffer(mergedBytes, 'Merged_Document.pdf');
-        document.getElementById('modal-merge').classList.remove('open');
-        this.ui.setStatus('PDFs merged successfully');
+        try {
+          this.ui.setStatus(`Combining ${this.mergeItems.length} documents...`);
+          const buffers = this.mergeItems.map(item => item.bytes);
+          const mergedBytes = await this.organizer.mergeDocuments(buffers);
+          await this.loadArrayBuffer(mergedBytes, 'Merged_Document.pdf');
+          document.getElementById('modal-merge').classList.remove('open');
+          this.ui.setStatus(`Successfully merged ${this.mergeItems.length} PDF documents`);
+        } catch (err) {
+          console.error('Merge error:', err);
+          alert('Could not merge documents: ' + err.message);
+          this.ui.setStatus('Merge failed: ' + err.message);
+        }
       };
     }
 
@@ -278,22 +294,31 @@ class PersonalPDFApp {
     const btnApplyBates = document.getElementById('btn-apply-bates');
     if (btnApplyBates) {
       btnApplyBates.onclick = async () => {
-        if (!this.currentPdfBytes) return;
-        const prefix = document.getElementById('bates-prefix').value.trim();
-        const startNumber = parseInt(document.getElementById('bates-start').value, 10) || 1;
-        const format = document.getElementById('bates-format').value;
-        const position = document.getElementById('bates-position').value;
+        if (!this.currentPdfBytes) {
+          alert('Please open a PDF document first.');
+          return;
+        }
+        try {
+          const prefix = document.getElementById('bates-prefix').value.trim();
+          const startNumber = parseInt(document.getElementById('bates-start').value, 10) || 1;
+          const format = document.getElementById('bates-format').value;
+          const position = document.getElementById('bates-position').value;
 
-        this.ui.setStatus('Applying numbering...');
-        const updated = await this.security.addPageNumbers(this.currentPdfBytes, {
-          prefix,
-          startNumber,
-          format,
-          position
-        });
-        await this.loadArrayBuffer(updated, this.currentDocName);
-        document.getElementById('modal-bates').classList.remove('open');
-        this.ui.setStatus('Header/Footer numbering applied');
+          this.ui.setStatus('Applying header/footer page numbers...');
+          const updated = await this.security.addPageNumbers(this.currentPdfBytes, {
+            prefix,
+            startNumber,
+            format,
+            position
+          });
+          await this.loadArrayBuffer(updated, this.currentDocName);
+          document.getElementById('modal-bates').classList.remove('open');
+          this.ui.setStatus('Header/Footer numbering applied');
+        } catch (err) {
+          console.error('Failed to apply page numbers:', err);
+          alert('Could not apply page numbers: ' + err.message);
+          this.ui.setStatus('Numbering error: ' + err.message);
+        }
       };
     }
 
@@ -420,9 +445,17 @@ class PersonalPDFApp {
     await this.loadArrayBuffer(arrayBuffer, file.name);
   }
 
-  async loadArrayBuffer(arrayBuffer, docName = 'document.pdf') {
+  async loadArrayBuffer(data, docName = 'document.pdf') {
     this.currentDocName = docName;
-    this.currentPdfBytes = new Uint8Array(arrayBuffer);
+    if (data instanceof Uint8Array) {
+      this.currentPdfBytes = data.slice();
+    } else if (data instanceof ArrayBuffer) {
+      this.currentPdfBytes = new Uint8Array(data.slice(0));
+    } else if (data && data.buffer) {
+      this.currentPdfBytes = new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+    } else {
+      this.currentPdfBytes = new Uint8Array(data);
+    }
 
     // Hide welcome card
     document.getElementById('welcome-screen').style.display = 'none';
@@ -433,6 +466,7 @@ class PersonalPDFApp {
 
     try {
       await this.viewer.loadDocument(this.currentPdfBytes, docName);
+      if (this.wakeLock) this.wakeLock.acquire();
       this.ui.setStatus(`Ready: ${docName}`);
     } catch (err) {
       console.error(err);
@@ -578,6 +612,106 @@ class PersonalPDFApp {
     }
   }
 
+  getVisibleCenterTarget() {
+    const container = document.getElementById('viewer-container');
+    if (!container) return { pageNum: this.viewer.currentPage || 1, x: 120, y: 150 };
+
+    const cRect = container.getBoundingClientRect();
+    const centerY = cRect.top + cRect.height / 2;
+    const centerX = cRect.left + cRect.width / 2;
+
+    const wrappers = Array.from(document.querySelectorAll('.page-wrapper'));
+    if (wrappers.length === 0) return { pageNum: 1, x: 120, y: 150 };
+
+    let bestWrapper = wrappers[0];
+    let minDistance = Infinity;
+
+    for (const wrapper of wrappers) {
+      const rect = wrapper.getBoundingClientRect();
+      if (centerY >= rect.top && centerY <= rect.bottom) {
+        bestWrapper = wrapper;
+        break;
+      }
+      const dist = Math.min(Math.abs(centerY - rect.top), Math.abs(centerY - rect.bottom));
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestWrapper = wrapper;
+      }
+    }
+
+    const rect = bestWrapper.getBoundingClientRect();
+    const pageNum = parseInt(bestWrapper.dataset.pageNumber, 10) || 1;
+    // Calculate centered x and y within target page wrapper
+    const targetX = Math.max(30, Math.min(rect.width - 240, (centerX - rect.left) - 100));
+    const targetY = Math.max(30, Math.min(rect.height - 120, (centerY - rect.top) - 50));
+
+    return { pageNum, x: Math.round(targetX), y: Math.round(targetY) };
+  }
+
+  openMergeModal() {
+    const modal = document.getElementById('modal-merge');
+    const mergeInput = document.getElementById('merge-files-input');
+    if (mergeInput) mergeInput.value = '';
+
+    this.mergeItems = [];
+    if (this.currentPdfBytes) {
+      this.mergeItems.push({
+        name: this.currentDocName,
+        bytes: this.currentPdfBytes,
+        size: this.currentPdfBytes.length,
+        isCurrent: true
+      });
+    }
+
+    this._renderMergeList();
+    if (modal) modal.classList.add('open');
+  }
+
+  _renderMergeList() {
+    const mergeList = document.getElementById('merge-files-list');
+    if (!mergeList) return;
+    mergeList.innerHTML = '';
+
+    if (!this.mergeItems || this.mergeItems.length === 0) {
+      mergeList.innerHTML = '<div class="empty-state" style="padding:16px; font-size:12px; color:var(--text-muted); text-align:center;">No files selected yet. Choose PDF files below to combine.</div>';
+      return;
+    }
+
+    this.mergeItems.forEach((item, idx) => {
+      const el = document.createElement('div');
+      el.className = 'merge-item';
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+      el.style.justifyContent = 'space-between';
+      el.style.padding = '8px 12px';
+      el.style.background = 'var(--bg-secondary)';
+      el.style.border = '1px solid var(--border-color)';
+      el.style.borderRadius = '6px';
+      el.style.marginBottom = '6px';
+
+      const left = document.createElement('div');
+      left.style.display = 'flex';
+      left.style.alignItems = 'center';
+      left.style.gap = '8px';
+      left.innerHTML = `<span>📄 <strong>${idx + 1}.</strong> ${item.name}</span>` + 
+        (item.isCurrent ? ' <span style="background:var(--accent-red); color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; font-weight:600;">Current Document</span>' : ` <span class="text-muted">(${Math.round(item.size / 1024)} KB)</span>`);
+
+      const btnRemove = document.createElement('button');
+      btnRemove.className = 'tool-btn-sm';
+      btnRemove.innerHTML = '&times;';
+      btnRemove.title = 'Remove from merge';
+      btnRemove.onclick = (e) => {
+        e.stopPropagation();
+        this.mergeItems.splice(idx, 1);
+        this._renderMergeList();
+      };
+
+      el.appendChild(left);
+      el.appendChild(btnRemove);
+      mergeList.appendChild(el);
+    });
+  }
+
   // Page Organizer Dialog
   async openOrganizerModal() {
     if (!this.viewer.pdfDoc) {
@@ -611,6 +745,7 @@ class PersonalPDFApp {
           <button class="organizer-mini-btn btn-move-right" title="Move Right">▶</button>
           <button class="organizer-mini-btn btn-rot-left" title="Rotate Left">↺</button>
           <button class="organizer-mini-btn btn-rot-right" title="Rotate Right">↻</button>
+          <button class="organizer-mini-btn btn-view-card" title="View Page">👁</button>
           <button class="organizer-mini-btn btn-del-card" title="Delete Page">🗑</button>
         </div>
       `;
@@ -659,6 +794,12 @@ class PersonalPDFApp {
         thumbBox.style.transform = `rotate(${card.dataset.rotationDelta}deg)`;
       };
 
+      footer.querySelector('.btn-view-card').onclick = (e) => {
+        e.stopPropagation();
+        this.viewer.goToPage(i);
+        modal.classList.remove('open');
+      };
+
       footer.querySelector('.btn-del-card').onclick = (e) => {
         e.stopPropagation();
         card.remove();
@@ -667,6 +808,12 @@ class PersonalPDFApp {
 
       card.onclick = () => {
         card.classList.toggle('selected');
+      };
+
+      card.ondblclick = () => {
+        const targetPage = parseInt(card.querySelector('.organizer-page-num')?.textContent, 10) || i;
+        this.viewer.goToPage(targetPage);
+        modal.classList.remove('open');
       };
     }
 
@@ -855,7 +1002,7 @@ class PersonalPDFApp {
         thumbBox.style.justifyContent = 'center';
         thumbBox.style.backgroundColor = '#ffffff';
         thumbBox.style.border = '1px dashed #9ca3af';
-        thumbBox.innerHTML = '<span style="color:#6b7280; font-size:12px; font-weight:600;">Blank Page</span>';
+        thumbBox.innerHTML = '<span style="color:#6b7280; font-size:12px; font-weight:600;">📄 Blank Page</span>';
 
         const footer = document.createElement('div');
         footer.className = 'organizer-footer';
@@ -864,6 +1011,8 @@ class PersonalPDFApp {
           <div class="organizer-card-actions">
             <button class="organizer-mini-btn btn-move-left" title="Move Left">◀</button>
             <button class="organizer-mini-btn btn-move-right" title="Move Right">▶</button>
+            <button class="organizer-mini-btn btn-rot-left" title="Rotate Left">↺</button>
+            <button class="organizer-mini-btn btn-rot-right" title="Rotate Right">↻</button>
             <button class="organizer-mini-btn btn-del-card" title="Delete Page">🗑</button>
           </div>
         `;
@@ -885,6 +1034,20 @@ class PersonalPDFApp {
             card.nextElementSibling.after(card);
             this._renumberOrganizerCards();
           }
+        };
+
+        footer.querySelector('.btn-rot-left').onclick = (e) => {
+          e.stopPropagation();
+          const currentRot = parseInt(card.dataset.rotationDelta, 10) || 0;
+          card.dataset.rotationDelta = (currentRot - 90).toString();
+          thumbBox.style.transform = `rotate(${card.dataset.rotationDelta}deg)`;
+        };
+
+        footer.querySelector('.btn-rot-right').onclick = (e) => {
+          e.stopPropagation();
+          const currentRot = parseInt(card.dataset.rotationDelta, 10) || 0;
+          card.dataset.rotationDelta = (currentRot + 90).toString();
+          thumbBox.style.transform = `rotate(${card.dataset.rotationDelta}deg)`;
         };
 
         footer.querySelector('.btn-del-card').onclick = (e) => {
@@ -958,8 +1121,7 @@ class PersonalPDFApp {
 
           this.ui.setStatus('Applying page changes...');
           const updatedBytes = await this.organizer.reorderAndModifyPages(this.currentPdfBytes, operations);
-          const freshBuf = updatedBytes.slice().buffer;
-          await this.loadArrayBuffer(freshBuf, this.currentDocName);
+          await this.loadArrayBuffer(updatedBytes, this.currentDocName);
 
           // Clear annotations since page indices have changed
           this.annotator.annotations.clear();
@@ -967,11 +1129,11 @@ class PersonalPDFApp {
           this.annotator.redoStack = [];
 
           document.getElementById('modal-organizer').classList.remove('open');
-          this.ui.setStatus('Page modifications applied successfully');
+          this.ui.setStatus(`Page modifications applied successfully (${operations.length} pages)`);
         } catch (err) {
           console.error('Failed to apply page changes:', err);
           alert('Could not apply page changes: ' + err.message);
-          this.ui.setStatus('Error applying page changes');
+          this.ui.setStatus('Error applying page changes: ' + err.message);
         }
       };
     }
@@ -981,20 +1143,29 @@ class PersonalPDFApp {
     const btnApplyWatermark = document.getElementById('btn-apply-watermark');
     if (btnApplyWatermark) {
       btnApplyWatermark.onclick = async () => {
-        if (!this.currentPdfBytes) return;
-        const text = document.getElementById('watermark-text').value;
-        const angle = parseInt(document.getElementById('watermark-angle').value, 10);
-        const opacity = parseInt(document.getElementById('watermark-opacity').value, 10) / 100;
-        const color = document.getElementById('watermark-color').value;
-        const size = parseInt(document.getElementById('watermark-size').value, 10);
+        if (!this.currentPdfBytes) {
+          alert('Please open a PDF document first.');
+          return;
+        }
+        try {
+          const text = document.getElementById('watermark-text').value.trim() || 'CONFIDENTIAL';
+          const angle = parseInt(document.getElementById('watermark-angle').value, 10) || 45;
+          const opacity = (parseInt(document.getElementById('watermark-opacity').value, 10) || 25) / 100;
+          const color = document.getElementById('watermark-color').value || '#ff0000';
+          const size = parseInt(document.getElementById('watermark-size').value, 10) || 48;
 
-        this.ui.setStatus('Applying watermark...');
-        const modified = await this.security.applyWatermark(this.currentPdfBytes, {
-          text, angle, opacity, color, size
-        });
-        await this.loadArrayBuffer(modified, this.currentDocName);
-        document.getElementById('modal-watermark').classList.remove('open');
-        this.ui.setStatus('Watermark applied successfully');
+          this.ui.setStatus('Applying watermark to all pages...');
+          const modified = await this.security.applyWatermark(this.currentPdfBytes, {
+            text, angle, opacity, color, size
+          });
+          await this.loadArrayBuffer(modified, this.currentDocName);
+          document.getElementById('modal-watermark').classList.remove('open');
+          this.ui.setStatus('Watermark applied successfully');
+        } catch (err) {
+          console.error('Failed to apply watermark:', err);
+          alert('Could not apply watermark: ' + err.message);
+          this.ui.setStatus('Watermark error: ' + err.message);
+        }
       };
     }
 
@@ -1006,7 +1177,14 @@ class PersonalPDFApp {
     }
   }
 
-  insertImageOnPage(pageNum, dataUrl, x = 120, y = 150) {
+  insertImageOnPage(pageNum, dataUrl, x, y) {
+    if (x === undefined || y === undefined) {
+      const centerTarget = this.getVisibleCenterTarget();
+      pageNum = centerTarget.pageNum;
+      x = centerTarget.x;
+      y = centerTarget.y;
+    }
+
     const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     if (!wrapper) return;
 
@@ -1024,23 +1202,72 @@ class PersonalPDFApp {
 
     // Delete button
     const btnDel = document.createElement('button');
-    btnDel.className = 'tool-btn-sm';
-    btnDel.style.position = 'absolute';
-    btnDel.style.top = '-10px';
-    btnDel.style.right = '-10px';
-    btnDel.style.background = '#ef4444';
-    btnDel.style.color = '#fff';
-    btnDel.style.borderRadius = '50%';
-    btnDel.style.width = '20px';
-    btnDel.style.height = '20px';
+    btnDel.className = 'textbox-delete-btn';
     btnDel.innerHTML = '&times;';
+    btnDel.title = 'Remove Image';
     btnDel.onclick = (e) => {
       e.stopPropagation();
+      this.annotator.undoStack.push({
+        type: 'element',
+        pageNum,
+        elements: [container]
+      });
+      container._savedParent = container.parentNode;
       container.remove();
     };
     container.appendChild(btnDel);
 
-    // Draggable
+    this.annotator._makeDraggable(container, wrapper);
+    wrapper.appendChild(container);
+
+    this.annotator.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [container]
+    });
+    this.annotator.redoStack = [];
+  }
+
+  insertSignatureOnPage(pageNum, dataUrl, x, y) {
+    if (x === undefined || y === undefined) {
+      const centerTarget = this.getVisibleCenterTarget();
+      pageNum = centerTarget.pageNum;
+      x = centerTarget.x;
+      y = centerTarget.y;
+    }
+
+    const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+    if (!wrapper) return;
+
+    const container = document.createElement('div');
+    container.className = 'placed-stamp placed-signature-box';
+    container.style.left = `${x}px`;
+    container.style.top = `${y}px`;
+    container.style.width = '180px';
+
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.width = '100%';
+    img.style.display = 'block';
+    container.appendChild(img);
+
+    // Delete button
+    const btnDel = document.createElement('button');
+    btnDel.className = 'textbox-delete-btn';
+    btnDel.innerHTML = '&times;';
+    btnDel.title = 'Remove Signature';
+    btnDel.onclick = (e) => {
+      e.stopPropagation();
+      this.annotator.undoStack.push({
+        type: 'element',
+        pageNum,
+        elements: [container]
+      });
+      container._savedParent = container.parentNode;
+      container.remove();
+    };
+    container.appendChild(btnDel);
+
     this.annotator._makeDraggable(container, wrapper);
     wrapper.appendChild(container);
 

@@ -8,9 +8,18 @@ export class PDFAnnotatorEngine {
     this.container = options.container;
     this.currentTool = 'none'; // 'pen', 'highlighter', 'eraser', 'rectangle', 'circle', 'line', 'arrow', 'note', 'text', 'stamp'
     this.color = '#ef4444';
-    this.strokeWidth = 3;
+    this.strokeWidth = 4;
     this.opacity = 1.0;
     this.fontSize = 16;
+    this.fontFamily = 'Inter, sans-serif';
+    this.fontWeight = 'normal';
+    this.fontStyle = 'normal';
+    this.textDecoration = 'none';
+    this.textAlign = 'left';
+    this.lineHeight = 1.25;
+
+    this.activeTextBox = null;
+    this.onActiveTextBoxChange = options.onActiveTextBoxChange || (() => {});
     
     // Store annotations per page
     // Map<pageNum, Array<AnnotationObject>>
@@ -18,6 +27,7 @@ export class PDFAnnotatorEngine {
     this.undoStack = [];
     this.redoStack = [];
     this.isDrawing = false;
+    this.isErasing = false;
     this.currentPath = [];
     this.activeCanvas = null;
     this.activePageNum = null;
@@ -31,14 +41,20 @@ export class PDFAnnotatorEngine {
     if (props.strokeWidth) this.strokeWidth = props.strokeWidth;
     if (props.opacity !== undefined) this.opacity = props.opacity;
     if (props.fontSize) this.fontSize = props.fontSize;
+    if (props.fontFamily) this.fontFamily = props.fontFamily;
 
     // Toggle drawing-active class on all annotation layers
     const layers = this.container.querySelectorAll('.annotation-layer');
     layers.forEach(layer => {
       if (this.currentTool === 'none') {
         layer.classList.remove('drawing-active');
+        layer.style.cursor = 'default';
+      } else if (this.currentTool === 'eraser') {
+        layer.classList.add('drawing-active');
+        layer.style.cursor = 'crosshair';
       } else {
         layer.classList.add('drawing-active');
+        layer.style.cursor = 'crosshair';
       }
     });
   }
@@ -59,6 +75,7 @@ export class PDFAnnotatorEngine {
     if (!target) return null;
 
     const pageWrapper = target.closest('.page-wrapper');
+    if (!pageWrapper) return null;
     const pageNum = parseInt(pageWrapper.dataset.pageNumber, 10);
     const canvas = target.querySelector('canvas');
     if (!canvas) return null;
@@ -78,6 +95,38 @@ export class PDFAnnotatorEngine {
 
   _onMouseDown(e) {
     if (this.currentTool === 'none') return;
+
+    // 1. Dedicated Eraser Tool handling
+    if (this.currentTool === 'eraser') {
+      const annotEl = e.target.closest('.annotation-textbox, .placed-stamp, .sticky-note-marker, .sticky-note-popup, .whiteout-box, .redaction-box');
+      if (annotEl) {
+        e.stopPropagation();
+        const pageWrapper = annotEl.closest('.page-wrapper');
+        const pNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+        this.undoStack.push({
+          type: 'element',
+          pageNum: pNum,
+          elements: [annotEl]
+        });
+        annotEl._savedParent = annotEl.parentNode;
+        annotEl.remove();
+        if (this.activeTextBox === annotEl) {
+          this.activeTextBox = null;
+          this.onActiveTextBoxChange(null);
+        }
+        return;
+      }
+
+      const info = this._getCanvasAndCoords(e);
+      if (info) {
+        this.isErasing = true;
+        this.activeCanvas = info.canvas;
+        this.activePageNum = info.pageNum;
+        this._eraseStrokesAt(info.pageNum, info.x, info.y);
+      }
+      return;
+    }
+
     const info = this._getCanvasAndCoords(e);
     if (!info) return;
 
@@ -98,6 +147,14 @@ export class PDFAnnotatorEngine {
   }
 
   _onMouseMove(e) {
+    if (this.isErasing && this.activePageNum) {
+      const info = this._getCanvasAndCoords(e);
+      if (info && info.pageNum === this.activePageNum) {
+        this._eraseStrokesAt(info.pageNum, info.x, info.y);
+      }
+      return;
+    }
+
     if (!this.isDrawing || !this.activeCanvas) return;
     const info = this._getCanvasAndCoords(e);
     if (!info || info.pageNum !== this.activePageNum) return;
@@ -107,16 +164,24 @@ export class PDFAnnotatorEngine {
   }
 
   _onMouseUp() {
+    if (this.isErasing) {
+      this.isErasing = false;
+      this.activeCanvas = null;
+      this.activePageNum = null;
+      return;
+    }
+
     if (!this.isDrawing) return;
     this.isDrawing = false;
 
     if (this.currentPath.length > 1 && this.activePageNum) {
+      const isHighlighter = this.currentTool === 'highlighter';
       const annot = {
         type: this.currentTool,
         points: [...this.currentPath],
         color: this.color,
-        strokeWidth: this.currentTool === 'highlighter' ? 24 : this.strokeWidth,
-        opacity: this.currentTool === 'highlighter' ? 0.35 : this.opacity
+        strokeWidth: isHighlighter ? 24 : this.strokeWidth * 2,
+        opacity: isHighlighter ? 0.35 : this.opacity
       };
 
       if (!this.annotations.has(this.activePageNum)) {
@@ -146,7 +211,7 @@ export class PDFAnnotatorEngine {
   }
 
   _onTouchMove(e) {
-    if (this.currentTool !== 'none' && this.isDrawing) {
+    if (this.currentTool !== 'none' && (this.isDrawing || this.isErasing)) {
       e.preventDefault();
       this._onMouseMove(e);
     }
@@ -155,6 +220,41 @@ export class PDFAnnotatorEngine {
   _onTouchEnd(e) {
     if (this.currentTool !== 'none') {
       this._onMouseUp(e);
+    }
+  }
+
+  _eraseStrokesAt(pageNum, x, y) {
+    const list = this.annotations.get(pageNum);
+    if (!list || list.length === 0) return;
+
+    const threshold = 35; // Hit radius
+    let changed = false;
+
+    for (let i = list.length - 1; i >= 0; i--) {
+      const annot = list[i];
+      let hit = false;
+      if (annot.points && annot.points.length) {
+        for (const pt of annot.points) {
+          const dist = Math.hypot(pt.x - x, pt.y - y);
+          if (dist <= threshold) {
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (hit) {
+        const removed = list.splice(i, 1)[0];
+        this.undoStack.push({
+          type: 'stroke',
+          pageNum,
+          data: removed
+        });
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this._redrawPageAnnotations(pageNum);
     }
   }
 
@@ -295,7 +395,7 @@ export class PDFAnnotatorEngine {
     this.redoStack = [];
   }
 
-  _addTextBox(pageNum, x, y) {
+  _addTextBox(pageNum, x, y, initialText = 'Click to edit text') {
     const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     if (!wrapper) return;
 
@@ -305,15 +405,72 @@ export class PDFAnnotatorEngine {
     box.style.left = `${x}px`;
     box.style.top = `${y}px`;
     box.style.fontSize = `${this.fontSize}px`;
+    box.style.fontFamily = this.fontFamily;
+    box.style.fontWeight = this.fontWeight;
+    box.style.fontStyle = this.fontStyle;
+    box.style.textDecoration = this.textDecoration;
+    box.style.textAlign = this.textAlign;
+    box.style.lineHeight = this.lineHeight;
     box.style.color = this.color;
-    box.innerText = 'Click to edit text';
+    box.innerText = initialText;
 
-    wrapper.appendChild(box);
-    box.focus();
+    // Delete button (✕)
+    const btnDel = document.createElement('button');
+    btnDel.className = 'textbox-delete-btn';
+    btnDel.contentEditable = 'false';
+    btnDel.innerHTML = '&times;';
+    btnDel.title = 'Delete Text Box';
+    btnDel.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.undoStack.push({
+        type: 'element',
+        pageNum,
+        elements: [box]
+      });
+      box._savedParent = box.parentNode;
+      box.remove();
+      if (this.activeTextBox === box) {
+        this.activeTextBox = null;
+        this.onActiveTextBoxChange(null);
+      }
+    };
+    box.appendChild(btnDel);
+
+    const selectThisBox = (e) => {
+      e?.stopPropagation();
+      if (this.activeTextBox && this.activeTextBox !== box) {
+        this.activeTextBox.classList.remove('active');
+      }
+      this.activeTextBox = box;
+      box.classList.add('active');
+      this.onActiveTextBoxChange(box);
+    };
+
+    box.onfocus = selectThisBox;
+    box.onclick = selectThisBox;
+
+    box.onkeydown = (e) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && box.innerText.trim() === '') {
+        e.preventDefault();
+        btnDel.click();
+      }
+    };
 
     box.onblur = () => {
-      if (!box.innerText.trim()) box.remove();
+      if (!box.innerText.trim()) {
+        box.remove();
+        if (this.activeTextBox === box) {
+          this.activeTextBox = null;
+          this.onActiveTextBoxChange(null);
+        }
+      }
     };
+
+    this._makeDraggable(box, wrapper);
+    wrapper.appendChild(box);
+    box.focus();
+    selectThisBox();
 
     this.undoStack.push({
       type: 'element',
@@ -321,6 +478,108 @@ export class PDFAnnotatorEngine {
       elements: [box]
     });
     this.redoStack = [];
+    return box;
+  }
+
+  setActiveTextBox(box) {
+    if (this.activeTextBox && this.activeTextBox !== box) {
+      this.activeTextBox.classList.remove('active');
+    }
+    this.activeTextBox = box;
+    if (box) {
+      box.classList.add('active');
+      this.onActiveTextBoxChange(box);
+    } else {
+      this.onActiveTextBoxChange(null);
+    }
+  }
+
+  setFontFamily(family) {
+    this.fontFamily = family;
+    if (this.activeTextBox) {
+      this.activeTextBox.style.fontFamily = family;
+    }
+  }
+
+  setFontSize(size) {
+    this.fontSize = parseInt(size, 10) || 16;
+    if (this.activeTextBox) {
+      this.activeTextBox.style.fontSize = `${this.fontSize}px`;
+    }
+  }
+
+  setColor(color) {
+    this.color = color;
+    if (this.activeTextBox) {
+      this.activeTextBox.style.color = color;
+    }
+  }
+
+  toggleBold() {
+    const isBold = this.activeTextBox
+      ? (this.activeTextBox.style.fontWeight === 'bold' || window.getComputedStyle(this.activeTextBox).fontWeight >= 700)
+      : (this.fontWeight === 'bold');
+    const newVal = isBold ? 'normal' : 'bold';
+    this.fontWeight = newVal;
+    if (this.activeTextBox) {
+      this.activeTextBox.style.fontWeight = newVal;
+    }
+    return newVal === 'bold';
+  }
+
+  toggleItalic() {
+    const isItalic = this.activeTextBox
+      ? (this.activeTextBox.style.fontStyle === 'italic')
+      : (this.fontStyle === 'italic');
+    const newVal = isItalic ? 'normal' : 'italic';
+    this.fontStyle = newVal;
+    if (this.activeTextBox) {
+      this.activeTextBox.style.fontStyle = newVal;
+    }
+    return newVal === 'italic';
+  }
+
+  toggleUnderline() {
+    const isUnderline = this.activeTextBox
+      ? (this.activeTextBox.style.textDecoration && this.activeTextBox.style.textDecoration.includes('underline'))
+      : (this.textDecoration.includes('underline'));
+    const newVal = isUnderline ? 'none' : 'underline';
+    this.textDecoration = newVal;
+    if (this.activeTextBox) {
+      this.activeTextBox.style.textDecoration = newVal;
+    }
+    return newVal === 'underline';
+  }
+
+  setTextAlign(align) {
+    this.textAlign = align;
+    if (this.activeTextBox) {
+      this.activeTextBox.style.textAlign = align;
+    }
+  }
+
+  setLineHeight(height) {
+    this.lineHeight = height;
+    if (this.activeTextBox) {
+      this.activeTextBox.style.lineHeight = height;
+    }
+  }
+
+  deleteActiveTextBox() {
+    if (this.activeTextBox) {
+      const box = this.activeTextBox;
+      const pageWrapper = box.closest('.page-wrapper');
+      const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+      this.undoStack.push({
+        type: 'element',
+        pageNum,
+        elements: [box]
+      });
+      box._savedParent = box.parentNode;
+      box.remove();
+      this.activeTextBox = null;
+      this.onActiveTextBoxChange(null);
+    }
   }
 
   placeStamp(pageNum, stampType = 'APPROVED', x = 100, y = 100) {
@@ -404,7 +663,8 @@ export class PDFAnnotatorEngine {
   async burnAnnotationsToPdf(pdfBytes) {
     if (!window.PDFLib) return pdfBytes;
     const { PDFDocument } = window.PDFLib;
-    const doc = await PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const pages = doc.getPages();
 
     for (let i = 0; i < pages.length; i++) {
@@ -420,18 +680,20 @@ export class PDFAnnotatorEngine {
       const textboxes = wrapper.querySelectorAll('.annotation-textbox');
       const stamps = wrapper.querySelectorAll('.placed-stamp');
       const redactions = wrapper.querySelectorAll('.redaction-box');
+      const whiteouts = wrapper.querySelectorAll('.whiteout-box');
 
       const hasContent = (this.annotations.has(pageNum) && this.annotations.get(pageNum).length > 0) ||
                          textboxes.length > 0 ||
                          stamps.length > 0 ||
-                         redactions.length > 0;
+                         redactions.length > 0 ||
+                         whiteouts.length > 0;
 
       if (!hasContent) continue;
 
-      // Composite onto a high-res temporary canvas
+      // Composite onto a high-res temporary canvas matching PDF coordinate resolution
       const compCanvas = document.createElement('canvas');
-      compCanvas.width = annotCanvas.width;
-      compCanvas.height = annotCanvas.height;
+      compCanvas.width = annotCanvas ? annotCanvas.width : wrapper.clientWidth * 2;
+      compCanvas.height = annotCanvas ? annotCanvas.height : wrapper.clientHeight * 2;
       const compCtx = compCanvas.getContext('2d');
 
       // 1. Draw ink canvas
@@ -439,10 +701,20 @@ export class PDFAnnotatorEngine {
         compCtx.drawImage(annotCanvas, 0, 0);
       }
 
-      // 2. Draw placed stamps
       const scaleX = compCanvas.width / wrapper.clientWidth;
       const scaleY = compCanvas.height / wrapper.clientHeight;
 
+      // 2. Draw whiteout boxes first (so text or ink can appear over them)
+      for (const wb of whiteouts) {
+        const wx = wb.offsetLeft * scaleX;
+        const wy = wb.offsetTop * scaleY;
+        const ww = wb.offsetWidth * scaleX;
+        const wh = wb.offsetHeight * scaleY;
+        compCtx.fillStyle = '#ffffff';
+        compCtx.fillRect(wx, wy, ww, wh);
+      }
+
+      // 3. Draw placed stamps and signatures
       for (const stamp of stamps) {
         const sx = stamp.offsetLeft * scaleX;
         const sy = stamp.offsetTop * scaleY;
@@ -471,18 +743,53 @@ export class PDFAnnotatorEngine {
         }
       }
 
-      // 3. Draw text boxes
+      // 4. Draw text boxes with multi-line, custom font, bold, italic, and alignment
       for (const tb of textboxes) {
+        const textContent = Array.from(tb.childNodes)
+          .filter(n => !(n.classList && n.classList.contains('textbox-delete-btn')))
+          .map(n => n.textContent || '')
+          .join('');
+
+        if (!textContent.trim()) continue;
+
+        const cs = window.getComputedStyle(tb);
         const tx = tb.offsetLeft * scaleX;
         const ty = tb.offsetTop * scaleY;
-        const fSize = parseFloat(window.getComputedStyle(tb).fontSize) * scaleY;
-        compCtx.font = `${fSize}px sans-serif`;
-        compCtx.fillStyle = window.getComputedStyle(tb).color || '#000000';
+        const tw = tb.offsetWidth * scaleX;
+        const fSize = parseFloat(cs.fontSize) * scaleY;
+        const fontFamily = cs.fontFamily || 'Inter, sans-serif';
+        const fontWeight = cs.fontWeight || 'normal';
+        const fontStyle = cs.fontStyle || 'normal';
+        const textAlign = cs.textAlign || 'left';
+        const color = cs.color || '#000000';
+        const parsedLineHeight = parseFloat(cs.lineHeight);
+        const lineHeight = !isNaN(parsedLineHeight) && parsedLineHeight > 0
+          ? parsedLineHeight * scaleY
+          : fSize * 1.3;
+
+        compCtx.save();
+        compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
+        compCtx.fillStyle = color;
         compCtx.textBaseline = 'top';
-        compCtx.fillText(tb.innerText, tx, ty);
+
+        const lines = textContent.split(/\r?\n/);
+        lines.forEach((line, lineIdx) => {
+          let lineX = tx;
+          if (textAlign === 'center') {
+            lineX = tx + tw / 2;
+            compCtx.textAlign = 'center';
+          } else if (textAlign === 'right') {
+            lineX = tx + tw;
+            compCtx.textAlign = 'right';
+          } else {
+            compCtx.textAlign = 'left';
+          }
+          compCtx.fillText(line, lineX, ty + lineIdx * lineHeight);
+        });
+        compCtx.restore();
       }
 
-      // 4. Draw redaction blackouts
+      // 5. Draw redaction blackouts
       for (const rb of redactions) {
         const rx = rb.offsetLeft * scaleX;
         const ry = rb.offsetTop * scaleY;
@@ -490,17 +797,6 @@ export class PDFAnnotatorEngine {
         const rh = rb.offsetHeight * scaleY;
         compCtx.fillStyle = '#000000';
         compCtx.fillRect(rx, ry, rw, rh);
-      }
-
-      // 5. Draw whiteout boxes
-      const whiteouts = wrapper.querySelectorAll('.whiteout-box');
-      for (const wb of whiteouts) {
-        const wx = wb.offsetLeft * scaleX;
-        const wy = wb.offsetTop * scaleY;
-        const ww = wb.offsetWidth * scaleX;
-        const wh = wb.offsetHeight * scaleY;
-        compCtx.fillStyle = '#ffffff';
-        compCtx.fillRect(wx, wy, ww, wh);
       }
 
       // Embed composite canvas image into PDF page
@@ -520,32 +816,102 @@ export class PDFAnnotatorEngine {
   _makeDraggable(element, parent) {
     let isDragging = false;
     let startX, startY, initialX, initialY;
+    const container = document.getElementById('viewer-container');
 
-    element.onmousedown = (e) => {
-      e.stopPropagation();
+    const startDrag = (clientX, clientY) => {
       isDragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
+      startX = clientX;
+      startY = clientY;
       initialX = element.offsetLeft;
       initialY = element.offsetTop;
+      element.classList.add('is-dragging');
+    };
 
-      const onMouseMove = (moveEvt) => {
-        if (!isDragging) return;
-        const dx = moveEvt.clientX - startX;
-        const dy = moveEvt.clientY - startY;
-        element.style.left = `${initialX + dx}px`;
-        element.style.top = `${initialY + dy}px`;
-      };
+    const moveDrag = (clientX, clientY) => {
+      if (!isDragging) return;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+      element.style.left = `${initialX + dx}px`;
+      element.style.top = `${initialY + dy}px`;
 
-      const onMouseUp = () => {
-        isDragging = false;
+      // Auto-scroll viewer container when near top or bottom edges
+      if (container) {
+        const cRect = container.getBoundingClientRect();
+        const topDist = clientY - cRect.top;
+        const bottomDist = cRect.bottom - clientY;
+        if (topDist < 70 && topDist > 0) {
+          container.scrollTop -= Math.round((70 - topDist) * 0.35);
+        } else if (bottomDist < 70 && bottomDist > 0) {
+          container.scrollTop += Math.round((70 - bottomDist) * 0.35);
+        }
+      }
+    };
+
+    const stopDrag = (clientX, clientY) => {
+      if (!isDragging) return;
+      isDragging = false;
+      element.classList.remove('is-dragging');
+
+      // Check cross-page reparenting if element was moved across pages
+      if (clientX !== undefined && clientY !== undefined) {
+        const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
+        const targetWrapper = elementsAtPoint.find(el => el.classList && el.classList.contains('page-wrapper'));
+
+        if (targetWrapper && targetWrapper !== element.parentNode) {
+          const elRect = element.getBoundingClientRect();
+          const targetRect = targetWrapper.getBoundingClientRect();
+          const newLeft = elRect.left - targetRect.left;
+          const newTop = elRect.top - targetRect.top;
+          element.style.left = `${Math.max(0, newLeft)}px`;
+          element.style.top = `${Math.max(0, newTop)}px`;
+          targetWrapper.appendChild(element);
+        }
+      }
+    };
+
+    // Mouse drag handlers
+    element.addEventListener('mousedown', (e) => {
+      if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn')) return;
+      if (element.classList.contains('annotation-textbox') && document.activeElement === element && e.target === element) {
+        return;
+      }
+      e.stopPropagation();
+      startDrag(e.clientX, e.clientY);
+
+      const onMouseMove = (moveEvt) => moveDrag(moveEvt.clientX, moveEvt.clientY);
+      const onMouseUp = (upEvt) => {
+        stopDrag(upEvt.clientX, upEvt.clientY);
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onMouseUp);
       };
 
       window.addEventListener('mousemove', onMouseMove);
       window.addEventListener('mouseup', onMouseUp);
-    };
+    });
+
+    // Touch drag handlers for Android and mobile
+    element.addEventListener('touchstart', (e) => {
+      if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn')) return;
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        startDrag(touch.clientX, touch.clientY);
+      }
+    }, { passive: true });
+
+    element.addEventListener('touchmove', (e) => {
+      if (isDragging && e.touches.length === 1) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        moveDrag(touch.clientX, touch.clientY);
+      }
+    }, { passive: false });
+
+    element.addEventListener('touchend', (e) => {
+      if (isDragging) {
+        const touch = e.changedTouches ? e.changedTouches[0] : null;
+        stopDrag(touch ? touch.clientX : undefined, touch ? touch.clientY : undefined);
+      }
+    });
   }
 }
 

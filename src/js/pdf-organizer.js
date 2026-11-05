@@ -29,8 +29,12 @@ export class PDFOrganizerEngine {
     // [{ originalIndex: 0, rotationDelta: 90, isBlank: false }]
     for (const op of operations) {
       if (op.isBlank) {
-        newDoc.addPage([595.28, 841.89]); // A4 dimensions
-      } else {
+        const blankPage = newDoc.addPage([595.28, 841.89]); // A4 dimensions
+        if (op.rotationDelta) {
+          const finalAngle = ((op.rotationDelta % 360) + 360) % 360;
+          blankPage.setRotation(this.degrees(finalAngle));
+        }
+      } else if (op.originalIndex >= 0 && op.originalIndex < srcDoc.getPageCount()) {
         const [copiedPage] = await newDoc.copyPages(srcDoc, [op.originalIndex]);
         if (op.rotationDelta) {
           const currentRot = (copiedPage.getRotation() && typeof copiedPage.getRotation().angle === 'number')

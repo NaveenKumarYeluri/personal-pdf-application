@@ -50,7 +50,7 @@ export class UIController {
       document.getElementById('modal-bates')?.classList.add('open');
     });
     document.getElementById('tool-quick-merge')?.addEventListener('click', () => {
-      document.getElementById('modal-merge')?.classList.add('open');
+      this.app.openMergeModal();
     });
   }
 
@@ -199,9 +199,29 @@ export class UIController {
     document.getElementById('m3-edit-add-text')?.addEventListener('click', () => {
       closeAllSheets();
       this.app.annotator.fontSize = parseInt(document.getElementById('m3-edit-font-size').value, 10);
+      this.app.annotator.fontFamily = document.getElementById('m3-edit-font-family')?.value || 'Inter, sans-serif';
       this.app.annotator.color = document.getElementById('m3-edit-font-color').value;
-      this.app.annotator._addTextBox(this.app.viewer.currentPage, 80, 160);
-      this.setStatus('Added text box. Tap to edit.');
+      const target = this.app.getVisibleCenterTarget();
+      this.app.annotator._addTextBox(target.pageNum, target.x, target.y);
+      this.setStatus('Added text block in current view. Tap to edit.');
+    });
+
+    document.getElementById('m3-edit-font-family')?.addEventListener('change', (e) => {
+      this.app.annotator.setFontFamily(e.target.value);
+    });
+    document.getElementById('m3-edit-font-size')?.addEventListener('change', (e) => {
+      this.app.annotator.setFontSize(e.target.value);
+    });
+    document.getElementById('m3-edit-font-color')?.addEventListener('change', (e) => {
+      this.app.annotator.setColor(e.target.value);
+    });
+    document.getElementById('m3-edit-bold')?.addEventListener('click', () => {
+      const isB = this.app.annotator.toggleBold();
+      document.getElementById('m3-edit-bold')?.classList.toggle('active', isB);
+    });
+    document.getElementById('m3-edit-italic')?.addEventListener('click', () => {
+      const isI = this.app.annotator.toggleItalic();
+      document.getElementById('m3-edit-italic')?.classList.toggle('active', isI);
     });
 
     document.getElementById('m3-edit-insert-img')?.addEventListener('click', () => {
@@ -213,7 +233,7 @@ export class UIController {
       if (file) {
         const reader = new FileReader();
         reader.onload = (re) => {
-          this.app.insertImageOnPage(this.app.viewer.currentPage, re.target.result);
+          this.app.insertImageOnPage(undefined, re.target.result);
           closeAllSheets();
           this.setStatus('Image inserted. Drag to position.');
         };
@@ -223,7 +243,8 @@ export class UIController {
 
     document.getElementById('m3-edit-whiteout')?.addEventListener('click', () => {
       closeAllSheets();
-      this.app.insertWhiteoutOnPage(this.app.viewer.currentPage, 80, 180);
+      const target = this.app.getVisibleCenterTarget();
+      this.app.insertWhiteoutOnPage(target.pageNum, target.x, target.y);
       this.setStatus('Whiteout box placed. Drag to cover text.');
     });
 
@@ -322,6 +343,9 @@ export class UIController {
         if (tool === 'select') {
           this.app.annotator.setTool('none');
           this.setStatus('Text selection active: long-press text to select or copy');
+        } else if (tool === 'eraser') {
+          this.app.annotator.setTool('eraser');
+          this.setStatus('Eraser active: tap any annotation or drag across ink to erase');
         } else {
           this.app.annotator.setTool(tool, {
             color: this.app.annotator.color,
@@ -357,7 +381,7 @@ export class UIController {
     });
     document.getElementById('m3-tool-merge')?.addEventListener('click', () => {
       closeAllSheets();
-      document.getElementById('modal-merge')?.classList.add('open');
+      this.app.openMergeModal();
     });
     document.getElementById('m3-tool-split')?.addEventListener('click', () => {
       closeAllSheets();
@@ -602,21 +626,50 @@ export class UIController {
         <button id="tool-select" class="tool-btn" title="Text Selection Tool">✋</button>
         <button id="tool-pen" class="tool-btn active" title="Freehand Pen">✏️</button>
         <button id="tool-highlighter" class="tool-btn" title="Highlighter Brush">🖍️</button>
+        <button id="tool-eraser" class="tool-btn" title="Eraser Tool (Click/drag to erase ink, textboxes, stamps)">🧼</button>
         <button id="tool-note" class="tool-btn" title="Sticky Note">💬</button>
-        <button id="tool-text" class="tool-btn" title="Typewriter Text">T</button>
+        <button id="tool-text" class="tool-btn" title="Typewriter Text Block">T</button>
         <button id="tool-rect" class="tool-btn" title="Draw Rectangle">▢</button>
         <button id="tool-circle" class="tool-btn" title="Draw Circle">◯</button>
         <button id="tool-line" class="tool-btn" title="Draw Line">╱</button>
       </div>
       <div class="divider"></div>
       <div class="tool-group">
-        <input type="color" id="annot-color" value="#ef4444" class="tool-select" style="padding:1px; width:28px; height:28px;" title="Stroke Color">
+        <input type="color" id="annot-color" value="#ef4444" class="tool-select" style="padding:1px; width:28px; height:28px;" title="Stroke / Text Color">
         <select id="annot-size" class="tool-select" title="Line Thickness">
           <option value="2">Thin (2px)</option>
           <option value="4" selected>Medium (4px)</option>
           <option value="8">Thick (8px)</option>
           <option value="14">Heavy (14px)</option>
         </select>
+        <select id="annot-font-family" class="tool-select" title="Text Font Family">
+          <option value="Inter, sans-serif" selected>Inter / Arial (Clean Sans)</option>
+          <option value="'Roboto', sans-serif">Roboto (Modern Sans)</option>
+          <option value="'Times New Roman', serif">Times New Roman (Serif)</option>
+          <option value="'Georgia', serif">Georgia (Editorial Serif)</option>
+          <option value="'Garamond', serif">Garamond (Classic Serif)</option>
+          <option value="'Courier New', monospace">Courier New (Monospace)</option>
+          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+          <option value="'Verdana', sans-serif">Verdana</option>
+          <option value="'Dancing Script', cursive">Dancing Script (Handwriting)</option>
+          <option value="'Impact', sans-serif">Impact (Headline)</option>
+        </select>
+        <select id="annot-font-size" class="tool-select" title="Text Font Size">
+          <option value="10">10 pt</option>
+          <option value="12">12 pt</option>
+          <option value="14">14 pt</option>
+          <option value="16" selected>16 pt</option>
+          <option value="18">18 pt</option>
+          <option value="20">20 pt</option>
+          <option value="24">24 pt</option>
+          <option value="28">28 pt</option>
+          <option value="32">32 pt</option>
+          <option value="48">48 pt</option>
+        </select>
+        <button id="btn-text-bold" class="tool-btn" title="Bold Text">𝐁</button>
+        <button id="btn-text-italic" class="tool-btn" title="Italic Text">𝑰</button>
+        <button id="btn-text-underline" class="tool-btn" title="Underline Text">𝐔̲</button>
+        <button id="btn-text-delete" class="tool-btn" style="color:#ef4444;" title="Delete Active Text Box">🗑</button>
         <select id="annot-stamp" class="tool-select" title="Place Stamp">
           <option value="">Stamp...</option>
           <option value="APPROVED">APPROVED</option>
@@ -637,9 +690,10 @@ export class UIController {
     };
 
     // Tool switching
-    const tools = ['select', 'pen', 'highlighter', 'note', 'text', 'rect', 'circle', 'line'];
+    const tools = ['select', 'pen', 'highlighter', 'eraser', 'note', 'text', 'rect', 'circle', 'line'];
     tools.forEach(t => {
       const btn = document.getElementById(`tool-${t}`);
+      if (!btn) return;
       btn.onclick = () => {
         tools.forEach(other => document.getElementById(`tool-${other}`)?.classList.remove('active'));
         btn.classList.add('active');
@@ -650,12 +704,27 @@ export class UIController {
           return;
         }
 
+        if (t === 'eraser') {
+          this.app.annotator.setTool('eraser');
+          this.setStatus('Eraser active: click or drag across ink, highlighters, or text boxes to erase');
+          return;
+        }
+
         let toolName = t;
         if (t === 'rect') toolName = 'rectangle';
         this.app.annotator.setTool(toolName, {
           color: document.getElementById('annot-color').value,
-          strokeWidth: parseInt(document.getElementById('annot-size').value, 10)
+          strokeWidth: parseInt(document.getElementById('annot-size').value, 10),
+          fontSize: parseInt(document.getElementById('annot-font-size').value, 10),
+          fontFamily: document.getElementById('annot-font-family').value
         });
+        if (t === 'text') {
+          this.setStatus('Click anywhere on the document to place a rich text block');
+        } else if (t === 'pen') {
+          this.setStatus('Freehand pen active');
+        } else if (t === 'highlighter') {
+          this.setStatus('Highlighter brush active');
+        }
       };
     });
 
@@ -666,11 +735,39 @@ export class UIController {
     });
 
     document.getElementById('annot-color').onchange = (e) => {
-      this.app.annotator.color = e.target.value;
+      this.app.annotator.setColor(e.target.value);
     };
 
     document.getElementById('annot-size').onchange = (e) => {
       this.app.annotator.strokeWidth = parseInt(e.target.value, 10);
+    };
+
+    document.getElementById('annot-font-family').onchange = (e) => {
+      this.app.annotator.setFontFamily(e.target.value);
+    };
+
+    document.getElementById('annot-font-size').onchange = (e) => {
+      this.app.annotator.setFontSize(e.target.value);
+    };
+
+    document.getElementById('btn-text-bold').onclick = () => {
+      const isBold = this.app.annotator.toggleBold();
+      document.getElementById('btn-text-bold').classList.toggle('active', isBold);
+    };
+
+    document.getElementById('btn-text-italic').onclick = () => {
+      const isItalic = this.app.annotator.toggleItalic();
+      document.getElementById('btn-text-italic').classList.toggle('active', isItalic);
+    };
+
+    document.getElementById('btn-text-underline').onclick = () => {
+      const isUnder = this.app.annotator.toggleUnderline();
+      document.getElementById('btn-text-underline').classList.toggle('active', isUnder);
+    };
+
+    document.getElementById('btn-text-delete').onclick = () => {
+      this.app.annotator.deleteActiveTextBox();
+      this.setStatus('Text box removed');
     };
 
     document.getElementById('annot-stamp').onchange = (e) => {
@@ -707,7 +804,7 @@ export class UIController {
     };
 
     document.getElementById('btn-open-merge').onclick = () => {
-      document.getElementById('modal-merge').classList.add('open');
+      this.app.openMergeModal();
     };
 
     document.getElementById('btn-open-split').onclick = () => {
@@ -732,20 +829,46 @@ export class UIController {
       <div class="divider"></div>
       <div class="tool-group">
         <select id="edit-font-family" class="tool-select" title="Font Family">
-          <option value="Inter, sans-serif" selected>Helvetica (Sans-Serif)</option>
-          <option value="'Times New Roman', serif">Times (Serif)</option>
-          <option value="'Courier New', monospace">Courier (Mono)</option>
+          <option value="Inter, sans-serif" selected>Inter / Arial (Clean Sans)</option>
+          <option value="'Roboto', sans-serif">Roboto (Modern Sans)</option>
+          <option value="'Times New Roman', serif">Times New Roman (Serif)</option>
+          <option value="'Georgia', serif">Georgia (Editorial Serif)</option>
+          <option value="'Garamond', serif">Garamond (Classic Serif)</option>
+          <option value="'Courier New', monospace">Courier New (Monospace)</option>
+          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+          <option value="'Verdana', sans-serif">Verdana</option>
+          <option value="'Dancing Script', cursive">Dancing Script (Handwriting)</option>
+          <option value="'Impact', sans-serif">Impact (Headline)</option>
         </select>
         <select id="edit-font-size" class="tool-select" title="Font Size">
+          <option value="10">10 pt</option>
           <option value="12">12 pt</option>
           <option value="14">14 pt</option>
           <option value="16" selected>16 pt</option>
+          <option value="18">18 pt</option>
           <option value="20">20 pt</option>
           <option value="24">24 pt</option>
+          <option value="28">28 pt</option>
           <option value="32">32 pt</option>
+          <option value="36">36 pt</option>
           <option value="48">48 pt</option>
+          <option value="64">64 pt</option>
+          <option value="72">72 pt</option>
+        </select>
+        <button id="btn-edit-bold" class="tool-btn" title="Bold">𝐁</button>
+        <button id="btn-edit-italic" class="tool-btn" title="Italic">𝑰</button>
+        <button id="btn-edit-underline" class="tool-btn" title="Underline">𝐔̲</button>
+        <button id="btn-edit-align-left" class="tool-btn" title="Align Left">⇤</button>
+        <button id="btn-edit-align-center" class="tool-btn" title="Align Center">⇋</button>
+        <button id="btn-edit-align-right" class="tool-btn" title="Align Right">⇥</button>
+        <select id="edit-line-spacing" class="tool-select" title="Line Spacing">
+          <option value="1.0">1.0x</option>
+          <option value="1.25" selected>1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2.0">2.0x</option>
         </select>
         <input type="color" id="edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:28px; height:28px;" title="Text Color">
+        <button id="btn-edit-delete-box" class="tool-btn" style="color:#ef4444;" title="Delete Selected Text Box">🗑</button>
       </div>
       <div class="divider"></div>
       <div class="tool-group">
@@ -789,6 +912,7 @@ export class UIController {
       this.app.viewer.setContentEditingMode(false);
       this.app.annotator.setTool('text', {
         fontSize: parseInt(document.getElementById('edit-font-size').value, 10),
+        fontFamily: document.getElementById('edit-font-family').value,
         color: document.getElementById('edit-font-color').value
       });
       this.setStatus('Click anywhere on the document to place a new text block');
@@ -804,8 +928,8 @@ export class UIController {
       if (file) {
         const reader = new FileReader();
         reader.onload = (evt) => {
-          this.app.insertImageOnPage(this.app.viewer.currentPage, evt.target.result);
-          this.setStatus('Image placed. Drag and resize as needed.');
+          this.app.insertImageOnPage(undefined, evt.target.result);
+          this.setStatus('Image placed in current view. Drag and resize as needed.');
         };
         reader.readAsDataURL(file);
       }
@@ -817,16 +941,49 @@ export class UIController {
       btnInline.classList.remove('active');
       btnText.classList.remove('active');
       btnImg.classList.remove('active');
-      this.app.insertWhiteoutOnPage(this.app.viewer.currentPage);
+      const target = this.app.getVisibleCenterTarget();
+      this.app.insertWhiteoutOnPage(target.pageNum, target.x, target.y);
       this.setStatus('Whiteout box placed. Move over unwanted text to cover it.');
     };
 
-    // Font updates
+    // Font updates wired directly to active text box
+    document.getElementById('edit-font-family').onchange = (e) => {
+      this.app.annotator.setFontFamily(e.target.value);
+    };
     document.getElementById('edit-font-size').onchange = (e) => {
-      this.app.annotator.fontSize = parseInt(e.target.value, 10);
+      this.app.annotator.setFontSize(e.target.value);
     };
     document.getElementById('edit-font-color').onchange = (e) => {
-      this.app.annotator.color = e.target.value;
+      this.app.annotator.setColor(e.target.value);
+    };
+
+    document.getElementById('btn-edit-bold').onclick = () => {
+      const isBold = this.app.annotator.toggleBold();
+      document.getElementById('btn-edit-bold').classList.toggle('active', isBold);
+    };
+    document.getElementById('btn-edit-italic').onclick = () => {
+      const isItalic = this.app.annotator.toggleItalic();
+      document.getElementById('btn-edit-italic').classList.toggle('active', isItalic);
+    };
+    document.getElementById('btn-edit-underline').onclick = () => {
+      const isUnder = this.app.annotator.toggleUnderline();
+      document.getElementById('btn-edit-underline').classList.toggle('active', isUnder);
+    };
+    document.getElementById('btn-edit-align-left').onclick = () => {
+      this.app.annotator.setTextAlign('left');
+    };
+    document.getElementById('btn-edit-align-center').onclick = () => {
+      this.app.annotator.setTextAlign('center');
+    };
+    document.getElementById('btn-edit-align-right').onclick = () => {
+      this.app.annotator.setTextAlign('right');
+    };
+    document.getElementById('edit-line-spacing').onchange = (e) => {
+      this.app.annotator.setLineHeight(parseFloat(e.target.value));
+    };
+    document.getElementById('btn-edit-delete-box').onclick = () => {
+      this.app.annotator.deleteActiveTextBox();
+      this.setStatus('Text box removed');
     };
 
     // Modals
@@ -840,6 +997,34 @@ export class UIController {
 
     // Default activate in-place editing
     btnInline.click();
+  }
+
+  syncActiveTextBox(box) {
+    if (!box) return;
+    const cs = window.getComputedStyle(box);
+    const fontFamEl = document.getElementById('edit-font-family') || document.getElementById('annot-font-family');
+    const fontSizeEl = document.getElementById('edit-font-size') || document.getElementById('annot-font-size');
+    const colorEl = document.getElementById('edit-font-color') || document.getElementById('annot-color');
+    const boldBtn = document.getElementById('btn-edit-bold') || document.getElementById('btn-text-bold');
+    const italicBtn = document.getElementById('btn-edit-italic') || document.getElementById('btn-text-italic');
+    const underlineBtn = document.getElementById('btn-edit-underline') || document.getElementById('btn-text-underline');
+
+    if (fontSizeEl) {
+      const fSize = parseInt(cs.fontSize, 10);
+      if (fSize) fontSizeEl.value = fSize.toString();
+    }
+    if (boldBtn) {
+      const isBold = box.style.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 700;
+      boldBtn.classList.toggle('active', isBold);
+    }
+    if (italicBtn) {
+      const isItalic = box.style.fontStyle === 'italic';
+      italicBtn.classList.toggle('active', isItalic);
+    }
+    if (underlineBtn) {
+      const isUnder = box.style.textDecoration && box.style.textDecoration.includes('underline');
+      underlineBtn.classList.toggle('active', isUnder);
+    }
   }
 
   _renderFormsTools() {

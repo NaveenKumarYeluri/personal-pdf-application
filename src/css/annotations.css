@@ -63,21 +63,65 @@
 /* Placed Textbox / Typewriter Annotation */
 .annotation-textbox {
   position: absolute;
-  padding: 4px 8px;
-  border: 1px dashed transparent;
+  padding: 6px 10px;
+  border: 1.5px dashed transparent;
   color: #111827;
   cursor: move;
-  z-index: 10;
+  z-index: 25;
   pointer-events: auto;
-  min-width: 60px;
-  min-height: 24px;
+  min-width: 80px;
+  min-height: 32px;
   outline: none;
+  resize: both;
+  overflow: auto;
+  border-radius: 4px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.annotation-textbox:hover, .annotation-textbox:focus {
-  border-color: var(--accent-blue);
-  background-color: rgba(255, 255, 255, 0.85);
-  box-shadow: var(--shadow-sm);
+.annotation-textbox:hover,
+.annotation-textbox:focus,
+.annotation-textbox.active {
+  border-color: var(--accent-blue) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Floating Delete Button for Textboxes, Stamps & Signatures */
+.textbox-delete-btn {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #ef4444;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  z-index: 60;
+  padding: 0;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.annotation-textbox:hover .textbox-delete-btn,
+.annotation-textbox.active .textbox-delete-btn,
+.annotation-textbox:focus .textbox-delete-btn,
+.placed-stamp:hover .textbox-delete-btn,
+.placed-image-box:hover .textbox-delete-btn,
+.placed-signature-box:hover .textbox-delete-btn {
+  display: flex !important;
+}
+
+.textbox-delete-btn:hover {
+  background-color: #dc2626;
+  transform: scale(1.18);
 }
 
 /* Placed Signatures & Stamps */
