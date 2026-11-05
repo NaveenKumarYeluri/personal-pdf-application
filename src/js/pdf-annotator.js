@@ -15,6 +15,8 @@ export class PDFAnnotatorEngine {
     // Store annotations per page
     // Map<pageNum, Array<AnnotationObject>>
     this.annotations = new Map();
+    this.undoStack = [];
+    this.redoStack = [];
     this.isDrawing = false;
     this.currentPath = [];
     this.activeCanvas = null;
@@ -121,6 +123,14 @@ export class PDFAnnotatorEngine {
         this.annotations.set(this.activePageNum, []);
       }
       this.annotations.get(this.activePageNum).push(annot);
+
+      // Record to undo stack
+      this.undoStack.push({
+        type: 'stroke',
+        pageNum: this.activePageNum,
+        data: annot
+      });
+      this.redoStack = [];
     }
 
     this.currentPath = [];
@@ -276,6 +286,13 @@ export class PDFAnnotatorEngine {
     wrapper.appendChild(marker);
     wrapper.appendChild(popup);
     popup.querySelector('textarea').focus();
+
+    this.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [marker, popup]
+    });
+    this.redoStack = [];
   }
 
   _addTextBox(pageNum, x, y) {
@@ -297,6 +314,13 @@ export class PDFAnnotatorEngine {
     box.onblur = () => {
       if (!box.innerText.trim()) box.remove();
     };
+
+    this.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [box]
+    });
+    this.redoStack = [];
   }
 
   placeStamp(pageNum, stampType = 'APPROVED', x = 100, y = 100) {
@@ -316,6 +340,61 @@ export class PDFAnnotatorEngine {
     // Make draggable
     this._makeDraggable(stamp, wrapper);
     wrapper.appendChild(stamp);
+
+    this.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [stamp]
+    });
+    this.redoStack = [];
+  }
+
+  undo() {
+    if (this.undoStack.length === 0) return false;
+    const action = this.undoStack.pop();
+    this.redoStack.push(action);
+
+    if (action.type === 'stroke') {
+      const pageAnnots = this.annotations.get(action.pageNum);
+      if (pageAnnots && pageAnnots.length > 0) {
+        const idx = pageAnnots.lastIndexOf(action.data);
+        if (idx !== -1) {
+          pageAnnots.splice(idx, 1);
+        } else {
+          pageAnnots.pop();
+        }
+        this._redrawPageAnnotations(action.pageNum);
+      }
+    } else if (action.type === 'element') {
+      action.elements.forEach(el => {
+        if (el && el.parentNode) {
+          el._savedParent = el.parentNode;
+          el.remove();
+        }
+      });
+    }
+    return true;
+  }
+
+  redo() {
+    if (this.redoStack.length === 0) return false;
+    const action = this.redoStack.pop();
+    this.undoStack.push(action);
+
+    if (action.type === 'stroke') {
+      if (!this.annotations.has(action.pageNum)) {
+        this.annotations.set(action.pageNum, []);
+      }
+      this.annotations.get(action.pageNum).push(action.data);
+      this._redrawPageAnnotations(action.pageNum);
+    } else if (action.type === 'element') {
+      action.elements.forEach(el => {
+        if (el && el._savedParent) {
+          el._savedParent.appendChild(el);
+        }
+      });
+    }
+    return true;
   }
 
   /**
@@ -411,6 +490,17 @@ export class PDFAnnotatorEngine {
         const rh = rb.offsetHeight * scaleY;
         compCtx.fillStyle = '#000000';
         compCtx.fillRect(rx, ry, rw, rh);
+      }
+
+      // 5. Draw whiteout boxes
+      const whiteouts = wrapper.querySelectorAll('.whiteout-box');
+      for (const wb of whiteouts) {
+        const wx = wb.offsetLeft * scaleX;
+        const wy = wb.offsetTop * scaleY;
+        const ww = wb.offsetWidth * scaleX;
+        const wh = wb.offsetHeight * scaleY;
+        compCtx.fillStyle = '#ffffff';
+        compCtx.fillRect(wx, wy, ww, wh);
       }
 
       // Embed composite canvas image into PDF page

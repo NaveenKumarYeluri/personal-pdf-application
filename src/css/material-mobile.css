@@ -22,7 +22,15 @@
   --m3-elevation-3: 0px 4px 8px 3px rgba(0,0,0,0.15), 0px 1px 3px rgba(0,0,0,0.3);
 }
 
-/* Hide M3 mobile elements on desktop by default */
+/* ==========================================================================
+   DESKTOP DEFAULT: Strictly hide ALL mobile / Android elements on screens > 768px
+   ========================================================================== */
+.m3-top-app-bar,
+.m3-bottom-nav,
+.m3-fab,
+.m3-bottom-sheet,
+.m3-drawer,
+.m3-scrim,
 .m3-only {
   display: none !important;
 }
@@ -37,7 +45,12 @@
     display: none !important;
   }
 
-  /* Show M3 mobile components */
+  /* Show M3 mobile components on mobile screens only */
+  .m3-top-app-bar,
+  .m3-bottom-nav,
+  .m3-fab,
+  .m3-bottom-sheet,
+  .m3-drawer,
   .m3-only {
     display: flex !important;
   }

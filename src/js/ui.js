@@ -208,15 +208,35 @@ export class UIController {
 
   _initTheme() {
     const btnTheme = document.getElementById('btn-toggle-theme');
-    const themes = ['theme-dark', 'theme-light', 'theme-sepia', 'theme-night'];
-    let themeIndex = 0;
+    const themeIcon = document.getElementById('theme-icon');
+
+    const updateIcon = (isDark) => {
+      if (!themeIcon) return;
+      if (isDark) {
+        // Show Sun icon (switch to light)
+        themeIcon.innerHTML = `<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>`;
+        btnTheme.title = 'Switch to Light Mode';
+      } else {
+        // Show Moon icon (switch to dark)
+        themeIcon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
+        btnTheme.title = 'Switch to Dark Mode';
+      }
+    };
 
     if (btnTheme) {
       btnTheme.onclick = () => {
-        document.body.classList.remove(themes[themeIndex]);
-        themeIndex = (themeIndex + 1) % themes.length;
-        document.body.classList.add(themes[themeIndex]);
-        this.setStatus(`Theme set to ${themes[themeIndex].replace('theme-', '')}`);
+        const isCurrentlyDark = document.body.classList.contains('theme-dark');
+        if (isCurrentlyDark) {
+          document.body.classList.remove('theme-dark', 'theme-sepia', 'theme-night');
+          document.body.classList.add('theme-light');
+          updateIcon(false);
+          this.setStatus('Light theme active');
+        } else {
+          document.body.classList.remove('theme-light', 'theme-sepia', 'theme-night');
+          document.body.classList.add('theme-dark');
+          updateIcon(true);
+          this.setStatus('Dark theme active');
+        }
       };
     }
   }
@@ -386,11 +406,91 @@ export class UIController {
   _renderEditTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="btn-open-watermark" class="btn btn-sm btn-outline">Add Watermark</button>
-        <button id="btn-open-bates" class="btn btn-sm btn-outline">Header / Footer / Bates</button>
+        <button id="btn-edit-add-text" class="tool-btn active" title="Add / Edit Text Block">T</button>
+        <button id="btn-edit-add-image" class="tool-btn" title="Insert Image onto PDF">🖼️</button>
+        <button id="btn-edit-whiteout" class="tool-btn" title="Whiteout / Erase Existing Content">⬜</button>
+        <input type="file" id="edit-image-file-input" accept="image/png, image/jpeg" style="display:none;">
+      </div>
+      <div class="divider"></div>
+      <div class="tool-group">
+        <select id="edit-font-family" class="tool-select" title="Font Family">
+          <option value="Inter, sans-serif" selected>Helvetica (Sans-Serif)</option>
+          <option value="'Times New Roman', serif">Times (Serif)</option>
+          <option value="'Courier New', monospace">Courier (Mono)</option>
+        </select>
+        <select id="edit-font-size" class="tool-select" title="Font Size">
+          <option value="12">12 pt</option>
+          <option value="14">14 pt</option>
+          <option value="16" selected>16 pt</option>
+          <option value="20">20 pt</option>
+          <option value="24">24 pt</option>
+          <option value="32">32 pt</option>
+          <option value="48">48 pt</option>
+        </select>
+        <input type="color" id="edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:28px; height:28px;" title="Text Color">
+      </div>
+      <div class="divider"></div>
+      <div class="tool-group">
+        <button id="btn-open-watermark" class="btn btn-sm btn-outline">Watermark</button>
+        <button id="btn-open-bates" class="btn btn-sm btn-outline">Bates Numbers</button>
       </div>
     `;
 
+    // 1. Add Text
+    const btnText = document.getElementById('btn-edit-add-text');
+    const btnImg = document.getElementById('btn-edit-add-image');
+    const btnWhiteout = document.getElementById('btn-edit-whiteout');
+    const imgInput = document.getElementById('edit-image-file-input');
+
+    btnText.onclick = () => {
+      btnText.classList.add('active');
+      btnImg.classList.remove('active');
+      btnWhiteout.classList.remove('active');
+      this.app.annotator.setTool('text', {
+        fontSize: parseInt(document.getElementById('edit-font-size').value, 10),
+        color: document.getElementById('edit-font-color').value
+      });
+      this.setStatus('Click anywhere on the document to add or edit text');
+    };
+
+    // Default activate text tool in edit mode
+    btnText.click();
+
+    // 2. Add Image
+    btnImg.onclick = () => {
+      imgInput.click();
+    };
+
+    imgInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          this.app.insertImageOnPage(this.app.viewer.currentPage, evt.target.result);
+          this.setStatus('Image placed. Drag and resize as needed.');
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+
+    // 3. Whiteout
+    btnWhiteout.onclick = () => {
+      btnWhiteout.classList.add('active');
+      btnText.classList.remove('active');
+      btnImg.classList.remove('active');
+      this.app.insertWhiteoutOnPage(this.app.viewer.currentPage);
+      this.setStatus('Whiteout box placed. Move over unwanted text to cover it.');
+    };
+
+    // Font updates
+    document.getElementById('edit-font-size').onchange = (e) => {
+      this.app.annotator.fontSize = parseInt(e.target.value, 10);
+    };
+    document.getElementById('edit-font-color').onchange = (e) => {
+      this.app.annotator.color = e.target.value;
+    };
+
+    // Modals
     document.getElementById('btn-open-watermark').onclick = () => {
       document.getElementById('modal-watermark').classList.add('open');
     };

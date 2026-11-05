@@ -102,6 +102,24 @@ class PersonalPDFApp {
       }
     });
 
+    // Undo / Redo
+    const btnUndo = document.getElementById('btn-undo');
+    const btnRedo = document.getElementById('btn-redo');
+
+    if (btnUndo) {
+      btnUndo.onclick = () => {
+        const ok = this.annotator.undo();
+        this.ui.setStatus(ok ? 'Undo action' : 'Nothing to undo');
+      };
+    }
+
+    if (btnRedo) {
+      btnRedo.onclick = () => {
+        const ok = this.annotator.redo();
+        this.ui.setStatus(ok ? 'Redo action' : 'Nothing to redo');
+      };
+    }
+
     // Page navigation
     document.getElementById('btn-prev-page').onclick = () => {
       this.viewer.goToPage(this.viewer.currentPage - 1);
@@ -137,6 +155,17 @@ class PersonalPDFApp {
     document.getElementById('btn-rotate-cw').onclick = () => {
       this.viewer.rotateClockwise();
     };
+
+    // Sidebar Toggle
+    const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+    const sidebar = document.getElementById('sidebar');
+    if (btnToggleSidebar && sidebar) {
+      btnToggleSidebar.onclick = () => {
+        sidebar.classList.toggle('collapsed');
+        btnToggleSidebar.classList.toggle('active');
+        this.ui.setStatus(sidebar.classList.contains('collapsed') ? 'Sidebar hidden' : 'Sidebar visible');
+      };
+    }
 
     // Document Properties
     const btnDocProps = document.getElementById('btn-doc-props');
@@ -283,6 +312,16 @@ class PersonalPDFApp {
         if (e.key === 'o' || e.key === 'O') {
           e.preventDefault();
           fileInput.click();
+        } else if (e.key === 'z' || e.key === 'Z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            this.annotator.redo();
+          } else {
+            this.annotator.undo();
+          }
+        } else if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          this.annotator.redo();
         } else if (e.key === 's' || e.key === 'S') {
           e.preventDefault();
           this.saveDocument();
@@ -648,6 +687,95 @@ class PersonalPDFApp {
         document.getElementById('watermark-opacity-val').textContent = `${e.target.value}%`;
       };
     }
+  }
+
+  insertImageOnPage(pageNum, dataUrl, x = 120, y = 150) {
+    const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+    if (!wrapper) return;
+
+    const container = document.createElement('div');
+    container.className = 'placed-stamp placed-image-box';
+    container.style.left = `${x}px`;
+    container.style.top = `${y}px`;
+    container.style.width = '200px';
+
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.width = '100%';
+    img.style.display = 'block';
+    container.appendChild(img);
+
+    // Delete button
+    const btnDel = document.createElement('button');
+    btnDel.className = 'tool-btn-sm';
+    btnDel.style.position = 'absolute';
+    btnDel.style.top = '-10px';
+    btnDel.style.right = '-10px';
+    btnDel.style.background = '#ef4444';
+    btnDel.style.color = '#fff';
+    btnDel.style.borderRadius = '50%';
+    btnDel.style.width = '20px';
+    btnDel.style.height = '20px';
+    btnDel.innerHTML = '&times;';
+    btnDel.onclick = (e) => {
+      e.stopPropagation();
+      container.remove();
+    };
+    container.appendChild(btnDel);
+
+    // Draggable
+    this.annotator._makeDraggable(container, wrapper);
+    wrapper.appendChild(container);
+
+    this.annotator.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [container]
+    });
+    this.annotator.redoStack = [];
+  }
+
+  insertWhiteoutOnPage(pageNum, x = 150, y = 150, width = 140, height = 28) {
+    const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+    if (!wrapper) return;
+
+    const box = document.createElement('div');
+    box.className = 'placed-stamp whiteout-box';
+    box.style.left = `${x}px`;
+    box.style.top = `${y}px`;
+    box.style.width = `${width}px`;
+    box.style.height = `${height}px`;
+    box.style.backgroundColor = '#ffffff';
+    box.style.border = '1.5px dashed #3b82f6';
+    box.title = 'Whiteout block (drags to cover text)';
+
+    // Delete button
+    const btnDel = document.createElement('button');
+    btnDel.className = 'tool-btn-sm';
+    btnDel.style.position = 'absolute';
+    btnDel.style.top = '-8px';
+    btnDel.style.right = '-8px';
+    btnDel.style.background = '#ef4444';
+    btnDel.style.color = '#fff';
+    btnDel.style.borderRadius = '50%';
+    btnDel.style.width = '18px';
+    btnDel.style.height = '18px';
+    btnDel.innerHTML = '&times;';
+    btnDel.onclick = (e) => {
+      e.stopPropagation();
+      box.remove();
+    };
+    box.appendChild(btnDel);
+
+    this.annotator._makeDraggable(box, wrapper);
+    wrapper.appendChild(box);
+
+    this.annotator.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [box]
+    });
+    this.annotator.redoStack = [];
   }
 
   async insertBlankPage() {

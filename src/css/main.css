@@ -36,18 +36,21 @@
 
 body.theme-light {
   --bg-primary: #f8fafc;
-  --bg-secondary: #f1f5f9;
-  --bg-tertiary: #e2e8f0;
-  --bg-canvas: #cbd5e1;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --bg-canvas: #e5e7eb;
   --bg-surface: #ffffff;
-  --border-color: #cbd5e1;
-  --border-subtle: #e2e8f0;
+  --border-color: #d1d5db;
+  --border-subtle: #e5e7eb;
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
 
-  --shadow-pdf: 0 8px 24px rgba(0, 0, 0, 0.15);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-pdf: 0 4px 18px rgba(0, 0, 0, 0.15);
 }
 
 body.theme-sepia {
@@ -422,12 +425,16 @@ body {
   flex-shrink: 0;
   transition: width 0.2s ease, transform 0.2s ease;
   z-index: 20;
+  overflow: hidden;
 }
 
 .sidebar.collapsed {
-  width: 0;
-  transform: translateX(-100%);
-  border-right: none;
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  border-right: none !important;
+  pointer-events: none !important;
 }
 
 .sidebar-tabs {
