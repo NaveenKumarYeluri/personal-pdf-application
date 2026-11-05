@@ -502,8 +502,36 @@ export class UIController {
         document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
         const targetPane = document.getElementById(`tab-${tab.dataset.tab}`);
         if (targetPane) targetPane.classList.add('active');
+
+        if (tab.dataset.tab === 'outline') {
+          this.syncBookmarks();
+        } else if (tab.dataset.tab === 'annotations') {
+          this.syncAnnotationsList();
+        }
       };
     });
+
+    const btnAddBm = document.getElementById('btn-add-bookmark');
+    if (btnAddBm) {
+      btnAddBm.onclick = () => {
+        const pageNum = this.app.viewer.currentPage || 1;
+        const defaultTitle = `Page ${pageNum} Bookmark`;
+        const title = prompt('Enter bookmark title:', defaultTitle);
+        if (title && title.trim()) {
+          this.app.addCustomBookmark(title.trim(), pageNum);
+          this.syncBookmarks();
+          this.showToast(`Bookmark added for Page ${pageNum}`, 'success');
+        }
+      };
+    }
+
+    const btnRefreshAnnots = document.getElementById('btn-refresh-annotations');
+    if (btnRefreshAnnots) {
+      btnRefreshAnnots.onclick = () => {
+        this.syncAnnotationsList();
+        this.showToast('Annotations list updated', 'info');
+      };
+    }
   }
 
   _initModals() {
@@ -618,12 +646,21 @@ export class UIController {
   _renderViewTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="btn-tool-hand" class="tool-btn" title="Hand / Pan Tool (Click & drag to move pages)">✋ Pan</button>
-        <button id="btn-tool-select" class="tool-btn active" title="Text Selection Tool">I Select Text</button>
+        <button id="btn-tool-select" class="tool-btn active" title="Text Selection Tool (Select & highlight text)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+          <span>Select Text</span>
+        </button>
+        <button id="btn-tool-hand" class="tool-btn" title="Hand / Pan Tool (Click & drag to move pages)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v6M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8M6 14a4 4 0 0 0 4 4h4a6 6 0 0 0 6-6V9a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2"/></svg>
+          <span>Pan</span>
+        </button>
       </div>
       <div class="divider"></div>
       <div class="tool-group">
-        <button id="btn-copy-selection" class="btn btn-sm btn-outline" title="Copy selected text">Copy Text</button>
+        <button id="btn-copy-selection" class="tool-btn" title="Copy selected text to clipboard">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>Copy Text</span>
+        </button>
       </div>
     `;
 
@@ -691,13 +728,53 @@ export class UIController {
       this.setStatus('Text selection active: click & drag to select and copy text');
     };
 
-    btnCopy.onclick = () => {
-      const selectedText = window.getSelection().toString();
-      if (selectedText) {
-        navigator.clipboard.writeText(selectedText);
-        this.setStatus(`Copied ${selectedText.length} characters to clipboard`);
+    // Prevent copy button click from stealing focus or deselecting document text
+    btnCopy.onmousedown = (e) => {
+      e.preventDefault();
+    };
+
+    btnCopy.onclick = async () => {
+      let selectedText = window.getSelection().toString();
+      if (!selectedText) {
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+          selectedText = activeEl.value || activeEl.innerText;
+        }
+      }
+
+      if (selectedText && selectedText.trim()) {
+        // Clean encoding: replace corrupted ligatures, PUA chars, soft hyphens, and non-standard spacing
+        const cleanText = selectedText
+          .replace(/\uFB01/g, 'fi')
+          .replace(/\uFB02/g, 'fl')
+          .replace(/\uFB00/g, 'ff')
+          .replace(/\uFB03/g, 'ffi')
+          .replace(/\uFB04/g, 'ffl')
+          .replace(/\u00AD/g, '') // Soft hyphen
+          .replace(/\u200B/g, '') // Zero-width space
+          .replace(/[\u2018\u2019]/g, "'")
+          .replace(/[\u201C\u201D]/g, '"')
+          .replace(/[\u2013\u2014]/g, '-')
+          .replace(/\u00A0/g, ' ')
+          .replace(/[\uE000-\uF8FF]/g, '') // Remove Private Use Area characters
+          .normalize('NFC');
+
+        try {
+          await navigator.clipboard.writeText(cleanText);
+          this.showToast(`Copied ${cleanText.length} characters to clipboard`, 'success');
+          this.setStatus(`Copied ${cleanText.length} characters to clipboard`);
+        } catch (_) {
+          const ta = document.createElement('textarea');
+          ta.value = cleanText;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+          this.showToast(`Copied ${cleanText.length} characters to clipboard`, 'success');
+          this.setStatus(`Copied ${cleanText.length} characters to clipboard`);
+        }
       } else {
-        this.setStatus('No text currently selected to copy');
+        this.setStatus('No text selected. Drag mouse over document text first to select.');
       }
     };
   }
@@ -1195,26 +1272,206 @@ export class UIController {
   _renderExportTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="btn-export-page-img" class="btn btn-sm btn-outline">Export Current Page (PNG)</button>
-        <button id="btn-export-text" class="btn btn-sm btn-outline">Extract All Text (TXT)</button>
+        <button id="btn-export-page-img" class="tool-btn" title="Export Current Page as High-Resolution PNG">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>Export Page (PNG)</span>
+        </button>
+        <button id="btn-export-text" class="tool-btn" title="Extract All Document Text as TXT file">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span>Extract All Text (TXT)</span>
+        </button>
       </div>
     `;
 
     document.getElementById('btn-export-page-img').onclick = async () => {
+      this.setStatus(`Exporting page ${this.app.viewer.currentPage} as PNG...`);
       const img = await this.app.exporter.exportPageAsImage(this.app.viewer.currentPage);
       if (img) {
+        const fileName = `page-${this.app.viewer.currentPage}.png`;
         this.app.exporter.downloadFile(
           this._dataURLtoBlob(img),
-          `page-${this.app.viewer.currentPage}.png`,
+          fileName,
           'image/png'
         );
+        this.showToast(`Export Complete: Page ${this.app.viewer.currentPage} saved as ${fileName}`, 'success');
+        this.setStatus(`Exported Page ${this.app.viewer.currentPage} successfully as PNG`);
       }
     };
 
     document.getElementById('btn-export-text').onclick = async () => {
+      this.setStatus('Extracting document text...');
       const text = await this.app.exporter.extractAllText();
-      this.app.exporter.downloadFile(text, 'document-text.txt', 'text/plain');
+      const fileName = `${(this.app.currentDocName || 'document').replace(/\.pdf$/i, '')}-text.txt`;
+      this.app.exporter.downloadFile(text, fileName, 'text/plain');
+      this.showToast(`Export Complete: All text saved to ${fileName}`, 'success');
+      this.setStatus(`Exported text (${text.length} characters) successfully`);
     };
+  }
+
+  showToast(msg, type = 'info') {
+    let container = document.getElementById('app-toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'app-toast-container';
+      container.className = 'app-toast-container';
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = `app-toast toast-${type}`;
+    const icon = type === 'success' ? '✔' : type === 'error' ? '✖' : 'ℹ';
+    toast.textContent = `${icon} ${msg}`;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('visible'));
+    setTimeout(() => {
+      toast.classList.remove('visible');
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  }
+
+  syncBookmarks() {
+    const container = document.getElementById('outline-container');
+    if (!container) return;
+    const customBms = this.app.customBookmarks || [];
+    const hasOutlineItems = container.querySelectorAll('.outline-item').length > 0;
+    
+    if (customBms.length === 0 && !hasOutlineItems) {
+      container.innerHTML = '<div class="empty-state">No bookmarks found. Click "+ Add" above to bookmark the current page.</div>';
+      return;
+    }
+
+    if (customBms.length > 0) {
+      // If there are custom bookmarks, render them
+      container.innerHTML = '';
+      customBms.forEach((bm, idx) => {
+        const item = document.createElement('div');
+        item.className = 'bookmark-list-item';
+        item.innerHTML = `
+          <div class="bookmark-list-left">
+            <span>🔖</span>
+            <span class="bookmark-title">${bm.title}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="annot-page-badge">Page ${bm.pageNum}</span>
+            <button class="bookmark-delete-btn" title="Delete Bookmark">&times;</button>
+          </div>
+        `;
+        item.onclick = (e) => {
+          if (e.target.classList.contains('bookmark-delete-btn')) {
+            e.stopPropagation();
+            this.app.customBookmarks.splice(idx, 1);
+            this.syncBookmarks();
+            this.showToast('Bookmark removed', 'info');
+            return;
+          }
+          this.app.viewer.goToPage(bm.pageNum);
+        };
+        container.appendChild(item);
+      });
+    }
+  }
+
+  syncAnnotationsList() {
+    const list = document.getElementById('annotations-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const items = [];
+
+    // 1. Text boxes & sticky notes & stamps & in-place edits from pages
+    document.querySelectorAll('.page-wrapper').forEach(w => {
+      const pageNum = parseInt(w.id.replace('page-wrapper-', ''), 10) || 1;
+
+      // Textboxes
+      w.querySelectorAll('.annotation-textbox:not(.in-place-editor)').forEach(tb => {
+        const text = (tb.innerText || '').trim();
+        items.push({
+          type: 'text',
+          icon: 'T',
+          label: text ? `Text: "${text.substring(0, 25)}..."` : 'Text Box',
+          pageNum,
+          el: tb
+        });
+      });
+
+      // Sticky notes
+      w.querySelectorAll('.sticky-note').forEach(note => {
+        const text = (note.querySelector('textarea')?.value || '').trim();
+        items.push({
+          type: 'note',
+          icon: '💬',
+          label: text ? `Note: "${text.substring(0, 25)}..."` : 'Sticky Note',
+          pageNum,
+          el: note
+        });
+      });
+
+      // Stamps
+      w.querySelectorAll('.placed-stamp').forEach(stamp => {
+        const badge = stamp.querySelector('.stamp-badge');
+        items.push({
+          type: 'stamp',
+          icon: '✍️',
+          label: badge ? `Stamp: ${badge.textContent}` : 'Stamp / Signature',
+          pageNum,
+          el: stamp
+        });
+      });
+
+      // In-place edits
+      w.querySelectorAll('.textLayer span.in-place-modified, .textLayer span.inline-editing').forEach(span => {
+        items.push({
+          type: 'edit',
+          icon: '📝',
+          label: `Edit: "${(span.textContent || '').substring(0, 25)}..."`,
+          pageNum,
+          el: span
+        });
+      });
+    });
+
+    // Ink drawings
+    if (this.app.annotator?.annotations) {
+      for (const [pageNum, strokes] of this.app.annotator.annotations.entries()) {
+        if (strokes && strokes.length > 0) {
+          items.push({
+            type: 'ink',
+            icon: '✏️',
+            label: `Drawings (${strokes.length} strokes)`,
+            pageNum,
+            el: document.getElementById(`annot-canvas-${pageNum}`)
+          });
+        }
+      }
+    }
+
+    if (items.length === 0) {
+      list.innerHTML = '<div class="empty-state">No annotations added yet. Use Annotate & Markup tools above to add notes, drawings, or text.</div>';
+      return;
+    }
+
+    items.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'annot-list-item';
+      row.innerHTML = `
+        <div class="annot-list-left">
+          <span>${item.icon}</span>
+          <span>${item.label}</span>
+        </div>
+        <span class="annot-page-badge">Page ${item.pageNum}</span>
+      `;
+      row.onclick = () => {
+        this.app.viewer.goToPage(item.pageNum);
+        if (item.el) {
+          item.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          item.el.style.transition = 'box-shadow 0.3s ease';
+          item.el.style.boxShadow = '0 0 0 3px #ef4444';
+          setTimeout(() => {
+            if (item.el) item.el.style.boxShadow = '';
+          }, 1500);
+        }
+      };
+      list.appendChild(row);
+    });
   }
 
   _dataURLtoBlob(dataurl) {

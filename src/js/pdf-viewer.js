@@ -393,33 +393,47 @@ export class PDFViewerEngine {
     this.renderThumbnails();
   }
 
+  clearSearch() {
+    this.searchResults = [];
+    this.currentSearchIndex = -1;
+    const target = this.pagesContainer || this.container;
+    target.querySelectorAll('.search-highlight, .active-match').forEach(el => {
+      el.classList.remove('search-highlight', 'active-match', 'highlight', 'selected');
+    });
+  }
+
   async searchText(query) {
-    if (!this.pdfDoc || !query) {
-      this.searchResults = [];
-      this.currentSearchIndex = -1;
+    this.clearSearch();
+    if (!this.pdfDoc || !query || !query.trim()) {
       return { total: 0, current: 0 };
     }
 
-    this.searchResults = [];
-    query = query.toLowerCase();
+    const q = query.trim().toLowerCase();
+    const target = this.pagesContainer || this.container;
 
+    // Search across rendered textLayers first for precise DOM highlighting & instant centering
     for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
-      const page = await this.pdfDoc.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map(i => i.str).join(' ').toLowerCase();
+      const pageWrapper = target.querySelector(`#page-wrapper-${pageNum}`);
+      if (!pageWrapper) continue;
+      const textLayer = pageWrapper.querySelector('.textLayer');
+      if (!textLayer) continue;
 
-      let pos = 0;
-      while ((pos = pageText.indexOf(query, pos)) !== -1) {
-        this.searchResults.push({ pageNum, index: pos });
-        pos += query.length;
-      }
+      const spans = textLayer.querySelectorAll('span');
+      spans.forEach(span => {
+        const text = span.textContent || '';
+        if (text.toLowerCase().includes(q)) {
+          span.classList.add('search-highlight');
+          this.searchResults.push({
+            pageNum,
+            element: span,
+            text
+          });
+        }
+      });
     }
 
     if (this.searchResults.length > 0) {
-      this.currentSearchIndex = 0;
-      this.goToPage(this.searchResults[0].pageNum);
-    } else {
-      this.currentSearchIndex = -1;
+      this._activateSearchResult(0);
     }
 
     return {
@@ -428,11 +442,30 @@ export class PDFViewerEngine {
     };
   }
 
+  _activateSearchResult(index) {
+    if (this.searchResults.length === 0 || index < 0 || index >= this.searchResults.length) return;
+    this.currentSearchIndex = index;
+    const match = this.searchResults[index];
+
+    // Remove active state from all highlights
+    const target = this.pagesContainer || this.container;
+    target.querySelectorAll('.active-match').forEach(el => el.classList.remove('active-match'));
+
+    if (match.element) {
+      match.element.classList.add('active-match');
+      match.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      this.currentPage = match.pageNum;
+      this.onPageChange(match.pageNum, this.totalPages);
+      this._highlightThumbnail(match.pageNum);
+    } else {
+      this.goToPage(match.pageNum);
+    }
+  }
+
   nextSearchResult() {
     if (this.searchResults.length === 0) return null;
-    this.currentSearchIndex = (this.currentSearchIndex + 1) % this.searchResults.length;
-    const match = this.searchResults[this.currentSearchIndex];
-    this.goToPage(match.pageNum);
+    const nextIdx = (this.currentSearchIndex + 1) % this.searchResults.length;
+    this._activateSearchResult(nextIdx);
     return {
       total: this.searchResults.length,
       current: this.currentSearchIndex + 1
@@ -441,9 +474,8 @@ export class PDFViewerEngine {
 
   prevSearchResult() {
     if (this.searchResults.length === 0) return null;
-    this.currentSearchIndex = (this.currentSearchIndex - 1 + this.searchResults.length) % this.searchResults.length;
-    const match = this.searchResults[this.currentSearchIndex];
-    this.goToPage(match.pageNum);
+    const prevIdx = (this.currentSearchIndex - 1 + this.searchResults.length) % this.searchResults.length;
+    this._activateSearchResult(prevIdx);
     return {
       total: this.searchResults.length,
       current: this.currentSearchIndex + 1

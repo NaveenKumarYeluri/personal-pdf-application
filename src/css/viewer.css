@@ -195,14 +195,23 @@ body.mode-view .textLayer span.inline-editing {
   cursor: default !important;
 }
 
-/* Search Highlights */
+/* Search Highlights (Adobe Acrobat Style) */
+.textLayer .search-highlight,
 .textLayer .highlight {
-  background-color: rgba(250, 204, 21, 0.6);
+  background-color: rgba(254, 240, 138, 0.85) !important;
+  color: #111827 !important;
   border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.45);
+  transition: all 0.15s ease;
 }
 
+.textLayer .search-highlight.active-match,
 .textLayer .highlight.selected {
-  background-color: rgba(234, 46, 63, 0.75);
+  background-color: rgba(249, 115, 22, 0.95) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 2px #ea580c !important;
+  font-weight: 700;
+  z-index: 20;
 }
 
 /* Interactive Overlay Layer for Annotations & Drawings */

@@ -348,7 +348,25 @@ class PersonalPDFApp {
         const query = searchInput.value.trim();
         const res = await this.viewer.searchText(query);
         searchCount.textContent = `${res.current}/${res.total}`;
-      }, 300);
+      }, 250);
+    };
+
+    searchInput.onkeydown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        searchInput.value = '';
+        this.viewer.clearSearch();
+        searchCount.textContent = '0/0';
+        searchInput.blur();
+        document.getElementById('viewer-container')?.focus();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          btnSearchPrev.click();
+        } else {
+          btnSearchNext.click();
+        }
+      }
     };
 
     btnSearchNext.onclick = () => {
@@ -504,6 +522,11 @@ class PersonalPDFApp {
     }
   }
 
+  addCustomBookmark(title, pageNum) {
+    if (!this.customBookmarks) this.customBookmarks = [];
+    this.customBookmarks.push({ title, pageNum });
+  }
+
   _setupElectronBridge() {
     if (window.electronAPI) {
       window.electronAPI.onOpenPdf((fileInfo) => {
@@ -536,6 +559,7 @@ class PersonalPDFApp {
     if (this.annotator) {
       this.annotator.clearAllEdits();
     }
+    this.customBookmarks = [];
 
     // Safely toggle welcome screen and viewer
     const welcomeScreen = document.getElementById('welcome-screen');
@@ -667,6 +691,7 @@ class PersonalPDFApp {
 
       const pdfBytes = await doc.save();
       await this.loadArrayBuffer(pdfBytes, 'Personal_PDF_Suite_Welcome.pdf');
+      this.ui.showToast('Sample PDF generated & loaded', 'success');
     } catch (err) {
       console.error('Failed to generate sample PDF:', err);
       alert('Could not generate sample PDF: ' + err.message);
@@ -1256,14 +1281,15 @@ class PersonalPDFApp {
 
           this.ui.setStatus('Applying page changes...');
           const updatedBytes = await this.organizer.reorderAndModifyPages(this.currentPdfBytes, operations);
+
+          // Clear annotations and in-place edits cleanly since page indices have changed
+          if (this.annotator) {
+            this.annotator.clearAllEdits();
+          }
+
+          document.getElementById('modal-organizer')?.classList.remove('open');
           await this.loadArrayBuffer(updatedBytes, this.currentDocName);
-
-          // Clear annotations since page indices have changed
-          this.annotator.annotations.clear();
-          this.annotator.undoStack = [];
-          this.annotator.redoStack = [];
-
-          document.getElementById('modal-organizer').classList.remove('open');
+          this.ui.showToast(`Page modifications applied successfully (${operations.length} pages)`, 'success');
           this.ui.setStatus(`Page modifications applied successfully (${operations.length} pages)`);
         } catch (err) {
           console.error('Failed to apply page changes:', err);
