@@ -1,0 +1,101 @@
+/* ==========================================================================
+   Personal PDF Suite - Page Organizer Grid Styles
+   ========================================================================== */
+
+.organizer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+  padding: 10px 0;
+}
+
+.organizer-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: var(--bg-tertiary);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  padding: 10px;
+  cursor: grab;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.organizer-card:hover {
+  border-color: var(--border-color);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.organizer-card.selected {
+  border-color: var(--accent-red);
+  background-color: rgba(234, 46, 63, 0.08);
+}
+
+.organizer-card.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.organizer-card.drag-over {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.organizer-thumb {
+  background-color: #ffffff;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1.414;
+}
+
+.organizer-thumb canvas {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+.organizer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+.organizer-page-num {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.organizer-card-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.organizer-mini-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+}
+
+.organizer-mini-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+}
+
+.modal-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}

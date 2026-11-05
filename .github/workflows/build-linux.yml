@@ -1,0 +1,44 @@
+name: Build Linux Application (Arch Linux Compatible)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools fuse
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build Linux AppImage
+        run: npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux Artifacts (.AppImage)
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-pdf-suite-linux-appimage
+          path: |
+            dist/*.AppImage
+            dist/*.tar.gz
+          if-no-files-found: error

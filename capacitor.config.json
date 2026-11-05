@@ -1,0 +1,14 @@
+{
+  "appId": "com.personal.pdfsuite",
+  "appName": "Personal PDF Suite",
+  "webDir": "src",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "backgroundColor": "#1e1e24"
+  }
+}

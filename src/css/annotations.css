@@ -1,0 +1,228 @@
+/* ==========================================================================
+   Personal PDF Suite - Annotations, Stamps, and Markup Styles
+   ========================================================================== */
+
+/* Sticky Notes */
+.sticky-note-marker {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  background-color: #fbbf24;
+  color: #78350f;
+  border-radius: 4px 4px 12px 4px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  pointer-events: auto;
+  transition: transform 0.1s ease;
+}
+
+.sticky-note-marker:hover {
+  transform: scale(1.15);
+}
+
+.sticky-note-popup {
+  position: absolute;
+  width: 220px;
+  background-color: #fef3c7;
+  color: #451a03;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  padding: 10px;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+.sticky-note-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.4);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+.sticky-note-popup textarea {
+  width: 100%;
+  height: 80px;
+  background: transparent;
+  border: none;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: inherit;
+  resize: vertical;
+  outline: none;
+}
+
+/* Placed Textbox / Typewriter Annotation */
+.annotation-textbox {
+  position: absolute;
+  padding: 4px 8px;
+  border: 1px dashed transparent;
+  color: #111827;
+  cursor: move;
+  z-index: 10;
+  pointer-events: auto;
+  min-width: 60px;
+  min-height: 24px;
+  outline: none;
+}
+
+.annotation-textbox:hover, .annotation-textbox:focus {
+  border-color: var(--accent-blue);
+  background-color: rgba(255, 255, 255, 0.85);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Placed Signatures & Stamps */
+.placed-stamp {
+  position: absolute;
+  cursor: move;
+  z-index: 15;
+  pointer-events: auto;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed transparent;
+}
+
+.placed-stamp:hover {
+  border-color: var(--accent-red);
+}
+
+.placed-stamp img {
+  max-width: 100%;
+  max-height: 100%;
+  pointer-events: none;
+}
+
+/* Stamp Badge Styles */
+.stamp-badge {
+  border: 3px solid currentColor;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-weight: 800;
+  font-size: 18px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  transform: rotate(-8deg);
+  opacity: 0.85;
+}
+
+.stamp-approved {
+  color: #16a34a;
+  border-color: #16a34a;
+}
+
+.stamp-rejected {
+  color: #dc2626;
+  border-color: #dc2626;
+}
+
+.stamp-confidential {
+  color: #d97706;
+  border-color: #d97706;
+}
+
+.stamp-draft {
+  color: #4b5563;
+  border-color: #4b5563;
+}
+
+/* Redaction Box Overlay */
+.redaction-box {
+  position: absolute;
+  background-color: #000000;
+  cursor: pointer;
+  z-index: 20;
+  pointer-events: auto;
+  border: 1px solid rgba(255, 0, 0, 0.4);
+}
+
+/* Signature Modal Controls */
+.signature-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 16px;
+}
+
+.sig-tab {
+  flex: 1;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sig-tab.active {
+  color: var(--accent-red);
+  border-bottom: 2px solid var(--accent-red);
+}
+
+.sig-pane {
+  display: none;
+}
+.sig-pane.active {
+  display: block;
+}
+
+.sig-canvas-wrapper {
+  background-color: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+}
+
+#sig-canvas {
+  cursor: crosshair;
+}
+
+.sig-canvas-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.sig-colors {
+  display: flex;
+  gap: 8px;
+}
+
+.color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+.color-dot.active {
+  border-color: var(--text-primary);
+  transform: scale(1.15);
+}
+
+.sig-type-preview {
+  font-family: var(--font-sig);
+  font-size: 38px;
+  color: #000000;
+  background-color: #ffffff;
+  padding: 24px;
+  text-align: center;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  margin-top: 14px;
+  min-height: 90px;
+}

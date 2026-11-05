@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal PDF Suite - Acrobat Edition</title>
+  
+  <!-- Modern Inter & Roboto Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- CSS Stylesheets -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/viewer.css">
+  <link rel="stylesheet" href="css/annotations.css">
+  <link rel="stylesheet" href="css/organizer.css">
+  
+  <!-- PDF.js Engine (Mozilla) & pdf-lib (Offline capable with fallback) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.9/pdf-lib.min.js"></script>
+</head>
+<body class="theme-dark">
+  <div id="app" class="app-layout">
+    
+    <!-- 1. Top Ribbon Navigation & Toolbar -->
+    <header class="app-header">
+      <!-- Top Title & File Menu Bar -->
+      <div class="menubar">
+        <div class="brand">
+          <div class="brand-logo">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9.5 8.5c0 .83-.67 1.5-1.5 1.5H7v2H5.5V9H8c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V9h2.5c.83 0 1.5.67 1.5 1.5v3zm4-3.5H17v1.5h1.5v1.5H17V16h-1.5V9h3v1.5zM7 10.5h1v1H7v-1zm5 1.5h1v1h-1v-1z"/>
+            </svg>
+          </div>
+          <span class="brand-name">Personal PDF Suite</span>
+          <span id="current-doc-name" class="doc-title">No document open</span>
+        </div>
+
+        <div class="menu-actions">
+          <input type="file" id="file-input" accept="application/pdf" style="display:none;">
+          <button id="btn-open-file" class="btn btn-outline" title="Open PDF file (Ctrl+O)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+            <span>Open</span>
+          </button>
+          <button id="btn-save-pdf" class="btn btn-primary" title="Save modified PDF (Ctrl+S)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <span>Save</span>
+          </button>
+          <button id="btn-print" class="btn btn-ghost" title="Print Document (Ctrl+P)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          </button>
+          <button id="btn-toggle-theme" class="btn btn-ghost" title="Toggle Dark/Light Mode">
+            <svg id="theme-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mode Switcher Tabs (Adobe Acrobat Style) -->
+      <nav class="mode-ribbon">
+        <button class="mode-tab active" data-mode="view">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span>View & Read</span>
+        </button>
+        <button class="mode-tab" data-mode="annotate">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 2 4 4-12 12H6v-4L18 2z"/><path d="m14 6 4 4"/></svg>
+          <span>Annotate & Markup</span>
+        </button>
+        <button class="mode-tab" data-mode="organize">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span>Organize Pages</span>
+        </button>
+        <button class="mode-tab" data-mode="edit">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <span>Edit & Watermark</span>
+        </button>
+        <button class="mode-tab" data-mode="forms">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="m9 15 2 2 4-4"/></svg>
+          <span>Fill & Sign</span>
+        </button>
+        <button class="mode-tab" data-mode="protect">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Protect & Redact</span>
+        </button>
+        <button class="mode-tab" data-mode="export">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Export</span>
+        </button>
+      </nav>
+
+      <!-- Contextual Action Ribbon (Changes according to active Mode Tab) -->
+      <div id="sub-toolbar" class="sub-toolbar">
+        <!-- Universal View Controls: Page Nav, Zoom, Search -->
+        <div class="tool-group">
+          <button id="btn-toggle-sidebar" class="tool-btn active" title="Toggle Thumbnails/Sidebar">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          </button>
+          <div class="divider"></div>
+          <button id="btn-prev-page" class="tool-btn" title="Previous Page (Left Arrow)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="page-indicator">
+            <input type="number" id="page-num-input" value="1" min="1" max="1">
+            <span class="slash">/</span>
+            <span id="page-count">0</span>
+          </div>
+          <button id="btn-next-page" class="tool-btn" title="Next Page (Right Arrow)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Zoom Controls -->
+        <div class="tool-group">
+          <button id="btn-zoom-out" class="tool-btn" title="Zoom Out (Ctrl+Minus)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <select id="zoom-select" class="tool-select" title="Zoom Level">
+            <option value="auto">Auto Fit</option>
+            <option value="page-fit">Fit Page</option>
+            <option value="page-width" selected>Fit Width</option>
+            <option value="0.50">50%</option>
+            <option value="0.75">75%</option>
+            <option value="1.00">100%</option>
+            <option value="1.25">125%</option>
+            <option value="1.50">150%</option>
+            <option value="2.00">200%</option>
+            <option value="3.00">300%</option>
+          </select>
+          <button id="btn-zoom-in" class="tool-btn" title="Zoom In (Ctrl+Plus)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <button id="btn-rotate-cw" class="tool-btn" title="Rotate 90° Clockwise">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Mode-Specific Active Tools Area -->
+        <div id="dynamic-mode-tools" class="dynamic-tools">
+          <!-- Will be dynamically populated according to active tab -->
+        </div>
+
+        <!-- Right Side: Search Box -->
+        <div class="tool-group right-tools">
+          <div class="search-box">
+            <input type="text" id="search-input" placeholder="Find in document (Ctrl+F)...">
+            <span id="search-count" class="search-count">0/0</span>
+            <button id="btn-search-prev" class="tool-btn-sm" title="Previous match">▲</button>
+            <button id="btn-search-next" class="tool-btn-sm" title="Next match">▼</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. Main Workspace Body -->
+    <main class="app-body">
+      
+      <!-- Collapsible Left Sidebar (Thumbnails, Bookmarks, Annotations) -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" data-tab="thumbnails" title="Page Thumbnails">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </button>
+          <button class="sidebar-tab" data-tab="outline" title="Document Outline / Bookmarks">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          </button>
+          <button class="sidebar-tab" data-tab="annotations" title="Annotations & Comments List">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+        </div>
+
+        <div class="sidebar-content">
+          <!-- Thumbnails Pane -->
+          <div id="tab-thumbnails" class="tab-pane active">
+            <div id="thumbnails-container" class="thumbnails-grid">
+              <!-- Rendered page thumbnails -->
+            </div>
+          </div>
+
+          <!-- Outline / Bookmarks Pane -->
+          <div id="tab-outline" class="tab-pane">
+            <div id="outline-container" class="outline-tree">
+              <div class="empty-state">No bookmarks found in document</div>
+            </div>
+          </div>
+
+          <!-- Annotations List Pane -->
+          <div id="tab-annotations" class="tab-pane">
+            <div id="annotations-list" class="annotations-list">
+              <div class="empty-state">No annotations added yet</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center PDF Viewport (Continuous Scrolling & Canvas Layers) -->
+      <section id="viewer-container" class="viewer-container">
+        <!-- Welcome Screen (When no PDF is loaded) -->
+        <div id="welcome-screen" class="welcome-screen">
+          <div class="welcome-card">
+            <div class="welcome-icon">
+              <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+              </svg>
+            </div>
+            <h2>Personal PDF Suite</h2>
+            <p>Adobe Acrobat-grade features for Windows, Arch Linux, and Android.</p>
+            <div class="welcome-actions">
+              <button id="btn-welcome-open" class="btn btn-primary btn-lg">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                <span>Open PDF Document</span>
+              </button>
+              <button id="btn-load-sample" class="btn btn-outline btn-lg">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <span>Load Sample PDF</span>
+              </button>
+            </div>
+            <div class="drag-hint">or simply drag & drop a PDF file here</div>
+          </div>
+        </div>
+
+        <!-- The Continuous Document Scroll Area -->
+        <div id="pdf-viewer" class="pdf-viewer">
+          <!-- Dynamically generated pages (.page-wrapper) will go here -->
+        </div>
+      </section>
+
+      <!-- Right Properties & Tool Config Inspector (Collapsible) -->
+      <aside id="inspector" class="inspector">
+        <div class="inspector-header">
+          <span id="inspector-title">Properties</span>
+          <button id="btn-close-inspector" class="tool-btn-sm">×</button>
+        </div>
+        <div id="inspector-content" class="inspector-body">
+          <!-- Dynamic tool configuration (Colors, Thickness, Opacity, Font, Stamps) -->
+        </div>
+      </aside>
+
+    </main>
+
+    <!-- 3. Modals & Dialog Overlays -->
+
+    <!-- Page Organizer Modal -->
+    <div id="modal-organizer" class="modal-backdrop">
+      <div class="modal-box modal-xl">
+        <div class="modal-header">
+          <h3>Organize Pages</h3>
+          <div class="modal-actions-bar">
+            <button id="btn-org-rotate-left" class="btn btn-sm btn-outline">↺ Rotate Left</button>
+            <button id="btn-org-rotate-right" class="btn btn-sm btn-outline">↻ Rotate Right</button>
+            <button id="btn-org-delete" class="btn btn-sm btn-danger">🗑 Delete Selected</button>
+            <button id="btn-org-duplicate" class="btn btn-sm btn-outline">⧉ Duplicate</button>
+            <button id="btn-org-insert-blank" class="btn btn-sm btn-outline">+ Blank Page</button>
+            <button id="btn-org-extract" class="btn btn-sm btn-outline">⤓ Extract Pages</button>
+          </div>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-hint">Drag and drop page cards to reorder. Click to select multiple pages.</p>
+          <div id="organizer-grid" class="organizer-grid">
+            <!-- Grid cards populated dynamically -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost modal-close">Cancel</button>
+          <button id="btn-org-apply" class="btn btn-primary">Apply Page Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Digital Signature Modal -->
+    <div id="modal-signature" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Create Signature</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="signature-tabs">
+            <button class="sig-tab active" data-sig-mode="draw">Draw</button>
+            <button class="sig-tab" data-sig-mode="type">Type</button>
+            <button class="sig-tab" data-sig-mode="image">Upload Image</button>
+          </div>
+          
+          <!-- Mode 1: Draw on canvas -->
+          <div id="sig-pane-draw" class="sig-pane active">
+            <div class="sig-canvas-wrapper">
+              <canvas id="sig-canvas" width="500" height="180"></canvas>
+            </div>
+            <div class="sig-canvas-controls">
+              <button id="btn-sig-clear" class="btn btn-sm btn-ghost">Clear</button>
+              <div class="sig-colors">
+                <span class="color-dot active" style="background:#000;" data-color="#000000"></span>
+                <span class="color-dot" style="background:#0033aa;" data-color="#0033aa"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mode 2: Type cursive signature -->
+          <div id="sig-pane-type" class="sig-pane">
+            <input type="text" id="sig-type-input" placeholder="Type your full name..." class="form-input">
+            <div id="sig-type-preview" class="sig-type-preview">Your Signature</div>
+          </div>
+
+          <!-- Mode 3: Upload signature image -->
+          <div id="sig-pane-image" class="sig-pane">
+            <input type="file" id="sig-image-file" accept="image/png, image/jpeg" class="form-input">
+            <p class="text-muted">Upload a transparent PNG or high-contrast photo of your signature.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost modal-close">Cancel</button>
+          <button id="btn-apply-signature" class="btn btn-primary">Place Signature</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Watermark Modal -->
+    <div id="modal-watermark" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Add Watermark</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Watermark Text</label>
+            <input type="text" id="watermark-text" value="CONFIDENTIAL" class="form-input">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Rotation Angle</label>
+              <select id="watermark-angle" class="form-select">
+                <option value="45" selected>Diagonal (45°)</option>
+                <option value="0">Horizontal (0°)</option>
+                <option value="-45">Diagonal (-45°)</option>
+                <option value="90">Vertical (90°)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Opacity (<span id="watermark-opacity-val">25%</span>)</label>
+              <input type="range" id="watermark-opacity" min="5" max="100" value="25" class="form-range">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Color</label>
+              <input type="color" id="watermark-color" value="#ff0000" class="form-color">
+            </div>
+            <div class="form-group">
+              <label>Font Size</label>
+              <input type="number" id="watermark-size" value="48" min="12" max="120" class="form-input">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost modal-close">Cancel</button>
+          <button id="btn-apply-watermark" class="btn btn-primary">Apply Watermark to All Pages</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Password Protect & Security Modal -->
+    <div id="modal-protect" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Protect PDF with Password</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Set Document Password</label>
+            <input type="password" id="protect-password" placeholder="Enter password to open document..." class="form-input">
+          </div>
+          <div class="form-group">
+            <label>Confirm Password</label>
+            <input type="password" id="protect-password-confirm" placeholder="Confirm password..." class="form-input">
+          </div>
+          <div class="checkbox-group">
+            <label><input type="checkbox" id="protect-allow-print" checked> Allow high-resolution printing</label>
+            <label><input type="checkbox" id="protect-allow-copy" checked> Allow copying text and graphics</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost modal-close">Cancel</button>
+          <button id="btn-apply-protect" class="btn btn-primary">Encrypt & Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Bar -->
+    <footer class="app-statusbar">
+      <div class="status-item" id="status-message">Ready</div>
+      <div class="status-right">
+        <span class="status-item" id="status-zoom">100%</span>
+        <span class="status-item" id="status-size">0 KB</span>
+        <span class="status-item status-badge">Personal Suite v1.0</span>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Application Modules -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
