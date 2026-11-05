@@ -19,27 +19,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libarchive-tools fuse
+          sudo apt-get install -y libarchive-tools fuse libfuse2
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm install
 
-      - name: Build Linux AppImage
+      - name: Build Linux AppImage and Tarball
         run: npm run build:linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Linux Artifacts (.AppImage)
+      - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: personal-pdf-suite-linux-appimage
+          name: personal-pdf-suite-linux
           path: |
             dist/*.AppImage
             dist/*.tar.gz
           if-no-files-found: error
-
