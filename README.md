@@ -70,28 +70,38 @@ To test and run the full application on Windows using **< 30 MB of RAM**:
 
 ---
 
+## 🏗️ Architecture & Shells
+
+- **Core Engine**: Mozilla PDF.js (rendering & text selection) + pdf-lib (document modification, merging, splitting, watermarking, encryption).
+- **Mobile (Android APK)**: Google Material 3 (M3) design with Bottom Navigation, Floating Action Button, Bottom Sheets, and multi-touch pinch-to-zoom.
+- **Desktop (Arch Linux & Windows)**: **Tauri v2** (Rust + Native WebKitGTK / Edge WebView2):
+  - Binary size: **~10 MB** (vs 180 MB on Electron).
+  - Idle RAM: **< 35 MB** (vs 300 MB on Electron).
+  - Instant cold startup.
+
+---
+
 ## 🛠️ Building Applications via GitHub Actions
 
 All heavy compilation and packaging is handled in the cloud by **GitHub Actions** (16 GB RAM cloud runners).
 
-### Target 1: Windows Application (`.exe`)
+### Target 1: Windows Application (Tauri v2)
 - Workflow: `.github/workflows/build-windows.yml`
-- Output: Standalone portable executable and NSIS installer (`.exe`)
+- Output: Ultra-lightweight native Windows installer (`.msi`) and executable (`.exe`).
 - Download from: GitHub Actions **Artifacts** tab on your repository.
 
-### Target 2: Arch Linux Application (`.AppImage`)
+### Target 2: Arch Linux Application (Tauri v2 - WebKitGTK)
 - Workflow: `.github/workflows/build-linux.yml`
-- Output: `.AppImage` (runs directly on Arch Linux, Manjaro, EndeavourOS, Fedora, Ubuntu)
+- Output: Native Arch-compatible `.AppImage` and `.deb` (uses native Arch Linux WebKitGTK).
 - To run on Arch Linux:
   ```bash
-  chmod +x Personal-PDF-Suite-*.AppImage
-  ./Personal-PDF-Suite-*.AppImage
+  chmod +x personal-pdf-suite_*.AppImage
+  ./personal-pdf-suite_*.AppImage
   ```
 
-### Target 3: Android Application (`.apk`)
+### Target 3: Android Application (Material 3 APK)
 - Workflow: `.github/workflows/build-android.yml`
-- Output: Installable `.apk` file
-- Download directly to your phone/tablet and install with one tap.
+- Output: Installable Android `.apk` with full Material 3 design, bottom sheets, and touch gestures.
 
 ---
 
