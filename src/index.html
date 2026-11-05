@@ -39,6 +39,9 @@
         <span id="m3-doc-title" class="m3-app-bar-title">Personal PDF</span>
       </div>
       <div class="m3-app-bar-actions">
+        <button id="m3-btn-search" class="m3-icon-btn" title="Search document">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
         <button id="m3-btn-undo" class="m3-icon-btn" title="Undo">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
         </button>
@@ -56,6 +59,15 @@
         </button>
       </div>
     </header>
+
+    <!-- Mobile Search Bar Overlay (Material 3) -->
+    <div id="m3-search-bar" class="m3-search-bar m3-only" style="display:none;">
+      <input type="text" id="m3-search-input" placeholder="Search in document..." class="form-input" style="flex:1;">
+      <span id="m3-search-count" class="m3-search-count" style="font-size:12px; color:var(--m3-sys-on-surface-variant); padding:0 6px;">0/0</span>
+      <button id="m3-search-prev" class="tool-btn-sm" title="Previous match">▲</button>
+      <button id="m3-search-next" class="tool-btn-sm" title="Next match">▼</button>
+      <button id="m3-search-close" class="tool-btn-sm" title="Close search">&times;</button>
+    </div>
 
     <!-- Desktop Header & Ribbon (Desktop Only) -->
     <header class="app-header desktop-only">
@@ -609,6 +621,13 @@
       <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     </button>
 
+    <!-- Floating Mobile Page Indicator & Quick Switcher -->
+    <div id="m3-page-bar" class="m3-page-bar m3-only">
+      <button id="m3-page-prev" class="tool-btn-sm" title="Previous page">◀</button>
+      <span id="m3-page-display" style="cursor:pointer; font-weight:600; padding:0 8px;" title="Tap to jump to page">1 / 1</span>
+      <button id="m3-page-next" class="tool-btn-sm" title="Next page">▶</button>
+    </div>
+
     <!-- Material 3 Mobile Bottom Navigation Bar (Mobile / Android) -->
     <nav class="m3-bottom-nav m3-only">
       <button class="m3-nav-item active" data-m3-tab="read">
@@ -616,6 +635,13 @@
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
         </div>
         <span class="m3-nav-label">Read</span>
+      </button>
+
+      <button class="m3-nav-item" data-m3-tab="edit">
+        <div class="m3-pill">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </div>
+        <span class="m3-nav-label">Edit</span>
       </button>
 
       <button class="m3-nav-item" data-m3-tab="annotate">
@@ -632,13 +658,6 @@
         <span class="m3-nav-label">Pages</span>
       </button>
 
-      <button class="m3-nav-item" data-m3-tab="sign">
-        <div class="m3-pill">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="m9 15 2 2 4-4"/></svg>
-        </div>
-        <span class="m3-nav-label">Sign</span>
-      </button>
-
       <button class="m3-nav-item" data-m3-tab="tools">
         <div class="m3-pill">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -652,23 +671,85 @@
 
     <!-- Material 3 Mobile Navigation Drawer -->
     <div id="m3-drawer" class="m3-drawer">
-      <div style="font-size:20px; font-weight:700; color:var(--m3-sys-on-surface); margin-bottom:20px;">Personal PDF Suite</div>
-      <button class="m3-list-tile" id="m3-drawer-open">
-        <span class="m3-list-icon">📂</span>
-        <span class="m3-list-title">Open Document</span>
-      </button>
-      <button class="m3-list-tile" id="m3-drawer-sample">
-        <span class="m3-list-icon">📄</span>
-        <span class="m3-list-title">Load Sample PDF</span>
-      </button>
-      <button class="m3-list-tile" id="m3-drawer-theme">
-        <span class="m3-list-icon">🌓</span>
-        <span class="m3-list-title">Toggle Dark/Light/Sepia</span>
-      </button>
-      <button class="m3-list-tile" id="m3-drawer-about">
-        <span class="m3-list-icon">ℹ️</span>
-        <span class="m3-list-title">About App</span>
-      </button>
+      <div class="m3-drawer-header">
+        <div class="m3-drawer-brand">
+          <span style="font-size:22px;">📄</span>
+          <div>
+            <div id="m3-drawer-title" style="font-size:15px; font-weight:700; color:var(--m3-sys-on-surface); max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Personal PDF Suite</div>
+            <div id="m3-drawer-subtitle" style="font-size:11px; color:var(--m3-sys-on-surface-variant);">No document open</div>
+          </div>
+        </div>
+        <button id="m3-drawer-close" class="tool-btn-sm" style="font-size:18px;">&times;</button>
+      </div>
+
+      <div class="m3-drawer-nav-tabs">
+        <button class="m3-drawer-tab active" data-drawer-tab="pages">Pages</button>
+        <button class="m3-drawer-tab" data-drawer-tab="outline">Outline</button>
+        <button class="m3-drawer-tab" data-drawer-tab="actions">Actions</button>
+      </div>
+
+      <div class="m3-drawer-tab-content">
+        <div id="m3-drawer-tab-pages" class="m3-drawer-pane active">
+          <div id="m3-drawer-thumbs" class="thumbnails-grid" style="padding:10px 0;"></div>
+        </div>
+        <div id="m3-drawer-tab-outline" class="m3-drawer-pane">
+          <div id="m3-drawer-outline" class="outline-tree" style="padding:10px 0;"></div>
+        </div>
+        <div id="m3-drawer-tab-actions" class="m3-drawer-pane">
+          <button class="m3-list-tile" id="m3-drawer-open">
+            <span class="m3-list-icon">📂</span>
+            <span class="m3-list-title">Open Document</span>
+          </button>
+          <button class="m3-list-tile" id="m3-drawer-sample">
+            <span class="m3-list-icon">📄</span>
+            <span class="m3-list-title">Load Sample PDF</span>
+          </button>
+          <button class="m3-list-tile" id="m3-drawer-theme">
+            <span class="m3-list-icon">🌓</span>
+            <span class="m3-list-title">Toggle Dark / Light Theme</span>
+          </button>
+          <button class="m3-list-tile" id="m3-drawer-props">
+            <span class="m3-list-icon">ℹ️</span>
+            <span class="m3-list-title">Document Properties</span>
+          </button>
+          <button class="m3-list-tile" id="m3-drawer-about">
+            <span class="m3-list-icon">⭐</span>
+            <span class="m3-list-title">About Personal PDF</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Material 3 Bottom Sheet: Edit PDF Content -->
+    <div id="m3-sheet-edit" class="m3-bottom-sheet">
+      <div class="m3-sheet-handle"></div>
+      <div class="m3-sheet-header">
+        <span>Edit PDF Content</span>
+        <button class="tool-btn-sm" id="m3-close-edit">&times;</button>
+      </div>
+      <div class="m3-sheet-body">
+        <p style="font-size:12px; color:var(--m3-sys-on-surface-variant); margin:0;">Tap any existing text on the PDF to edit it inline, or insert new elements below:</p>
+        <div class="m3-chip-group">
+          <div class="m3-chip active" id="m3-edit-toggle-inline">📝 In-Place Text Editing</div>
+          <div class="m3-chip" id="m3-edit-add-text">T Add Text Block</div>
+          <div class="m3-chip" id="m3-edit-insert-img">🖼️ Insert Image</div>
+          <div class="m3-chip" id="m3-edit-whiteout">⬜ Erase / Whiteout</div>
+        </div>
+        <input type="file" id="m3-edit-img-file" accept="image/png, image/jpeg" style="display:none;">
+
+        <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:4px;">Font Options</div>
+        <div style="display:flex; gap:8px;">
+          <select id="m3-edit-font-size" class="tool-select" style="flex:1;">
+            <option value="12">12 pt</option>
+            <option value="14">14 pt</option>
+            <option value="16" selected>16 pt</option>
+            <option value="20">20 pt</option>
+            <option value="24">24 pt</option>
+            <option value="32">32 pt</option>
+          </select>
+          <input type="color" id="m3-edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:44px; height:32px;">
+        </div>
+      </div>
     </div>
 
     <!-- Material 3 Bottom Sheet: Markup Tools -->
@@ -713,6 +794,10 @@
         <button class="tool-btn-sm" id="m3-close-tools">&times;</button>
       </div>
       <div class="m3-sheet-body">
+        <button class="m3-list-tile" id="m3-tool-sign">
+          <span class="m3-list-icon">✍️</span>
+          <span class="m3-list-title">Electronic Signature</span>
+        </button>
         <button class="m3-list-tile" id="m3-tool-watermark">
           <span class="m3-list-icon">🌊</span>
           <span class="m3-list-title">Add Watermark</span>
@@ -732,6 +817,10 @@
         <button class="m3-list-tile" id="m3-tool-protect">
           <span class="m3-list-icon">🔒</span>
           <span class="m3-list-title">Password Protection</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-props">
+          <span class="m3-list-icon">ℹ️</span>
+          <span class="m3-list-title">Document Properties</span>
         </button>
         <button class="m3-list-tile" id="m3-tool-export-img">
           <span class="m3-list-icon">🖼️</span>

@@ -55,23 +55,52 @@ export class UIController {
   }
 
   _initMaterialMobileUI() {
-    // 1. Mobile Bottom Nav Tabs
+    // 1. Mobile Bottom Nav Tabs & Sheets
     const navItems = document.querySelectorAll('.m3-nav-item');
     const sheetMarkup = document.getElementById('m3-sheet-markup');
     const sheetTools = document.getElementById('m3-sheet-tools');
+    const sheetEdit = document.getElementById('m3-sheet-edit');
     const scrim = document.getElementById('m3-scrim');
     const drawer = document.getElementById('m3-drawer');
 
     const closeAllSheets = () => {
       sheetMarkup?.classList.remove('open');
       sheetTools?.classList.remove('open');
+      sheetEdit?.classList.remove('open');
       drawer?.classList.remove('open');
       scrim?.classList.remove('open');
     };
 
-    scrim?.addEventListener('click', closeAllSheets);
+    ['click', 'touchstart', 'pointerdown'].forEach(evt => {
+      scrim?.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeAllSheets();
+      }, { passive: false });
+    });
+
+    // Close when tapping on empty area outside drawer or sheets
+    const handleOutsideTap = (e) => {
+      if (drawer?.classList.contains('open') && !drawer.contains(e.target) && !e.target.closest('#m3-btn-drawer')) {
+        closeAllSheets();
+      }
+      if (sheetMarkup?.classList.contains('open') && !sheetMarkup.contains(e.target) && !e.target.closest('.m3-nav-item') && !e.target.closest('#m3-fab')) {
+        closeAllSheets();
+      }
+      if (sheetEdit?.classList.contains('open') && !sheetEdit.contains(e.target) && !e.target.closest('.m3-nav-item')) {
+        closeAllSheets();
+      }
+      if (sheetTools?.classList.contains('open') && !sheetTools.contains(e.target) && !e.target.closest('.m3-nav-item') && !e.target.closest('#m3-btn-more')) {
+        closeAllSheets();
+      }
+    };
+    document.addEventListener('touchstart', handleOutsideTap, { passive: true });
+    document.addEventListener('click', handleOutsideTap);
+
     document.getElementById('m3-close-markup')?.addEventListener('click', closeAllSheets);
     document.getElementById('m3-close-tools')?.addEventListener('click', closeAllSheets);
+    document.getElementById('m3-close-edit')?.addEventListener('click', closeAllSheets);
+    document.getElementById('m3-drawer-close')?.addEventListener('click', closeAllSheets);
 
     navItems.forEach(item => {
       item.onclick = () => {
@@ -82,6 +111,11 @@ export class UIController {
         if (tab === 'read') {
           closeAllSheets();
           this.setMode('view');
+        } else if (tab === 'edit') {
+          closeAllSheets();
+          this.setMode('edit');
+          sheetEdit?.classList.add('open');
+          scrim?.classList.add('open');
         } else if (tab === 'annotate') {
           closeAllSheets();
           this.setMode('annotate');
@@ -90,9 +124,6 @@ export class UIController {
         } else if (tab === 'pages') {
           closeAllSheets();
           this.app.openOrganizerModal();
-        } else if (tab === 'sign') {
-          closeAllSheets();
-          this.app.signature.openModal();
         } else if (tab === 'tools') {
           closeAllSheets();
           sheetTools?.classList.add('open');
@@ -107,6 +138,9 @@ export class UIController {
       fab.onclick = () => {
         if (this.currentMode === 'annotate') {
           sheetMarkup?.classList.toggle('open');
+          scrim?.classList.toggle('open');
+        } else if (this.currentMode === 'edit') {
+          sheetEdit?.classList.toggle('open');
           scrim?.classList.toggle('open');
         } else {
           document.getElementById('file-input')?.click();
@@ -138,6 +172,7 @@ export class UIController {
     document.getElementById('m3-btn-drawer')?.addEventListener('click', () => {
       drawer?.classList.add('open');
       scrim?.classList.add('open');
+      this._syncMobileDrawerContent();
     });
 
     document.getElementById('m3-btn-open')?.addEventListener('click', () => {
@@ -153,7 +188,110 @@ export class UIController {
       scrim?.classList.add('open');
     });
 
-    // 4. Mobile Drawer Actions
+    // 4. Mobile Edit PDF Sheet Actions
+    document.getElementById('m3-edit-toggle-inline')?.addEventListener('click', () => {
+      const active = this.app.viewer.isContentEditingActive;
+      this.app.viewer.setContentEditingMode(!active);
+      document.getElementById('m3-edit-toggle-inline')?.classList.toggle('active', !active);
+      this.setStatus(!active ? 'In-place edit: tap any text to modify' : 'In-place edit paused');
+    });
+
+    document.getElementById('m3-edit-add-text')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.app.annotator.fontSize = parseInt(document.getElementById('m3-edit-font-size').value, 10);
+      this.app.annotator.color = document.getElementById('m3-edit-font-color').value;
+      this.app.annotator._addTextBox(this.app.viewer.currentPage, 80, 160);
+      this.setStatus('Added text box. Tap to edit.');
+    });
+
+    document.getElementById('m3-edit-insert-img')?.addEventListener('click', () => {
+      document.getElementById('m3-edit-img-file')?.click();
+    });
+
+    document.getElementById('m3-edit-img-file')?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (re) => {
+          this.app.insertImageOnPage(this.app.viewer.currentPage, re.target.result);
+          closeAllSheets();
+          this.setStatus('Image inserted. Drag to position.');
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    document.getElementById('m3-edit-whiteout')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.app.insertWhiteoutOnPage(this.app.viewer.currentPage, 80, 180);
+      this.setStatus('Whiteout box placed. Drag to cover text.');
+    });
+
+    // 5. Mobile Floating Page Bar
+    document.getElementById('m3-page-prev')?.addEventListener('click', () => {
+      this.app.viewer.goToPage(this.app.viewer.currentPage - 1);
+    });
+
+    document.getElementById('m3-page-next')?.addEventListener('click', () => {
+      this.app.viewer.goToPage(this.app.viewer.currentPage + 1);
+    });
+
+    document.getElementById('m3-page-display')?.addEventListener('click', () => {
+      const target = prompt(`Jump to page (1 - ${this.app.viewer.totalPages}):`, this.app.viewer.currentPage);
+      const num = parseInt(target, 10);
+      if (!isNaN(num) && num >= 1 && num <= this.app.viewer.totalPages) {
+        this.app.viewer.goToPage(num);
+      }
+    });
+
+    // 6. Mobile Search Bar Overlay
+    const searchBar = document.getElementById('m3-search-bar');
+    const searchInput = document.getElementById('m3-search-input');
+    const searchCount = document.getElementById('m3-search-count');
+
+    document.getElementById('m3-btn-search')?.addEventListener('click', () => {
+      searchBar.style.display = searchBar.style.display === 'none' ? 'flex' : 'none';
+      if (searchBar.style.display === 'flex') {
+        searchInput.focus();
+      }
+    });
+
+    document.getElementById('m3-search-close')?.addEventListener('click', () => {
+      searchBar.style.display = 'none';
+    });
+
+    let mobileSearchTimeout = null;
+    searchInput?.addEventListener('input', () => {
+      clearTimeout(mobileSearchTimeout);
+      mobileSearchTimeout = setTimeout(async () => {
+        const query = searchInput.value.trim();
+        const res = await this.app.viewer.searchText(query);
+        searchCount.textContent = `${res.current}/${res.total}`;
+      }, 300);
+    });
+
+    document.getElementById('m3-search-next')?.addEventListener('click', () => {
+      const res = this.app.viewer.nextSearchResult();
+      if (res) searchCount.textContent = `${res.current}/${res.total}`;
+    });
+
+    document.getElementById('m3-search-prev')?.addEventListener('click', () => {
+      const res = this.app.viewer.prevSearchResult();
+      if (res) searchCount.textContent = `${res.current}/${res.total}`;
+    });
+
+    // 7. Mobile Drawer Navigation Tabs & Actions
+    const drawerTabs = document.querySelectorAll('.m3-drawer-tab');
+    drawerTabs.forEach(tab => {
+      tab.onclick = () => {
+        drawerTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        document.querySelectorAll('.m3-drawer-pane').forEach(p => p.classList.remove('active'));
+        const pane = document.getElementById(`m3-drawer-tab-${tab.dataset.drawerTab}`);
+        if (pane) pane.classList.add('active');
+      };
+    });
+
     document.getElementById('m3-drawer-open')?.addEventListener('click', () => {
       closeAllSheets();
       document.getElementById('file-input')?.click();
@@ -165,13 +303,17 @@ export class UIController {
     document.getElementById('m3-drawer-theme')?.addEventListener('click', () => {
       document.getElementById('btn-toggle-theme')?.click();
     });
+    document.getElementById('m3-drawer-props')?.addEventListener('click', () => {
+      closeAllSheets();
+      document.getElementById('btn-doc-props')?.click();
+    });
     document.getElementById('m3-drawer-about')?.addEventListener('click', () => {
       closeAllSheets();
-      alert('Personal PDF Suite - Material 3 Edition\nCross-platform Adobe Acrobat alternative.');
+      alert('Personal PDF Suite - Acrobat Pro Edition\nCross-platform Adobe Acrobat alternative for Windows, Linux & Android.');
     });
 
-    // 5. Mobile Annotation Chips
-    const chips = document.querySelectorAll('.m3-chip');
+    // 8. Mobile Annotation Chips
+    const chips = document.querySelectorAll('.m3-chip[data-m3-tool]');
     chips.forEach(chip => {
       chip.onclick = () => {
         chips.forEach(c => c.classList.remove('active'));
@@ -190,7 +332,7 @@ export class UIController {
       };
     });
 
-    // 6. Mobile Color Palette
+    // 9. Mobile Color Palette
     const colorDots = document.querySelectorAll('#m3-color-palette .color-dot');
     colorDots.forEach(dot => {
       dot.onclick = () => {
@@ -200,7 +342,11 @@ export class UIController {
       };
     });
 
-    // 7. Mobile Tools Menu Actions
+    // 10. Mobile Tools Menu Actions
+    document.getElementById('m3-tool-sign')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.app.signature.openModal();
+    });
     document.getElementById('m3-tool-watermark')?.addEventListener('click', () => {
       closeAllSheets();
       document.getElementById('modal-watermark')?.classList.add('open');
@@ -221,6 +367,10 @@ export class UIController {
       closeAllSheets();
       document.getElementById('modal-protect')?.classList.add('open');
     });
+    document.getElementById('m3-tool-props')?.addEventListener('click', () => {
+      closeAllSheets();
+      document.getElementById('btn-doc-props')?.click();
+    });
     document.getElementById('m3-tool-export-img')?.addEventListener('click', async () => {
       closeAllSheets();
       const img = await this.app.exporter.exportPageAsImage(this.app.viewer.currentPage);
@@ -228,6 +378,42 @@ export class UIController {
         this.app.exporter.downloadFile(this._dataURLtoBlob(img), `page-${this.app.viewer.currentPage}.png`, 'image/png');
       }
     });
+  }
+
+  _syncMobileDrawerContent() {
+    const titleEl = document.getElementById('m3-drawer-title');
+    const subEl = document.getElementById('m3-drawer-subtitle');
+    if (titleEl) titleEl.textContent = this.app.currentDocName || 'Personal PDF Suite';
+    if (subEl) subEl.textContent = `${this.app.viewer.totalPages || 0} pages • Page ${this.app.viewer.currentPage || 1}`;
+
+    // Sync Thumbnails to mobile drawer
+    const drawerThumbs = document.getElementById('m3-drawer-thumbs');
+    const desktopThumbs = document.getElementById('thumbnails-container');
+    if (drawerThumbs && desktopThumbs) {
+      drawerThumbs.innerHTML = '';
+      desktopThumbs.querySelectorAll('.thumbnail-item').forEach(item => {
+        const clone = item.cloneNode(true);
+        const pageNum = parseInt(clone.id.replace('thumb-', ''), 10);
+        clone.onclick = () => {
+          this.app.viewer.goToPage(pageNum);
+          document.getElementById('m3-drawer')?.classList.remove('open');
+          document.getElementById('m3-scrim')?.classList.remove('open');
+        };
+        drawerThumbs.appendChild(clone);
+      });
+    }
+
+    // Sync Outline to mobile drawer
+    const drawerOutline = document.getElementById('m3-drawer-outline');
+    const desktopOutline = document.getElementById('outline-container');
+    if (drawerOutline && desktopOutline) {
+      drawerOutline.innerHTML = '';
+      desktopOutline.querySelectorAll('.outline-item').forEach(item => {
+        const clone = item.cloneNode(true);
+        clone.onclick = item.onclick;
+        drawerOutline.appendChild(clone);
+      });
+    }
   }
 
   _initModeTabs() {
@@ -274,34 +460,44 @@ export class UIController {
   _initTheme() {
     const btnTheme = document.getElementById('btn-toggle-theme');
     const themeIcon = document.getElementById('theme-icon');
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
 
-    const updateIcon = (isDark) => {
-      if (!themeIcon) return;
+    const updateThemeState = (isDark) => {
       if (isDark) {
-        // Show Sun icon (switch to light)
-        themeIcon.innerHTML = `<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>`;
-        btnTheme.title = 'Switch to Light Mode';
+        document.body.classList.remove('theme-light', 'theme-sepia', 'theme-night');
+        document.body.classList.add('theme-dark');
+        if (themeIcon) {
+          themeIcon.innerHTML = `<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>`;
+        }
+        if (btnTheme) btnTheme.title = 'Switch to Light Mode';
+        if (metaTheme) metaTheme.content = '#141318';
+        localStorage.setItem('personal-pdf-theme', 'dark');
+        this.setStatus('Dark theme active');
       } else {
-        // Show Moon icon (switch to dark)
-        themeIcon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
-        btnTheme.title = 'Switch to Dark Mode';
+        document.body.classList.remove('theme-dark', 'theme-sepia', 'theme-night');
+        document.body.classList.add('theme-light');
+        if (themeIcon) {
+          themeIcon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
+        }
+        if (btnTheme) btnTheme.title = 'Switch to Dark Mode';
+        if (metaTheme) metaTheme.content = '#ffffff';
+        localStorage.setItem('personal-pdf-theme', 'light');
+        this.setStatus('Light theme active');
       }
     };
+
+    // Load saved theme preference
+    const saved = localStorage.getItem('personal-pdf-theme');
+    if (saved === 'light') {
+      updateThemeState(false);
+    } else {
+      updateThemeState(true);
+    }
 
     if (btnTheme) {
       btnTheme.onclick = () => {
         const isCurrentlyDark = document.body.classList.contains('theme-dark');
-        if (isCurrentlyDark) {
-          document.body.classList.remove('theme-dark', 'theme-sepia', 'theme-night');
-          document.body.classList.add('theme-light');
-          updateIcon(false);
-          this.setStatus('Light theme active');
-        } else {
-          document.body.classList.remove('theme-light', 'theme-sepia', 'theme-night');
-          document.body.classList.add('theme-dark');
-          updateIcon(true);
-          this.setStatus('Dark theme active');
-        }
+        updateThemeState(!isCurrentlyDark);
       };
     }
   }
@@ -398,6 +594,12 @@ export class UIController {
   _renderAnnotateTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
+        <button id="tool-undo" class="tool-btn" title="Undo (Ctrl+Z)">↺</button>
+        <button id="tool-redo" class="tool-btn" title="Redo (Ctrl+Y)">↻</button>
+      </div>
+      <div class="divider"></div>
+      <div class="tool-group">
+        <button id="tool-select" class="tool-btn" title="Text Selection Tool">✋</button>
         <button id="tool-pen" class="tool-btn active" title="Freehand Pen">✏️</button>
         <button id="tool-highlighter" class="tool-btn" title="Highlighter Brush">🖍️</button>
         <button id="tool-note" class="tool-btn" title="Sticky Note">💬</button>
@@ -425,14 +627,29 @@ export class UIController {
       </div>
     `;
 
+    document.getElementById('tool-undo').onclick = () => {
+      const ok = this.app.annotator.undo();
+      this.setStatus(ok ? 'Undo action' : 'Nothing to undo');
+    };
+    document.getElementById('tool-redo').onclick = () => {
+      const ok = this.app.annotator.redo();
+      this.setStatus(ok ? 'Redo action' : 'Nothing to redo');
+    };
+
     // Tool switching
-    const tools = ['pen', 'highlighter', 'note', 'text', 'rect', 'circle', 'line'];
+    const tools = ['select', 'pen', 'highlighter', 'note', 'text', 'rect', 'circle', 'line'];
     tools.forEach(t => {
       const btn = document.getElementById(`tool-${t}`);
       btn.onclick = () => {
         tools.forEach(other => document.getElementById(`tool-${other}`)?.classList.remove('active'));
         btn.classList.add('active');
         
+        if (t === 'select') {
+          this.app.annotator.setTool('none');
+          this.setStatus('Text selection active: click & drag to select and copy text');
+          return;
+        }
+
         let toolName = t;
         if (t === 'rect') toolName = 'rectangle';
         this.app.annotator.setTool(toolName, {
@@ -501,9 +718,15 @@ export class UIController {
   _renderEditTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="btn-edit-add-text" class="tool-btn active" title="Add / Edit Text Block">T</button>
-        <button id="btn-edit-add-image" class="tool-btn" title="Insert Image onto PDF">🖼️</button>
-        <button id="btn-edit-whiteout" class="tool-btn" title="Whiteout / Erase Existing Content">⬜</button>
+        <button id="btn-edit-undo" class="tool-btn" title="Undo (Ctrl+Z)">↺</button>
+        <button id="btn-edit-redo" class="tool-btn" title="Redo (Ctrl+Y)">↻</button>
+      </div>
+      <div class="divider"></div>
+      <div class="tool-group">
+        <button id="btn-edit-inline" class="tool-btn active" title="In-Place Text Editing (Click existing text in document to edit)">📝 In-Place Text</button>
+        <button id="btn-edit-add-text" class="tool-btn" title="Add New Text Block">T New Text</button>
+        <button id="btn-edit-add-image" class="tool-btn" title="Insert Image onto PDF">🖼️ Image</button>
+        <button id="btn-edit-whiteout" class="tool-btn" title="Whiteout Erase">⬜ Whiteout</button>
         <input type="file" id="edit-image-file-input" accept="image/png, image/jpeg" style="display:none;">
       </div>
       <div class="divider"></div>
@@ -531,27 +754,47 @@ export class UIController {
       </div>
     `;
 
-    // 1. Add Text
+    document.getElementById('btn-edit-undo').onclick = () => {
+      const ok = this.app.annotator.undo();
+      this.setStatus(ok ? 'Undo action' : 'Nothing to undo');
+    };
+    document.getElementById('btn-edit-redo').onclick = () => {
+      const ok = this.app.annotator.redo();
+      this.setStatus(ok ? 'Redo action' : 'Nothing to redo');
+    };
+
+    const btnInline = document.getElementById('btn-edit-inline');
     const btnText = document.getElementById('btn-edit-add-text');
     const btnImg = document.getElementById('btn-edit-add-image');
     const btnWhiteout = document.getElementById('btn-edit-whiteout');
     const imgInput = document.getElementById('edit-image-file-input');
 
-    btnText.onclick = () => {
-      btnText.classList.add('active');
+    // 1. In-place content editing
+    btnInline.onclick = () => {
+      btnInline.classList.add('active');
+      btnText.classList.remove('active');
       btnImg.classList.remove('active');
       btnWhiteout.classList.remove('active');
+      this.app.viewer.setContentEditingMode(true);
+      this.app.annotator.setTool('none');
+      this.setStatus('In-place edit: click any existing text in the document to edit directly');
+    };
+
+    // 2. Add New Text Block
+    btnText.onclick = () => {
+      btnText.classList.add('active');
+      btnInline.classList.remove('active');
+      btnImg.classList.remove('active');
+      btnWhiteout.classList.remove('active');
+      this.app.viewer.setContentEditingMode(false);
       this.app.annotator.setTool('text', {
         fontSize: parseInt(document.getElementById('edit-font-size').value, 10),
         color: document.getElementById('edit-font-color').value
       });
-      this.setStatus('Click anywhere on the document to add or edit text');
+      this.setStatus('Click anywhere on the document to place a new text block');
     };
 
-    // Default activate text tool in edit mode
-    btnText.click();
-
-    // 2. Add Image
+    // 3. Add Image
     btnImg.onclick = () => {
       imgInput.click();
     };
@@ -568,9 +811,10 @@ export class UIController {
       }
     };
 
-    // 3. Whiteout
+    // 4. Whiteout
     btnWhiteout.onclick = () => {
       btnWhiteout.classList.add('active');
+      btnInline.classList.remove('active');
       btnText.classList.remove('active');
       btnImg.classList.remove('active');
       this.app.insertWhiteoutOnPage(this.app.viewer.currentPage);
@@ -593,6 +837,9 @@ export class UIController {
     document.getElementById('btn-open-bates').onclick = () => {
       document.getElementById('modal-bates').classList.add('open');
     };
+
+    // Default activate in-place editing
+    btnInline.click();
   }
 
   _renderFormsTools() {

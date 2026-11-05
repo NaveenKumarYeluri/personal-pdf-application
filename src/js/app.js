@@ -441,13 +441,27 @@ class PersonalPDFApp {
   }
 
   _onPageChange(current, total) {
-    document.getElementById('page-num-input').value = current;
-    document.getElementById('page-count').textContent = total;
+    const pageInput = document.getElementById('page-num-input');
+    const pageCount = document.getElementById('page-count');
+    const m3Page = document.getElementById('m3-page-display');
+    const m3Sub = document.getElementById('m3-drawer-subtitle');
+
+    if (pageInput) pageInput.value = current;
+    if (pageCount) pageCount.textContent = total;
+    if (m3Page) m3Page.textContent = `${current} / ${total}`;
+    if (m3Sub) m3Sub.textContent = `${total} pages • Page ${current}`;
   }
 
   _onDocumentLoaded(meta) {
-    document.getElementById('page-count').textContent = meta.pages;
-    document.getElementById('page-num-input').max = meta.pages;
+    const pageCount = document.getElementById('page-count');
+    const pageInput = document.getElementById('page-num-input');
+    const m3Page = document.getElementById('m3-page-display');
+    const m3Sub = document.getElementById('m3-drawer-subtitle');
+
+    if (pageCount) pageCount.textContent = meta.pages;
+    if (pageInput) pageInput.max = meta.pages;
+    if (m3Page) m3Page.textContent = `1 / ${meta.pages}`;
+    if (m3Sub) m3Sub.textContent = `${meta.pages} pages • Page 1`;
     document.getElementById('status-size').textContent = `${Math.round(meta.bytes / 1024)} KB`;
     this.ui.setZoomStatus(`${Math.round(this.viewer.scale * 100)}%`);
   }
@@ -593,6 +607,8 @@ class PersonalPDFApp {
       footer.innerHTML = `
         <span class="organizer-page-num">${i}</span>
         <div class="organizer-card-actions">
+          <button class="organizer-mini-btn btn-move-left" title="Move Left">◀</button>
+          <button class="organizer-mini-btn btn-move-right" title="Move Right">▶</button>
           <button class="organizer-mini-btn btn-rot-left" title="Rotate Left">↺</button>
           <button class="organizer-mini-btn btn-rot-right" title="Rotate Right">↻</button>
           <button class="organizer-mini-btn btn-del-card" title="Delete Page">🗑</button>
@@ -611,7 +627,24 @@ class PersonalPDFApp {
       canvas.height = vp.height;
       page.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
 
-      // Card actions
+      // Move Left/Right actions (Instant touch & click page switching)
+      footer.querySelector('.btn-move-left').onclick = (e) => {
+        e.stopPropagation();
+        if (card.previousElementSibling) {
+          grid.insertBefore(card, card.previousElementSibling);
+          this._renumberOrganizerCards();
+        }
+      };
+
+      footer.querySelector('.btn-move-right').onclick = (e) => {
+        e.stopPropagation();
+        if (card.nextElementSibling) {
+          card.nextElementSibling.after(card);
+          this._renumberOrganizerCards();
+        }
+      };
+
+      // Card rotate actions
       footer.querySelector('.btn-rot-left').onclick = (e) => {
         e.stopPropagation();
         const currentRot = parseInt(card.dataset.rotationDelta, 10);
@@ -652,67 +685,294 @@ class PersonalPDFApp {
   _setupDragAndDropReorder(grid) {
     let draggedCard = null;
 
-    grid.addEventListener('dragstart', (e) => {
-      draggedCard = e.target.closest('.organizer-card');
-      if (draggedCard) draggedCard.classList.add('dragging');
-    });
+    grid.querySelectorAll('.organizer-card').forEach(card => {
+      card.addEventListener('dragstart', (e) => {
+        draggedCard = card;
+        card.classList.add('dragging');
+        if (e.dataTransfer) {
+          e.dataTransfer.setData('text/plain', card.dataset.pageIndex || '0');
+          e.dataTransfer.effectAllowed = 'move';
+        }
+      });
 
-    grid.addEventListener('dragend', () => {
-      if (draggedCard) draggedCard.classList.remove('dragging');
-      draggedCard = null;
-      this._renumberOrganizerCards();
-    });
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (draggedCard && draggedCard !== card) {
+          card.classList.add('drag-over');
+        }
+      });
 
-    grid.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      const afterElement = this._getDragAfterElement(grid, e.clientX, e.clientY);
-      if (afterElement == null) {
-        grid.appendChild(draggedCard);
-      } else {
-        grid.insertBefore(draggedCard, afterElement);
-      }
-    });
-  }
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('drag-over');
+      });
 
-  _getDragAfterElement(container, x, y) {
-    const draggableElements = [...container.querySelectorAll('.organizer-card:not(.dragging)')];
-    return draggableElements.reduce((closest, child) => {
-      const box = child.getBoundingClientRect();
-      const offset = (x - box.left - box.width / 2) + (y - box.top - box.height / 2);
-      if (offset < 0 && offset > closest.offset) {
-        return { offset: offset, element: child };
-      } else {
-        return closest;
-      }
-    }, { offset: Number.NEGATIVE_INFINITY }).element;
+      card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        card.classList.remove('drag-over');
+        if (!draggedCard || draggedCard === card) return;
+
+        const rect = card.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        if (e.clientX < midX) {
+          grid.insertBefore(draggedCard, card);
+        } else {
+          card.after(draggedCard);
+        }
+        this._renumberOrganizerCards();
+      });
+
+      card.addEventListener('dragend', () => {
+        if (draggedCard) draggedCard.classList.remove('dragging');
+        draggedCard = null;
+        grid.querySelectorAll('.organizer-card').forEach(c => c.classList.remove('drag-over'));
+        this._renumberOrganizerCards();
+      });
+    });
   }
 
   _bindOrganizerEvents() {
-    const btnApplyOrg = document.getElementById('btn-org-apply');
-    if (btnApplyOrg) {
-      btnApplyOrg.onclick = async () => {
-        const grid = document.getElementById('organizer-grid');
-        const cards = grid.querySelectorAll('.organizer-card');
-        const operations = [];
+    // 1. Toolbar actions: Rotate, Delete, Duplicate, Insert Blank, Extract
+    const btnRotLeft = document.getElementById('btn-org-rotate-left');
+    const btnRotRight = document.getElementById('btn-org-rotate-right');
+    const btnDel = document.getElementById('btn-org-delete');
+    const btnDup = document.getElementById('btn-org-duplicate');
+    const btnInsertBlank = document.getElementById('btn-org-insert-blank');
+    const btnExtract = document.getElementById('btn-org-extract');
+    const grid = document.getElementById('organizer-grid');
 
-        cards.forEach(card => {
-          operations.push({
-            originalIndex: parseInt(card.dataset.pageIndex, 10),
-            rotationDelta: parseInt(card.dataset.rotationDelta, 10) || 0,
-            isBlank: card.dataset.isBlank === 'true'
-          });
+    if (btnRotLeft) {
+      btnRotLeft.onclick = () => {
+        const selected = grid.querySelectorAll('.organizer-card.selected');
+        const targetCards = selected.length > 0 ? selected : grid.querySelectorAll('.organizer-card');
+        targetCards.forEach(card => {
+          const currentRot = parseInt(card.dataset.rotationDelta, 10) || 0;
+          card.dataset.rotationDelta = (currentRot - 90).toString();
+          const thumb = card.querySelector('.organizer-thumb');
+          if (thumb) thumb.style.transform = `rotate(${card.dataset.rotationDelta}deg)`;
+        });
+      };
+    }
+
+    if (btnRotRight) {
+      btnRotRight.onclick = () => {
+        const selected = grid.querySelectorAll('.organizer-card.selected');
+        const targetCards = selected.length > 0 ? selected : grid.querySelectorAll('.organizer-card');
+        targetCards.forEach(card => {
+          const currentRot = parseInt(card.dataset.rotationDelta, 10) || 0;
+          card.dataset.rotationDelta = (currentRot + 90).toString();
+          const thumb = card.querySelector('.organizer-thumb');
+          if (thumb) thumb.style.transform = `rotate(${card.dataset.rotationDelta}deg)`;
+        });
+      };
+    }
+
+    if (btnDel) {
+      btnDel.onclick = () => {
+        const selected = grid.querySelectorAll('.organizer-card.selected');
+        if (selected.length === 0) {
+          alert('Click to select one or more page cards to delete.');
+          return;
+        }
+        selected.forEach(card => card.remove());
+        this._renumberOrganizerCards();
+      };
+    }
+
+    if (btnDup) {
+      btnDup.onclick = () => {
+        const selected = grid.querySelectorAll('.organizer-card.selected');
+        if (selected.length === 0) {
+          alert('Click to select a page card to duplicate.');
+          return;
+        }
+        selected.forEach(orig => {
+          const clone = orig.cloneNode(true);
+          clone.classList.remove('selected', 'dragging', 'drag-over');
+          // Re-bind actions on clone
+          const footer = clone.querySelector('.organizer-footer');
+          const thumbBox = clone.querySelector('.organizer-thumb');
+
+          footer.querySelector('.btn-move-left').onclick = (e) => {
+            e.stopPropagation();
+            if (clone.previousElementSibling) {
+              grid.insertBefore(clone, clone.previousElementSibling);
+              this._renumberOrganizerCards();
+            }
+          };
+
+          footer.querySelector('.btn-move-right').onclick = (e) => {
+            e.stopPropagation();
+            if (clone.nextElementSibling) {
+              clone.nextElementSibling.after(clone);
+              this._renumberOrganizerCards();
+            }
+          };
+
+          footer.querySelector('.btn-rot-left').onclick = (e) => {
+            e.stopPropagation();
+            const currentRot = parseInt(clone.dataset.rotationDelta, 10) || 0;
+            clone.dataset.rotationDelta = (currentRot - 90).toString();
+            thumbBox.style.transform = `rotate(${clone.dataset.rotationDelta}deg)`;
+          };
+
+          footer.querySelector('.btn-rot-right').onclick = (e) => {
+            e.stopPropagation();
+            const currentRot = parseInt(clone.dataset.rotationDelta, 10) || 0;
+            clone.dataset.rotationDelta = (currentRot + 90).toString();
+            thumbBox.style.transform = `rotate(${clone.dataset.rotationDelta}deg)`;
+          };
+
+          footer.querySelector('.btn-del-card').onclick = (e) => {
+            e.stopPropagation();
+            clone.remove();
+            this._renumberOrganizerCards();
+          };
+
+          clone.onclick = () => {
+            clone.classList.toggle('selected');
+          };
+
+          orig.after(clone);
+        });
+        this._renumberOrganizerCards();
+        this._setupDragAndDropReorder(grid);
+      };
+    }
+
+    if (btnInsertBlank) {
+      btnInsertBlank.onclick = () => {
+        const card = document.createElement('div');
+        card.className = 'organizer-card';
+        card.dataset.isBlank = 'true';
+        card.dataset.pageIndex = '-1';
+        card.dataset.rotationDelta = '0';
+        card.draggable = true;
+
+        const thumbBox = document.createElement('div');
+        thumbBox.className = 'organizer-thumb';
+        thumbBox.style.display = 'flex';
+        thumbBox.style.alignItems = 'center';
+        thumbBox.style.justifyContent = 'center';
+        thumbBox.style.backgroundColor = '#ffffff';
+        thumbBox.style.border = '1px dashed #9ca3af';
+        thumbBox.innerHTML = '<span style="color:#6b7280; font-size:12px; font-weight:600;">Blank Page</span>';
+
+        const footer = document.createElement('div');
+        footer.className = 'organizer-footer';
+        footer.innerHTML = `
+          <span class="organizer-page-num">+</span>
+          <div class="organizer-card-actions">
+            <button class="organizer-mini-btn btn-move-left" title="Move Left">◀</button>
+            <button class="organizer-mini-btn btn-move-right" title="Move Right">▶</button>
+            <button class="organizer-mini-btn btn-del-card" title="Delete Page">🗑</button>
+          </div>
+        `;
+
+        card.appendChild(thumbBox);
+        card.appendChild(footer);
+
+        footer.querySelector('.btn-move-left').onclick = (e) => {
+          e.stopPropagation();
+          if (card.previousElementSibling) {
+            grid.insertBefore(card, card.previousElementSibling);
+            this._renumberOrganizerCards();
+          }
+        };
+
+        footer.querySelector('.btn-move-right').onclick = (e) => {
+          e.stopPropagation();
+          if (card.nextElementSibling) {
+            card.nextElementSibling.after(card);
+            this._renumberOrganizerCards();
+          }
+        };
+
+        footer.querySelector('.btn-del-card').onclick = (e) => {
+          e.stopPropagation();
+          card.remove();
+          this._renumberOrganizerCards();
+        };
+
+        card.onclick = () => {
+          card.classList.toggle('selected');
+        };
+
+        const lastSelected = grid.querySelector('.organizer-card.selected');
+        if (lastSelected) {
+          lastSelected.after(card);
+        } else {
+          grid.appendChild(card);
+        }
+
+        this._renumberOrganizerCards();
+        this._setupDragAndDropReorder(grid);
+      };
+    }
+
+    if (btnExtract) {
+      btnExtract.onclick = async () => {
+        const selected = grid.querySelectorAll('.organizer-card.selected');
+        const targetCards = selected.length > 0 ? selected : grid.querySelectorAll('.organizer-card');
+        const indices = [];
+        targetCards.forEach(c => {
+          const idx = parseInt(c.dataset.pageIndex, 10);
+          if (!isNaN(idx) && idx >= 0) indices.push(idx);
         });
 
-        if (operations.length === 0) {
-          alert('Cannot create an empty PDF. Keep at least one page.');
+        if (indices.length === 0) {
+          alert('No document pages selected to extract.');
           return;
         }
 
-        this.ui.setStatus('Applying page changes...');
-        const updatedBytes = await this.organizer.reorderAndModifyPages(this.currentPdfBytes, operations);
-        await this.loadArrayBuffer(updatedBytes, this.currentDocName);
-        document.getElementById('modal-organizer').classList.remove('open');
-        this.ui.setStatus('Page modifications applied successfully');
+        this.ui.setStatus('Extracting pages...');
+        const extracted = await this.organizer.extractPages(this.currentPdfBytes, indices);
+        this.exporter.downloadFile(extracted, `${this.currentDocName.replace('.pdf', '')}_extracted.pdf`, 'application/pdf');
+        this.ui.setStatus('Extracted pages downloaded');
+      };
+    }
+
+    // 2. Apply Page Changes button
+    const btnApplyOrg = document.getElementById('btn-org-apply');
+    if (btnApplyOrg) {
+      btnApplyOrg.onclick = async () => {
+        try {
+          const cards = grid.querySelectorAll('.organizer-card');
+          const operations = [];
+
+          cards.forEach(card => {
+            const pIdx = parseInt(card.dataset.pageIndex, 10);
+            const isBlank = card.dataset.isBlank === 'true';
+            if (!isNaN(pIdx) && (pIdx >= 0 || isBlank)) {
+              operations.push({
+                originalIndex: pIdx,
+                rotationDelta: parseInt(card.dataset.rotationDelta, 10) || 0,
+                isBlank: isBlank
+              });
+            }
+          });
+
+          if (operations.length === 0) {
+            alert('Cannot create an empty PDF. Keep at least one page.');
+            return;
+          }
+
+          this.ui.setStatus('Applying page changes...');
+          const updatedBytes = await this.organizer.reorderAndModifyPages(this.currentPdfBytes, operations);
+          const freshBuf = updatedBytes.slice().buffer;
+          await this.loadArrayBuffer(freshBuf, this.currentDocName);
+
+          // Clear annotations since page indices have changed
+          this.annotator.annotations.clear();
+          this.annotator.undoStack = [];
+          this.annotator.redoStack = [];
+
+          document.getElementById('modal-organizer').classList.remove('open');
+          this.ui.setStatus('Page modifications applied successfully');
+        } catch (err) {
+          console.error('Failed to apply page changes:', err);
+          alert('Could not apply page changes: ' + err.message);
+          this.ui.setStatus('Error applying page changes');
+        }
       };
     }
   }

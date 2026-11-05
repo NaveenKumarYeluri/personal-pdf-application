@@ -21,7 +21,8 @@ export class PDFOrganizerEngine {
 
   async reorderAndModifyPages(pdfBytes, operations) {
     this._checkLib();
-    const srcDoc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const srcDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const newDoc = await this.PDFDocument.create();
 
     // operations is an array of page descriptors:
@@ -32,8 +33,11 @@ export class PDFOrganizerEngine {
       } else {
         const [copiedPage] = await newDoc.copyPages(srcDoc, [op.originalIndex]);
         if (op.rotationDelta) {
-          const currentRot = copiedPage.getRotation().angle;
-          copiedPage.setRotation(this.degrees((currentRot + op.rotationDelta) % 360));
+          const currentRot = (copiedPage.getRotation() && typeof copiedPage.getRotation().angle === 'number')
+            ? copiedPage.getRotation().angle
+            : 0;
+          const finalAngle = (((currentRot + op.rotationDelta) % 360) + 360) % 360;
+          copiedPage.setRotation(this.degrees(finalAngle));
         }
         newDoc.addPage(copiedPage);
       }
@@ -44,16 +48,21 @@ export class PDFOrganizerEngine {
 
   async rotatePage(pdfBytes, pageIndex, angleDegrees = 90) {
     this._checkLib();
-    const doc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const page = doc.getPage(pageIndex);
-    const currentRot = page.getRotation().angle;
-    page.setRotation(this.degrees((currentRot + angleDegrees) % 360));
+    const currentRot = (page.getRotation() && typeof page.getRotation().angle === 'number')
+      ? page.getRotation().angle
+      : 0;
+    const finalAngle = (((currentRot + angleDegrees) % 360) + 360) % 360;
+    page.setRotation(this.degrees(finalAngle));
     return await doc.save();
   }
 
   async deletePages(pdfBytes, pageIndicesToDelete) {
     this._checkLib();
-    const doc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     // Sort indices descending so deleting does not shift previous indices
     const sortedIndices = [...pageIndicesToDelete].sort((a, b) => b - a);
     for (const idx of sortedIndices) {
@@ -64,7 +73,8 @@ export class PDFOrganizerEngine {
 
   async extractPages(pdfBytes, pageIndicesToExtract) {
     this._checkLib();
-    const srcDoc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const srcDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const newDoc = await this.PDFDocument.create();
     const copiedPages = await newDoc.copyPages(srcDoc, pageIndicesToExtract);
     copiedPages.forEach(p => newDoc.addPage(p));
@@ -77,7 +87,8 @@ export class PDFOrganizerEngine {
    */
   async splitByRanges(pdfBytes, rangeString, baseName = 'document') {
     this._checkLib();
-    const srcDoc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const srcDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const totalPages = srcDoc.getPageCount();
     const results = [];
 
@@ -116,7 +127,8 @@ export class PDFOrganizerEngine {
     const mergedDoc = await this.PDFDocument.create();
 
     for (const bytes of pdfByteArrayList) {
-      const doc = await this.PDFDocument.load(bytes);
+      const rawBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
       const copiedPages = await mergedDoc.copyPages(doc, doc.getPageIndices());
       copiedPages.forEach(page => mergedDoc.addPage(page));
     }
@@ -126,7 +138,8 @@ export class PDFOrganizerEngine {
 
   async insertBlankPage(pdfBytes, atIndex = -1) {
     this._checkLib();
-    const doc = await this.PDFDocument.load(pdfBytes);
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const pageCount = doc.getPageCount();
     const targetIdx = atIndex === -1 ? pageCount : atIndex;
     doc.insertPage(targetIdx, [595.28, 841.89]);

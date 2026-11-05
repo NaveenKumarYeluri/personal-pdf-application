@@ -45,8 +45,29 @@ export class PDFExportEngine {
     return fullText;
   }
 
-  downloadFile(data, fileName, mimeType = 'application/pdf') {
+  async downloadFile(data, fileName, mimeType = 'application/pdf') {
     const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
+
+    // Handle Android / Capacitor environment where blob: link clicks might be blocked
+    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+      try {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64data = reader.result;
+          const a = document.createElement('a');
+          a.href = base64data;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        };
+        reader.readAsDataURL(blob);
+        return;
+      } catch (err) {
+        console.warn('Capacitor FileReader fallback error:', err);
+      }
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -54,7 +75,7 @@ export class PDFExportEngine {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
   }
 
   printDocument() {
