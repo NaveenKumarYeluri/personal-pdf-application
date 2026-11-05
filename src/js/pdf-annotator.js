@@ -355,42 +355,55 @@ export class PDFAnnotatorEngine {
     const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     if (!wrapper) return;
 
+    const noteContainer = document.createElement('div');
+    noteContainer.className = 'sticky-note-container placed-stamp';
+    noteContainer.style.left = `${x}px`;
+    noteContainer.style.top = `${y}px`;
+
     const marker = document.createElement('div');
     marker.className = 'sticky-note-marker';
-    marker.style.left = `${x}px`;
-    marker.style.top = `${y}px`;
     marker.innerHTML = `💬`;
+    marker.title = 'Click to open note, drag to reposition';
 
     const popup = document.createElement('div');
     popup.className = 'sticky-note-popup';
-    popup.style.left = `${x + 28}px`;
-    popup.style.top = `${y}px`;
+    popup.style.left = '30px';
+    popup.style.top = '0px';
     popup.innerHTML = `
       <div class="sticky-note-header">
         <span>Note</span>
-        <button class="tool-btn-sm btn-delete-note">✕</button>
+        <button class="tool-btn-sm btn-delete-note" title="Delete Note">&times;</button>
       </div>
       <textarea placeholder="Type your comment..."></textarea>
     `;
 
     popup.querySelector('.btn-delete-note').onclick = (e) => {
       e.stopPropagation();
-      marker.remove();
-      popup.remove();
+      this.undoStack.push({
+        type: 'element',
+        pageNum,
+        elements: [noteContainer]
+      });
+      noteContainer.remove();
     };
 
-    marker.onclick = () => {
+    marker.onclick = (e) => {
+      e.stopPropagation();
       popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+      if (popup.style.display !== 'none') popup.querySelector('textarea').focus();
     };
 
-    wrapper.appendChild(marker);
-    wrapper.appendChild(popup);
+    noteContainer.appendChild(marker);
+    noteContainer.appendChild(popup);
+
+    this._makeDraggable(noteContainer, wrapper);
+    wrapper.appendChild(noteContainer);
     popup.querySelector('textarea').focus();
 
     this.undoStack.push({
       type: 'element',
       pageNum,
-      elements: [marker, popup]
+      elements: [noteContainer]
     });
     this.redoStack = [];
   }
@@ -401,20 +414,23 @@ export class PDFAnnotatorEngine {
 
     const box = document.createElement('div');
     box.className = 'annotation-textbox';
-    box.contentEditable = true;
     box.style.left = `${x}px`;
     box.style.top = `${y}px`;
-    box.style.fontSize = `${this.fontSize}px`;
-    box.style.fontFamily = this.fontFamily;
-    box.style.fontWeight = this.fontWeight;
-    box.style.fontStyle = this.fontStyle;
-    box.style.textDecoration = this.textDecoration;
-    box.style.textAlign = this.textAlign;
-    box.style.lineHeight = this.lineHeight;
-    box.style.color = this.color;
-    box.innerText = initialText;
 
-    // Delete button (✕)
+    const contentArea = document.createElement('div');
+    contentArea.className = 'textbox-content';
+    contentArea.contentEditable = 'true';
+    contentArea.style.fontSize = `${this.fontSize}px`;
+    contentArea.style.fontFamily = this.fontFamily;
+    contentArea.style.fontWeight = this.fontWeight;
+    contentArea.style.fontStyle = this.fontStyle;
+    contentArea.style.textDecoration = this.textDecoration;
+    contentArea.style.textAlign = this.textAlign;
+    contentArea.style.lineHeight = this.lineHeight;
+    contentArea.style.color = this.color;
+    contentArea.innerText = initialText;
+
+    // Delete button (✕) placed as sibling of contentArea
     const btnDel = document.createElement('button');
     btnDel.className = 'textbox-delete-btn';
     btnDel.contentEditable = 'false';
@@ -435,6 +451,8 @@ export class PDFAnnotatorEngine {
         this.onActiveTextBoxChange(null);
       }
     };
+
+    box.appendChild(contentArea);
     box.appendChild(btnDel);
 
     const selectThisBox = (e) => {
@@ -447,18 +465,15 @@ export class PDFAnnotatorEngine {
       this.onActiveTextBoxChange(box);
     };
 
-    box.onfocus = selectThisBox;
     box.onclick = selectThisBox;
-
-    box.onkeydown = (e) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && box.innerText.trim() === '') {
-        e.preventDefault();
-        btnDel.click();
-      }
+    contentArea.onfocus = selectThisBox;
+    contentArea.onclick = (e) => {
+      e.stopPropagation();
+      selectThisBox();
     };
 
-    box.onblur = () => {
-      if (!box.innerText.trim()) {
+    contentArea.onblur = () => {
+      if (!contentArea.innerText.trim()) {
         box.remove();
         if (this.activeTextBox === box) {
           this.activeTextBox = null;
@@ -469,8 +484,18 @@ export class PDFAnnotatorEngine {
 
     this._makeDraggable(box, wrapper);
     wrapper.appendChild(box);
-    box.focus();
+
+    contentArea.focus();
     selectThisBox();
+
+    // Select text on creation
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(contentArea);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (_) {}
 
     this.undoStack.push({
       type: 'element',
@@ -479,6 +504,11 @@ export class PDFAnnotatorEngine {
     });
     this.redoStack = [];
     return box;
+  }
+
+  _getTargetElement() {
+    if (!this.activeTextBox) return null;
+    return this.activeTextBox.querySelector('.textbox-content') || this.activeTextBox;
   }
 
   setActiveTextBox(box) {
@@ -496,72 +526,102 @@ export class PDFAnnotatorEngine {
 
   setFontFamily(family) {
     this.fontFamily = family;
-    if (this.activeTextBox) {
-      this.activeTextBox.style.fontFamily = family;
+    const el = this._getTargetElement();
+    if (el) {
+      el.style.fontFamily = family;
     }
   }
 
   setFontSize(size) {
-    this.fontSize = parseInt(size, 10) || 16;
-    if (this.activeTextBox) {
-      this.activeTextBox.style.fontSize = `${this.fontSize}px`;
+    const parsed = parseInt(size, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      this.fontSize = parsed;
+      const el = this._getTargetElement();
+      if (el) {
+        el.style.fontSize = `${parsed}px`;
+      }
     }
   }
 
   setColor(color) {
     this.color = color;
-    if (this.activeTextBox) {
-      this.activeTextBox.style.color = color;
+    const el = this._getTargetElement();
+    if (el) {
+      el.style.color = color;
     }
   }
 
   toggleBold() {
-    const isBold = this.activeTextBox
-      ? (this.activeTextBox.style.fontWeight === 'bold' || window.getComputedStyle(this.activeTextBox).fontWeight >= 700)
+    const el = this._getTargetElement();
+    const isBold = el
+      ? (el.style.fontWeight === 'bold' || parseInt(window.getComputedStyle(el).fontWeight, 10) >= 700)
       : (this.fontWeight === 'bold');
     const newVal = isBold ? 'normal' : 'bold';
     this.fontWeight = newVal;
-    if (this.activeTextBox) {
-      this.activeTextBox.style.fontWeight = newVal;
+    if (el) {
+      el.style.fontWeight = newVal;
     }
     return newVal === 'bold';
   }
 
   toggleItalic() {
-    const isItalic = this.activeTextBox
-      ? (this.activeTextBox.style.fontStyle === 'italic')
+    const el = this._getTargetElement();
+    const isItalic = el
+      ? (el.style.fontStyle === 'italic')
       : (this.fontStyle === 'italic');
     const newVal = isItalic ? 'normal' : 'italic';
     this.fontStyle = newVal;
-    if (this.activeTextBox) {
-      this.activeTextBox.style.fontStyle = newVal;
+    if (el) {
+      el.style.fontStyle = newVal;
     }
     return newVal === 'italic';
   }
 
   toggleUnderline() {
-    const isUnderline = this.activeTextBox
-      ? (this.activeTextBox.style.textDecoration && this.activeTextBox.style.textDecoration.includes('underline'))
-      : (this.textDecoration.includes('underline'));
-    const newVal = isUnderline ? 'none' : 'underline';
-    this.textDecoration = newVal;
-    if (this.activeTextBox) {
-      this.activeTextBox.style.textDecoration = newVal;
+    const el = this._getTargetElement();
+    const currentDec = el ? (el.style.textDecoration || '') : this.textDecoration;
+    const hasUnder = currentDec.includes('underline');
+    let newDec = '';
+    if (hasUnder) {
+      newDec = currentDec.replace('underline', '').trim();
+    } else {
+      newDec = `${currentDec} underline`.trim();
     }
-    return newVal === 'underline';
+    this.textDecoration = newDec || 'none';
+    if (el) {
+      el.style.textDecoration = newDec || 'none';
+    }
+    return !hasUnder;
+  }
+
+  toggleStrikethrough() {
+    const el = this._getTargetElement();
+    if (!el) return false;
+    const currentDec = el.style.textDecoration || '';
+    const hasStrike = currentDec.includes('line-through');
+    let newDec = '';
+    if (hasStrike) {
+      newDec = currentDec.replace('line-through', '').trim();
+    } else {
+      newDec = `${currentDec} line-through`.trim();
+    }
+    el.style.textDecoration = newDec || 'none';
+    return !hasStrike;
   }
 
   setTextAlign(align) {
     this.textAlign = align;
-    if (this.activeTextBox) {
-      this.activeTextBox.style.textAlign = align;
+    const el = this._getTargetElement();
+    if (el) {
+      el.style.textAlign = align;
     }
   }
 
   setLineHeight(height) {
     this.lineHeight = height;
-    if (this.activeTextBox) {
-      this.activeTextBox.style.lineHeight = height;
+    const el = this._getTargetElement();
+    if (el) {
+      el.style.lineHeight = height;
     }
   }
 
@@ -776,14 +836,15 @@ export class PDFAnnotatorEngine {
 
       // 4. Draw text boxes with multi-line, custom font, bold, italic, and alignment
       for (const tb of textboxes) {
-        const textContent = Array.from(tb.childNodes)
+        const contentEl = tb.querySelector('.textbox-content') || tb;
+        const textContent = Array.from(contentEl.childNodes)
           .filter(n => !(n.classList && n.classList.contains('textbox-delete-btn')))
           .map(n => n.textContent || '')
           .join('');
 
         if (!textContent.trim()) continue;
 
-        const cs = window.getComputedStyle(tb);
+        const cs = window.getComputedStyle(contentEl);
         const tx = tb.offsetLeft * scaleX;
         const ty = tb.offsetTop * scaleY;
         const tw = tb.offsetWidth * scaleX;

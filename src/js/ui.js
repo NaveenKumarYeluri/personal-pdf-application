@@ -23,12 +23,18 @@ export class UIController {
   _initRightToolsPane() {
     const pane = document.getElementById('acrobat-tools-pane');
     const btnToggle = document.getElementById('btn-toggle-tools-pane');
-    if (btnToggle && pane) {
-      btnToggle.onclick = () => {
-        pane.classList.toggle('collapsed');
-        btnToggle.textContent = pane.classList.contains('collapsed') ? '▶' : '◀';
-      };
-    }
+    const btnToggleTop = document.getElementById('btn-toggle-tools-pane-top');
+
+    const togglePane = () => {
+      if (!pane) return;
+      pane.classList.toggle('collapsed');
+      const isCollapsed = pane.classList.contains('collapsed');
+      if (btnToggle) btnToggle.textContent = isCollapsed ? '▶' : '◀';
+      if (btnToggleTop) btnToggleTop.classList.toggle('active', !isCollapsed);
+    };
+
+    if (btnToggle) btnToggle.onclick = togglePane;
+    if (btnToggleTop) btnToggleTop.onclick = togglePane;
 
     const items = document.querySelectorAll('.acrobat-tool-item[data-acrobat-mode]');
     items.forEach(item => {
@@ -318,8 +324,6 @@ export class UIController {
       const res = this.app.viewer.prevSearchResult();
       if (res) searchCount.textContent = `${res.current}/${res.total}`;
     });
-      if (res) searchCount.textContent = `${res.current}/${res.total}`;
-    });
 
     // 7. Mobile Drawer Navigation Tabs & Actions
     const drawerTabs = document.querySelectorAll('.m3-drawer-tab');
@@ -602,8 +606,8 @@ export class UIController {
   _renderViewTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="btn-tool-hand" class="tool-btn" title="Hand / Pan Tool">✋</button>
-        <button id="btn-tool-select" class="tool-btn active" title="Text Selection Tool">I</button>
+        <button id="btn-tool-hand" class="tool-btn" title="Hand / Pan Tool (Click & drag to move pages)">✋ Pan</button>
+        <button id="btn-tool-select" class="tool-btn active" title="Text Selection Tool">I Select Text</button>
       </div>
       <div class="divider"></div>
       <div class="tool-group">
@@ -616,26 +620,63 @@ export class UIController {
     const btnCopy = document.getElementById('btn-copy-selection');
     const container = document.getElementById('viewer-container');
 
+    let isPanning = false;
+    let startX = 0, startY = 0, startScrollLeft = 0, startScrollTop = 0;
+
+    const onPanMouseDown = (e) => {
+      if (e.target.closest('button, input, select, textarea, .annotation-textbox, .sticky-note-popup')) return;
+      isPanning = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startScrollLeft = container.scrollLeft;
+      startScrollTop = container.scrollTop;
+      container.style.cursor = 'grabbing';
+      e.preventDefault();
+    };
+
+    const onPanMouseMove = (e) => {
+      if (!isPanning) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      container.scrollLeft = startScrollLeft - dx;
+      container.scrollTop = startScrollTop - dy;
+    };
+
+    const onPanMouseUp = () => {
+      if (isPanning) {
+        isPanning = false;
+        container.style.cursor = 'grab';
+      }
+    };
+
     btnHand.onclick = () => {
       btnHand.classList.add('active');
       btnSelect.classList.remove('active');
       container.classList.add('hand-tool');
+      container.style.cursor = 'grab';
       document.querySelectorAll('.textLayer').forEach(tl => {
         tl.style.pointerEvents = 'none';
         tl.style.userSelect = 'none';
       });
-      this.setStatus('Hand tool active: drag to scroll');
+      container.addEventListener('mousedown', onPanMouseDown);
+      window.addEventListener('mousemove', onPanMouseMove);
+      window.addEventListener('mouseup', onPanMouseUp);
+      this.setStatus('Hand / Pan Tool active: click and drag anywhere to move pages');
     };
 
     btnSelect.onclick = () => {
       btnSelect.classList.add('active');
       btnHand.classList.remove('active');
       container.classList.remove('hand-tool');
+      container.style.cursor = 'default';
+      container.removeEventListener('mousedown', onPanMouseDown);
+      window.removeEventListener('mousemove', onPanMouseMove);
+      window.removeEventListener('mouseup', onPanMouseUp);
       document.querySelectorAll('.textLayer').forEach(tl => {
         tl.style.pointerEvents = 'auto';
         tl.style.userSelect = 'text';
       });
-      this.setStatus('Text selection active: click & drag to select and copy');
+      this.setStatus('Text selection active: click & drag to select and copy text');
     };
 
     btnCopy.onclick = () => {
@@ -652,11 +693,6 @@ export class UIController {
   _renderAnnotateTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="tool-undo" class="tool-btn" title="Undo (Ctrl+Z)">↺</button>
-        <button id="tool-redo" class="tool-btn" title="Redo (Ctrl+Y)">↻</button>
-      </div>
-      <div class="divider"></div>
-      <div class="tool-group">
         <button id="tool-select" class="tool-btn" title="Text Selection Tool">✋</button>
         <button id="tool-pen" class="tool-btn active" title="Freehand Pen">✏️</button>
         <button id="tool-highlighter" class="tool-btn" title="Highlighter Brush">🖍️</button>
@@ -669,42 +705,43 @@ export class UIController {
       </div>
       <div class="divider"></div>
       <div class="tool-group">
-        <input type="color" id="annot-color" value="#ef4444" class="tool-select" style="padding:1px; width:28px; height:28px;" title="Stroke / Text Color">
-        <select id="annot-size" class="tool-select" title="Line Thickness">
-          <option value="2">Thin (2px)</option>
-          <option value="4" selected>Medium (4px)</option>
-          <option value="8">Thick (8px)</option>
-          <option value="14">Heavy (14px)</option>
-        </select>
-        <select id="annot-font-family" class="tool-select" title="Text Font Family">
-          <option value="Inter, sans-serif" selected>Inter / Arial (Clean Sans)</option>
-          <option value="'Roboto', sans-serif">Roboto (Modern Sans)</option>
-          <option value="'Times New Roman', serif">Times New Roman (Serif)</option>
-          <option value="'Georgia', serif">Georgia (Editorial Serif)</option>
-          <option value="'Garamond', serif">Garamond (Classic Serif)</option>
-          <option value="'Courier New', monospace">Courier New (Monospace)</option>
+        <input type="color" id="annot-color" value="#ef4444" class="tool-select" style="padding:1px; width:26px; height:26px;" title="Stroke / Text Color">
+        <input type="number" id="annot-size" value="4" min="1" max="50" class="tool-select" style="width:46px;" title="Stroke Thickness (px)">
+        <select id="annot-font-family" class="tool-select" style="max-width:130px;" title="Text Font Family">
+          <option value="Inter, sans-serif" selected>Inter / Arial (Sans)</option>
+          <option value="'Roboto', sans-serif">Roboto</option>
+          <option value="'Segoe UI', sans-serif">Segoe UI</option>
+          <option value="'Open Sans', sans-serif">Open Sans</option>
+          <option value="'Lato', sans-serif">Lato</option>
+          <option value="'Times New Roman', serif">Times New Roman</option>
+          <option value="'Georgia', serif">Georgia</option>
+          <option value="'Garamond', serif">Garamond</option>
+          <option value="'Courier New', monospace">Courier New</option>
+          <option value="'Consolas', monospace">Consolas</option>
           <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
           <option value="'Verdana', sans-serif">Verdana</option>
-          <option value="'Dancing Script', cursive">Dancing Script (Handwriting)</option>
-          <option value="'Impact', sans-serif">Impact (Headline)</option>
+          <option value="'Tahoma', sans-serif">Tahoma</option>
+          <option value="'Comic Sans MS', cursive">Comic Sans</option>
+          <option value="'Dancing Script', cursive">Dancing Script</option>
+          <option value="'Impact', sans-serif">Impact</option>
         </select>
-        <select id="annot-font-size" class="tool-select" title="Text Font Size">
-          <option value="10">10 pt</option>
-          <option value="12">12 pt</option>
-          <option value="14">14 pt</option>
-          <option value="16" selected>16 pt</option>
-          <option value="18">18 pt</option>
-          <option value="20">20 pt</option>
-          <option value="24">24 pt</option>
-          <option value="28">28 pt</option>
-          <option value="32">32 pt</option>
-          <option value="48">48 pt</option>
-        </select>
+        <input type="number" id="annot-font-size" value="16" min="6" max="144" class="tool-select" style="width:48px;" title="Font Size (pt)">
         <button id="btn-text-bold" class="tool-btn" title="Bold Text"><b>B</b></button>
         <button id="btn-text-italic" class="tool-btn" title="Italic Text"><i>I</i></button>
         <button id="btn-text-underline" class="tool-btn" title="Underline Text"><u>U</u></button>
+        <button id="btn-text-strike" class="tool-btn" title="Strikethrough"><s>S</s></button>
+        <button id="btn-text-align-left" class="tool-btn" title="Align Left">⫷</button>
+        <button id="btn-text-align-center" class="tool-btn" title="Align Center">≡</button>
+        <button id="btn-text-align-right" class="tool-btn" title="Align Right">⫸</button>
+        <button id="btn-text-align-justify" class="tool-btn" title="Justify">▤</button>
+        <select id="annot-line-spacing" class="tool-select" title="Line Spacing">
+          <option value="1.0">1.0x</option>
+          <option value="1.25" selected>1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2.0">2.0x</option>
+        </select>
         <button id="btn-text-delete" class="tool-btn" style="color:#ef4444;" title="Delete Active Text Box">🗑 Del</button>
-        <select id="annot-stamp" class="tool-select" title="Place Stamp">
+        <select id="annot-stamp" class="tool-select" style="max-width:90px;" title="Place Stamp">
           <option value="">Stamp...</option>
           <option value="APPROVED">APPROVED</option>
           <option value="REJECTED">REJECTED</option>
@@ -713,15 +750,6 @@ export class UIController {
         </select>
       </div>
     `;
-
-    document.getElementById('tool-undo').onclick = () => {
-      const ok = this.app.annotator.undo();
-      this.setStatus(ok ? 'Undo action' : 'Nothing to undo');
-    };
-    document.getElementById('tool-redo').onclick = () => {
-      const ok = this.app.annotator.redo();
-      this.setStatus(ok ? 'Redo action' : 'Nothing to redo');
-    };
 
     // Tool switching
     const tools = ['select', 'pen', 'highlighter', 'eraser', 'note', 'text', 'rect', 'circle', 'line'];
@@ -765,22 +793,23 @@ export class UIController {
     // Default to pen
     this.app.annotator.setTool('pen', {
       color: document.getElementById('annot-color').value,
-      strokeWidth: 4
+      strokeWidth: parseInt(document.getElementById('annot-size').value, 10) || 4
     });
 
     document.getElementById('annot-color').onchange = (e) => {
       this.app.annotator.setColor(e.target.value);
     };
 
-    document.getElementById('annot-size').onchange = (e) => {
-      this.app.annotator.strokeWidth = parseInt(e.target.value, 10);
+    document.getElementById('annot-size').oninput = (e) => {
+      const val = parseInt(e.target.value, 10);
+      if (!isNaN(val) && val > 0) this.app.annotator.strokeWidth = val;
     };
 
     document.getElementById('annot-font-family').onchange = (e) => {
       this.app.annotator.setFontFamily(e.target.value);
     };
 
-    document.getElementById('annot-font-size').onchange = (e) => {
+    document.getElementById('annot-font-size').oninput = (e) => {
       this.app.annotator.setFontSize(e.target.value);
     };
 
@@ -797,6 +826,28 @@ export class UIController {
     document.getElementById('btn-text-underline').onclick = () => {
       const isUnder = this.app.annotator.toggleUnderline();
       document.getElementById('btn-text-underline').classList.toggle('active', isUnder);
+    };
+
+    document.getElementById('btn-text-strike').onclick = () => {
+      const isStrike = this.app.annotator.toggleStrikethrough();
+      document.getElementById('btn-text-strike').classList.toggle('active', isStrike);
+    };
+
+    document.getElementById('btn-text-align-left').onclick = () => {
+      this.app.annotator.setTextAlign('left');
+    };
+    document.getElementById('btn-text-align-center').onclick = () => {
+      this.app.annotator.setTextAlign('center');
+    };
+    document.getElementById('btn-text-align-right').onclick = () => {
+      this.app.annotator.setTextAlign('right');
+    };
+    document.getElementById('btn-text-align-justify').onclick = () => {
+      this.app.annotator.setTextAlign('justify');
+    };
+
+    document.getElementById('annot-line-spacing').onchange = (e) => {
+      this.app.annotator.setLineHeight(parseFloat(e.target.value));
     };
 
     document.getElementById('btn-text-delete').onclick = () => {
@@ -849,11 +900,6 @@ export class UIController {
   _renderEditTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="btn-edit-undo" class="tool-btn" title="Undo (Ctrl+Z)">↺</button>
-        <button id="btn-edit-redo" class="tool-btn" title="Redo (Ctrl+Y)">↻</button>
-      </div>
-      <div class="divider"></div>
-      <div class="tool-group">
         <button id="btn-edit-inline" class="tool-btn active" title="In-Place Text Editing (Click existing text in document to edit)">📝 In-Place Text</button>
         <button id="btn-edit-add-text" class="tool-btn" title="Add New Text Block">T New Text</button>
         <button id="btn-edit-add-image" class="tool-btn" title="Insert Image onto PDF">🖼️ Image</button>
@@ -862,46 +908,40 @@ export class UIController {
       </div>
       <div class="divider"></div>
       <div class="tool-group">
-        <select id="edit-font-family" class="tool-select" title="Font Family">
-          <option value="Inter, sans-serif" selected>Inter / Arial (Clean Sans)</option>
-          <option value="'Roboto', sans-serif">Roboto (Modern Sans)</option>
-          <option value="'Times New Roman', serif">Times New Roman (Serif)</option>
-          <option value="'Georgia', serif">Georgia (Editorial Serif)</option>
-          <option value="'Garamond', serif">Garamond (Classic Serif)</option>
-          <option value="'Courier New', monospace">Courier New (Monospace)</option>
+        <select id="edit-font-family" class="tool-select" style="max-width:130px;" title="Font Family">
+          <option value="Inter, sans-serif" selected>Inter / Arial (Sans)</option>
+          <option value="'Roboto', sans-serif">Roboto</option>
+          <option value="'Segoe UI', sans-serif">Segoe UI</option>
+          <option value="'Open Sans', sans-serif">Open Sans</option>
+          <option value="'Lato', sans-serif">Lato</option>
+          <option value="'Times New Roman', serif">Times New Roman</option>
+          <option value="'Georgia', serif">Georgia</option>
+          <option value="'Garamond', serif">Garamond</option>
+          <option value="'Courier New', monospace">Courier New</option>
+          <option value="'Consolas', monospace">Consolas</option>
           <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
           <option value="'Verdana', sans-serif">Verdana</option>
-          <option value="'Dancing Script', cursive">Dancing Script (Handwriting)</option>
-          <option value="'Impact', sans-serif">Impact (Headline)</option>
+          <option value="'Tahoma', sans-serif">Tahoma</option>
+          <option value="'Comic Sans MS', cursive">Comic Sans</option>
+          <option value="'Dancing Script', cursive">Dancing Script</option>
+          <option value="'Impact', sans-serif">Impact</option>
         </select>
-        <select id="edit-font-size" class="tool-select" title="Font Size">
-          <option value="10">10 pt</option>
-          <option value="12">12 pt</option>
-          <option value="14">14 pt</option>
-          <option value="16" selected>16 pt</option>
-          <option value="18">18 pt</option>
-          <option value="20">20 pt</option>
-          <option value="24">24 pt</option>
-          <option value="28">28 pt</option>
-          <option value="32">32 pt</option>
-          <option value="36">36 pt</option>
-          <option value="48">48 pt</option>
-          <option value="64">64 pt</option>
-          <option value="72">72 pt</option>
-        </select>
+        <input type="number" id="edit-font-size" value="16" min="6" max="144" class="tool-select" style="width:48px;" title="Font Size (pt)">
         <button id="btn-edit-bold" class="tool-btn" title="Bold"><b>B</b></button>
         <button id="btn-edit-italic" class="tool-btn" title="Italic"><i>I</i></button>
         <button id="btn-edit-underline" class="tool-btn" title="Underline"><u>U</u></button>
-        <button id="btn-edit-align-left" class="tool-btn" title="Align Left">&#x2261;L</button>
-        <button id="btn-edit-align-center" class="tool-btn" title="Align Center">&#x2261;C</button>
-        <button id="btn-edit-align-right" class="tool-btn" title="Align Right">&#x2261;R</button>
+        <button id="btn-edit-strike" class="tool-btn" title="Strikethrough"><s>S</s></button>
+        <button id="btn-edit-align-left" class="tool-btn" title="Align Left">⫷</button>
+        <button id="btn-edit-align-center" class="tool-btn" title="Align Center">≡</button>
+        <button id="btn-edit-align-right" class="tool-btn" title="Align Right">⫸</button>
+        <button id="btn-edit-align-justify" class="tool-btn" title="Justify">▤</button>
         <select id="edit-line-spacing" class="tool-select" title="Line Spacing">
           <option value="1.0">1.0x</option>
           <option value="1.25" selected>1.25x</option>
           <option value="1.5">1.5x</option>
           <option value="2.0">2.0x</option>
         </select>
-        <input type="color" id="edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:28px; height:28px;" title="Text Color">
+        <input type="color" id="edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:26px; height:26px;" title="Text Color">
         <button id="btn-edit-delete-box" class="tool-btn" style="color:#ef4444;" title="Delete Selected Text Box">🗑 Del</button>
       </div>
       <div class="divider"></div>
@@ -910,15 +950,6 @@ export class UIController {
         <button id="btn-open-bates" class="btn btn-sm btn-outline">Bates Numbers</button>
       </div>
     `;
-
-    document.getElementById('btn-edit-undo').onclick = () => {
-      const ok = this.app.annotator.undo();
-      this.setStatus(ok ? 'Undo action' : 'Nothing to undo');
-    };
-    document.getElementById('btn-edit-redo').onclick = () => {
-      const ok = this.app.annotator.redo();
-      this.setStatus(ok ? 'Redo action' : 'Nothing to redo');
-    };
 
     const btnInline = document.getElementById('btn-edit-inline');
     const btnText = document.getElementById('btn-edit-add-text');
@@ -945,7 +976,7 @@ export class UIController {
       btnWhiteout.classList.remove('active');
       this.app.viewer.setContentEditingMode(false);
       this.app.annotator.setTool('text', {
-        fontSize: parseInt(document.getElementById('edit-font-size').value, 10),
+        fontSize: parseInt(document.getElementById('edit-font-size').value, 10) || 16,
         fontFamily: document.getElementById('edit-font-family').value,
         color: document.getElementById('edit-font-color').value
       });
@@ -984,7 +1015,7 @@ export class UIController {
     document.getElementById('edit-font-family').onchange = (e) => {
       this.app.annotator.setFontFamily(e.target.value);
     };
-    document.getElementById('edit-font-size').onchange = (e) => {
+    document.getElementById('edit-font-size').oninput = (e) => {
       this.app.annotator.setFontSize(e.target.value);
     };
     document.getElementById('edit-font-color').onchange = (e) => {
@@ -1003,6 +1034,10 @@ export class UIController {
       const isUnder = this.app.annotator.toggleUnderline();
       document.getElementById('btn-edit-underline').classList.toggle('active', isUnder);
     };
+    document.getElementById('btn-edit-strike').onclick = () => {
+      const isStrike = this.app.annotator.toggleStrikethrough();
+      document.getElementById('btn-edit-strike').classList.toggle('active', isStrike);
+    };
     document.getElementById('btn-edit-align-left').onclick = () => {
       this.app.annotator.setTextAlign('left');
     };
@@ -1011,6 +1046,9 @@ export class UIController {
     };
     document.getElementById('btn-edit-align-right').onclick = () => {
       this.app.annotator.setTextAlign('right');
+    };
+    document.getElementById('btn-edit-align-justify').onclick = () => {
+      this.app.annotator.setTextAlign('justify');
     };
     document.getElementById('edit-line-spacing').onchange = (e) => {
       this.app.annotator.setLineHeight(parseFloat(e.target.value));
@@ -1035,29 +1073,35 @@ export class UIController {
 
   syncActiveTextBox(box) {
     if (!box) return;
-    const cs = window.getComputedStyle(box);
+    const targetEl = box.querySelector?.('.textbox-content') || box;
+    const cs = window.getComputedStyle(targetEl);
     const fontFamEl = document.getElementById('edit-font-family') || document.getElementById('annot-font-family');
     const fontSizeEl = document.getElementById('edit-font-size') || document.getElementById('annot-font-size');
     const colorEl = document.getElementById('edit-font-color') || document.getElementById('annot-color');
     const boldBtn = document.getElementById('btn-edit-bold') || document.getElementById('btn-text-bold');
     const italicBtn = document.getElementById('btn-edit-italic') || document.getElementById('btn-text-italic');
     const underlineBtn = document.getElementById('btn-edit-underline') || document.getElementById('btn-text-underline');
+    const strikeBtn = document.getElementById('btn-edit-strike') || document.getElementById('btn-text-strike');
 
     if (fontSizeEl) {
-      const fSize = parseInt(cs.fontSize, 10);
+      const fSize = parseInt(targetEl.style.fontSize || cs.fontSize, 10);
       if (fSize) fontSizeEl.value = fSize.toString();
     }
     if (boldBtn) {
-      const isBold = box.style.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 700;
+      const isBold = targetEl.style.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 700;
       boldBtn.classList.toggle('active', isBold);
     }
     if (italicBtn) {
-      const isItalic = box.style.fontStyle === 'italic';
+      const isItalic = targetEl.style.fontStyle === 'italic';
       italicBtn.classList.toggle('active', isItalic);
     }
     if (underlineBtn) {
-      const isUnder = box.style.textDecoration && box.style.textDecoration.includes('underline');
+      const isUnder = (targetEl.style.textDecoration || '').includes('underline');
       underlineBtn.classList.toggle('active', isUnder);
+    }
+    if (strikeBtn) {
+      const isStrike = (targetEl.style.textDecoration || '').includes('line-through');
+      strikeBtn.classList.toggle('active', isStrike);
     }
   }
 

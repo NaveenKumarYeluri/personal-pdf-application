@@ -228,7 +228,12 @@ class PersonalPDFApp {
 
     // Merge Files
     const mergeInput = document.getElementById('merge-files-input');
+    const btnTriggerMerge = document.getElementById('btn-trigger-merge-file-picker');
     this.mergeItems = [];
+
+    if (btnTriggerMerge && mergeInput) {
+      btnTriggerMerge.onclick = () => mergeInput.click();
+    }
 
     if (mergeInput) {
       mergeInput.onchange = async (e) => {
@@ -743,6 +748,41 @@ class PersonalPDFApp {
       left.innerHTML = `<span>📄 <strong>${idx + 1}.</strong> ${item.name}</span>` + 
         (item.isCurrent ? ' <span style="background:var(--accent-red); color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; font-weight:600;">Current Document</span>' : ` <span class="text-muted">(${Math.round(item.size / 1024)} KB)</span>`);
 
+      const right = document.createElement('div');
+      right.style.display = 'flex';
+      right.style.alignItems = 'center';
+      right.style.gap = '4px';
+
+      if (idx > 0) {
+        const btnUp = document.createElement('button');
+        btnUp.className = 'tool-btn-sm';
+        btnUp.innerHTML = '▲';
+        btnUp.title = 'Move file up in merge order';
+        btnUp.onclick = (e) => {
+          e.stopPropagation();
+          const temp = this.mergeItems[idx];
+          this.mergeItems[idx] = this.mergeItems[idx - 1];
+          this.mergeItems[idx - 1] = temp;
+          this._renderMergeList();
+        };
+        right.appendChild(btnUp);
+      }
+
+      if (idx < this.mergeItems.length - 1) {
+        const btnDown = document.createElement('button');
+        btnDown.className = 'tool-btn-sm';
+        btnDown.innerHTML = '▼';
+        btnDown.title = 'Move file down in merge order';
+        btnDown.onclick = (e) => {
+          e.stopPropagation();
+          const temp = this.mergeItems[idx];
+          this.mergeItems[idx] = this.mergeItems[idx + 1];
+          this.mergeItems[idx + 1] = temp;
+          this._renderMergeList();
+        };
+        right.appendChild(btnDown);
+      }
+
       const btnRemove = document.createElement('button');
       btnRemove.className = 'tool-btn-sm';
       btnRemove.innerHTML = '&times;';
@@ -752,9 +792,10 @@ class PersonalPDFApp {
         this.mergeItems.splice(idx, 1);
         this._renderMergeList();
       };
+      right.appendChild(btnRemove);
 
       el.appendChild(left);
-      el.appendChild(btnRemove);
+      el.appendChild(right);
       mergeList.appendChild(el);
     });
   }
@@ -925,7 +966,9 @@ class PersonalPDFApp {
   }
 
   _bindOrganizerEvents() {
-    // 1. Toolbar actions: Rotate, Delete, Duplicate, Insert Blank, Extract
+    // 1. Toolbar actions: Move Left/Right, Rotate, Delete, Duplicate, Insert Blank, Extract
+    const btnMoveLeft = document.getElementById('btn-org-move-left');
+    const btnMoveRight = document.getElementById('btn-org-move-right');
     const btnRotLeft = document.getElementById('btn-org-rotate-left');
     const btnRotRight = document.getElementById('btn-org-rotate-right');
     const btnDel = document.getElementById('btn-org-delete');
@@ -933,6 +976,38 @@ class PersonalPDFApp {
     const btnInsertBlank = document.getElementById('btn-org-insert-blank');
     const btnExtract = document.getElementById('btn-org-extract');
     const grid = document.getElementById('organizer-grid');
+
+    if (btnMoveLeft) {
+      btnMoveLeft.onclick = () => {
+        const selected = Array.from(grid.querySelectorAll('.organizer-card.selected'));
+        if (selected.length === 0) {
+          alert('Click to select a page card to move left.');
+          return;
+        }
+        selected.forEach(card => {
+          if (card.previousElementSibling) {
+            grid.insertBefore(card, card.previousElementSibling);
+          }
+        });
+        this._renumberOrganizerCards();
+      };
+    }
+
+    if (btnMoveRight) {
+      btnMoveRight.onclick = () => {
+        const selected = Array.from(grid.querySelectorAll('.organizer-card.selected')).reverse();
+        if (selected.length === 0) {
+          alert('Click to select a page card to move right.');
+          return;
+        }
+        selected.forEach(card => {
+          if (card.nextElementSibling) {
+            card.nextElementSibling.after(card);
+          }
+        });
+        this._renumberOrganizerCards();
+      };
+    }
 
     if (btnRotLeft) {
       btnRotLeft.onclick = () => {

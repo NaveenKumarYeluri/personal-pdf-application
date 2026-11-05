@@ -106,6 +106,9 @@
           <button id="btn-doc-props" class="btn btn-ghost" title="Document Properties">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           </button>
+          <button id="btn-toggle-tools-pane-top" class="btn btn-ghost desktop-only" title="Toggle Adobe Right Tools Panel">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="16" y1="3" x2="16" y2="21"/></svg>
+          </button>
         </div>
       </div>
 
@@ -293,7 +296,7 @@
       </section>
 
       <!-- Adobe Acrobat Pro Right Tools Panel -->
-      <aside id="acrobat-tools-pane" class="acrobat-tools-pane desktop-only">
+      <aside id="acrobat-tools-pane" class="acrobat-tools-pane desktop-only collapsed">
         <div class="tools-pane-header">
           <span>Tools</span>
           <button id="btn-toggle-tools-pane" class="tool-btn-sm" title="Collapse / Expand Tools Pane">◀</button>
@@ -353,6 +356,8 @@
         <div class="modal-header">
           <h3>Organize Pages</h3>
           <div class="modal-actions-bar">
+            <button id="btn-org-move-left" class="btn btn-sm btn-outline" title="Shift selected page left">◀ Move Left</button>
+            <button id="btn-org-move-right" class="btn btn-sm btn-outline" title="Shift selected page right">▶ Move Right</button>
             <button id="btn-org-rotate-left" class="btn btn-sm btn-outline">↺ Rotate Left</button>
             <button id="btn-org-rotate-right" class="btn btn-sm btn-outline">↻ Rotate Right</button>
             <button id="btn-org-delete" class="btn btn-sm btn-danger">🗑 Delete Selected</button>
@@ -503,8 +508,14 @@
           <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="modal-hint">Select multiple PDF files to merge into a single document.</p>
-          <input type="file" id="merge-files-input" accept="application/pdf" multiple class="form-input" style="margin-bottom:12px;">
+          <p class="modal-hint">Combine the currently opened document with other PDFs, or combine multiple PDF files into a single master document.</p>
+          <div style="display:flex; gap:10px; margin-bottom:14px; align-items:center;">
+            <button id="btn-trigger-merge-file-picker" class="btn btn-sm btn-outline" type="button">
+              <span>+ Add PDF Files to Combine...</span>
+            </button>
+            <span style="font-size:11px; color:var(--text-muted);">(Select one or more PDF files)</span>
+          </div>
+          <input type="file" id="merge-files-input" accept="application/pdf" multiple style="display:none;">
           <div id="merge-files-list" class="merge-list">
             <!-- Selected files listed here -->
           </div>

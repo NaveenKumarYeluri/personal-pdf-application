@@ -3,6 +3,13 @@
    ========================================================================== */
 
 /* Sticky Notes */
+.sticky-note-container {
+  position: absolute;
+  cursor: move;
+  z-index: 35;
+  pointer-events: auto;
+}
+
 .sticky-note-marker {
   position: absolute;
   width: 24px;
@@ -63,7 +70,7 @@
 /* Placed Textbox / Typewriter Annotation */
 .annotation-textbox {
   position: absolute;
-  padding: 6px 10px;
+  padding: 0;
   border: 1.5px dashed transparent;
   color: #111827;
   cursor: move;
@@ -72,10 +79,21 @@
   min-width: 80px;
   min-height: 32px;
   outline: none;
-  resize: both;
-  overflow: auto;
+  overflow: visible !important;
   border-radius: 4px;
   transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.annotation-textbox .textbox-content {
+  padding: 6px 10px;
+  min-width: 70px;
+  min-height: 24px;
+  outline: none;
+  cursor: text;
+  word-break: break-word;
+  white-space: pre-wrap;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 .annotation-textbox:hover,
@@ -99,6 +117,7 @@
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
   z-index: 50;
   cursor: text;
+  overflow: visible !important;
 }
 
 .annotation-textbox.in-place-editor:not(.active):not(:focus) {
@@ -106,18 +125,31 @@
   box-shadow: none !important;
 }
 
-/* Floating Delete Button for Textboxes, Stamps & Signatures */
+/* Floating Delete Button for Textboxes, Stamps & Signatures - 100% visible & unclipped */
 .textbox-delete-btn {
   position: absolute;
-  top: -10px;
-  right: -10px;
-  width: 20px;
-  height: 20px;
+  top: -11px;
+  right: -11px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background-color: #ef4444;
   color: #ffffff;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  padding: 0;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
   line-height: 1;
   display: none;
   align-items: center;

@@ -34,6 +34,11 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
+      - name: Setup Deterministic Signing Keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Personal PDF Suite,C=US"
+
       - name: Build Android APK with Gradle
         working-directory: android
         run: |

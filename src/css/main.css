@@ -227,7 +227,12 @@ body {
 }
 
 .acrobat-tools-pane.collapsed {
-  width: 44px;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  display: none !important;
+  overflow: hidden !important;
+  border-left: none !important;
 }
 
 .acrobat-tools-pane.collapsed .tool-label,
@@ -410,37 +415,52 @@ body {
 .sub-toolbar {
   display: flex;
   align-items: center;
-  padding: 5px 12px;
-  gap: 8px;
+  padding: 4px 10px;
+  gap: 6px;
   background-color: var(--bg-secondary);
   min-height: 40px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  white-space: nowrap;
+}
+
+.sub-toolbar::-webkit-scrollbar {
+  height: 4px;
+}
+.sub-toolbar::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
 }
 
 .tool-group {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .dynamic-tools {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1;
+  flex-shrink: 0;
 }
 
 .tool-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 4px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.12s ease;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .tool-btn:hover {
@@ -472,10 +492,13 @@ body {
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 2px 6px;
   font-size: 11px;
   outline: none;
   cursor: pointer;
+  height: 28px;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .divider {
@@ -508,6 +531,7 @@ body {
 /* Search Box */
 .right-tools {
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .search-box {
@@ -526,7 +550,7 @@ body {
   color: var(--text-primary);
   font-size: 12px;
   outline: none;
-  width: 150px;
+  width: 130px;
 }
 
 .search-count {

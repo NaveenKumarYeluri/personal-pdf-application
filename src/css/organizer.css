@@ -4,7 +4,7 @@
 
 .organizer-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 16px;
   padding: 10px 0;
 }
@@ -17,9 +17,10 @@
   border: 2px solid transparent;
   border-radius: 8px;
   padding: 10px;
-  cursor: grab;
+  cursor: pointer;
   position: relative;
   transition: all 0.15s ease;
+  user-select: none;
 }
 
 .organizer-card:hover {
@@ -29,8 +30,9 @@
 }
 
 .organizer-card.selected {
-  border-color: var(--accent-red);
-  background-color: rgba(234, 46, 63, 0.08);
+  border-color: var(--accent-red) !important;
+  background-color: rgba(234, 46, 63, 0.16) !important;
+  box-shadow: 0 0 0 2px var(--accent-red) !important;
 }
 
 .organizer-card.dragging {

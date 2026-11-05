@@ -158,14 +158,28 @@ export class PDFViewerEngine {
   }
 
   _calculateScale(page) {
+    const viewport = page.getViewport({ scale: 1.0, rotation: this.rotation });
+    const cWidth = this.container.clientWidth;
+    const cHeight = this.container.clientHeight;
+
     if (this.currentZoomMode === 'page-width') {
-      const viewport = page.getViewport({ scale: 1.0, rotation: this.rotation });
-      const containerWidth = this.container.clientWidth - 80;
-      this.scale = Math.max(0.4, Math.min(2.5, containerWidth / viewport.width));
+      // Fit full width cleanly with minimal padding
+      const targetWidth = Math.max(300, cWidth - 24);
+      this.scale = Math.max(0.2, Math.min(5.0, targetWidth / viewport.width));
     } else if (this.currentZoomMode === 'page-fit') {
-      const viewport = page.getViewport({ scale: 1.0, rotation: this.rotation });
-      const containerHeight = this.container.clientHeight - 80;
-      this.scale = Math.max(0.4, Math.min(2.5, containerHeight / viewport.height));
+      // Fit entire page vertically in viewport
+      const targetHeight = Math.max(300, cHeight - 48);
+      const targetWidth = Math.max(300, cWidth - 24);
+      const scaleH = targetHeight / viewport.height;
+      const scaleW = targetWidth / viewport.width;
+      this.scale = Math.max(0.2, Math.min(5.0, Math.min(scaleW, scaleH)));
+    } else if (this.currentZoomMode === 'auto') {
+      // Auto Fit: smart Acrobat fit for window dimensions
+      const targetHeight = Math.max(300, cHeight - 64);
+      const targetWidth = Math.max(300, cWidth - 48);
+      const scaleH = targetHeight / viewport.height;
+      const scaleW = targetWidth / viewport.width;
+      this.scale = Math.max(0.2, Math.min(5.0, Math.min(scaleW, scaleH)));
     }
   }
 
