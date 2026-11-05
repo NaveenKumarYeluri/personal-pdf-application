@@ -119,8 +119,10 @@
   overflow: hidden;
   opacity: 0.25;
   line-height: 1.0;
-  user-select: text;
-  pointer-events: auto;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  pointer-events: auto !important;
+  z-index: 4;
 }
 
 .textLayer span {
@@ -129,11 +131,42 @@
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  pointer-events: auto !important;
 }
 
 .textLayer ::selection {
-  background: rgba(59, 130, 246, 0.7);
-  color: transparent;
+  background: rgba(59, 130, 246, 0.45) !important;
+  color: transparent !important;
+}
+
+/* Edit PDF Content In-Place Mode (Adobe Acrobat Style) */
+.page-wrapper.editing-content .textLayer {
+  opacity: 1 !important;
+  z-index: 10 !important;
+}
+
+.page-wrapper.editing-content .textLayer span {
+  color: #111827 !important;
+  background-color: rgba(255, 255, 255, 0.92);
+  border: 1px dashed rgba(59, 130, 246, 0.6);
+  border-radius: 2px;
+  cursor: text;
+}
+
+.page-wrapper.editing-content .textLayer span:hover {
+  border-color: #2563eb;
+  background-color: #ffffff;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.35);
+}
+
+.page-wrapper.editing-content .textLayer span.inline-editing {
+  border: 1.5px solid #2563eb !important;
+  background-color: #ffffff !important;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  z-index: 100;
 }
 
 /* Search Highlights */

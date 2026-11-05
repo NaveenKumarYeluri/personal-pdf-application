@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="css/material-mobile.css">
   
   <!-- PDF.js Engine (Mozilla) & pdf-lib (Offline capable with fallback) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.9/pdf-lib.min.js"></script>
 </head>
@@ -38,6 +39,12 @@
         <span id="m3-doc-title" class="m3-app-bar-title">Personal PDF</span>
       </div>
       <div class="m3-app-bar-actions">
+        <button id="m3-btn-undo" class="m3-icon-btn" title="Undo">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+        </button>
+        <button id="m3-btn-redo" class="m3-icon-btn" title="Redo">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
+        </button>
         <button id="m3-btn-open" class="m3-icon-btn" title="Open Document">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
         </button>
@@ -55,13 +62,17 @@
       <!-- Top Title & File Menu Bar -->
       <div class="menubar">
         <div class="brand">
-          <div class="brand-logo">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <div class="brand-logo" title="Personal PDF Suite (Acrobat Edition)">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9.5 8.5c0 .83-.67 1.5-1.5 1.5H7v2H5.5V9H8c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V9h2.5c.83 0 1.5.67 1.5 1.5v3zm4-3.5H17v1.5h1.5v1.5H17V16h-1.5V9h3v1.5zM7 10.5h1v1H7v-1zm5 1.5h1v1h-1v-1z"/>
             </svg>
           </div>
-          <span class="brand-name">Personal PDF Suite</span>
-          <span id="current-doc-name" class="doc-title">No document open</span>
+          <!-- Document Tabs (Adobe Acrobat Style) -->
+          <div class="acrobat-doc-tab" id="acrobat-doc-tab">
+            <span class="tab-icon">📄</span>
+            <span id="current-doc-name" class="tab-title">No document open</span>
+            <button class="tab-close" id="btn-tab-close" title="Close document">&times;</button>
+          </div>
         </div>
 
         <div class="menu-actions">
@@ -269,14 +280,54 @@
         </div>
       </section>
 
-      <!-- Right Properties & Tool Config Inspector (Collapsible) -->
-      <aside id="inspector" class="inspector">
-        <div class="inspector-header">
-          <span id="inspector-title">Properties</span>
-          <button id="btn-close-inspector" class="tool-btn-sm">×</button>
+      <!-- Adobe Acrobat Pro Right Tools Panel -->
+      <aside id="acrobat-tools-pane" class="acrobat-tools-pane desktop-only">
+        <div class="tools-pane-header">
+          <span>Tools</span>
+          <button id="btn-toggle-tools-pane" class="tool-btn-sm" title="Collapse / Expand Tools Pane">◀</button>
         </div>
-        <div id="inspector-content" class="inspector-body">
-          <!-- Dynamic tool configuration (Colors, Thickness, Opacity, Font, Stamps) -->
+        <div class="tools-pane-list">
+          <button class="acrobat-tool-item active" data-acrobat-mode="view">
+            <span class="tool-icon">📖</span>
+            <span class="tool-label">View & Read</span>
+          </button>
+          <button class="acrobat-tool-item" data-acrobat-mode="edit">
+            <span class="tool-icon">📝</span>
+            <span class="tool-label">Edit PDF</span>
+          </button>
+          <button class="acrobat-tool-item" data-acrobat-mode="annotate">
+            <span class="tool-icon">💬</span>
+            <span class="tool-label">Comment & Markup</span>
+          </button>
+          <button class="acrobat-tool-item" data-acrobat-mode="organize">
+            <span class="tool-icon">📑</span>
+            <span class="tool-label">Organize Pages</span>
+          </button>
+          <button class="acrobat-tool-item" data-acrobat-mode="forms">
+            <span class="tool-icon">✍️</span>
+            <span class="tool-label">Fill & Sign</span>
+          </button>
+          <button class="acrobat-tool-item" data-acrobat-mode="protect">
+            <span class="tool-icon">🔒</span>
+            <span class="tool-label">Protect & Redact</span>
+          </button>
+          <button class="acrobat-tool-item" data-acrobat-mode="export">
+            <span class="tool-icon">✂️</span>
+            <span class="tool-label">Export PDF</span>
+          </button>
+          <div class="tools-divider"></div>
+          <button class="acrobat-tool-item" id="tool-quick-watermark">
+            <span class="tool-icon">🌊</span>
+            <span class="tool-label">Watermark</span>
+          </button>
+          <button class="acrobat-tool-item" id="tool-quick-bates">
+            <span class="tool-icon">🔢</span>
+            <span class="tool-label">Bates Numbering</span>
+          </button>
+          <button class="acrobat-tool-item" id="tool-quick-merge">
+            <span class="tool-icon">📑</span>
+            <span class="tool-label">Combine Files</span>
+          </button>
         </div>
       </aside>
 
@@ -625,14 +676,19 @@
       <div class="m3-sheet-handle"></div>
       <div class="m3-sheet-header">
         <span>Annotation & Markup</span>
-        <button class="tool-btn-sm" id="m3-close-markup">&times;</button>
+        <div style="display:flex; gap:6px;">
+          <button class="tool-btn-sm" id="m3-sheet-undo" title="Undo">↺ Undo</button>
+          <button class="tool-btn-sm" id="m3-sheet-redo" title="Redo">↻ Redo</button>
+          <button class="tool-btn-sm" id="m3-close-markup">&times;</button>
+        </div>
       </div>
       <div class="m3-sheet-body">
         <div class="m3-chip-group">
           <div class="m3-chip active" data-m3-tool="pen">✏️ Pen</div>
           <div class="m3-chip" data-m3-tool="highlighter">🖍️ Highlighter</div>
+          <div class="m3-chip" data-m3-tool="select">✋ Select Text</div>
           <div class="m3-chip" data-m3-tool="note">💬 Sticky Note</div>
-          <div class="m3-chip" data-m3-tool="text">T Text</div>
+          <div class="m3-chip" data-m3-tool="text">T Add Text</div>
           <div class="m3-chip" data-m3-tool="rectangle">▢ Rectangle</div>
           <div class="m3-chip" data-m3-tool="circle">◯ Circle</div>
         </div>

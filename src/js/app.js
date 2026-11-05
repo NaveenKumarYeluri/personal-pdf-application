@@ -40,7 +40,8 @@ class PersonalPDFApp {
       thumbnailsContainer: thumbnailsContainer,
       outlineContainer: outlineContainer,
       onPageChange: (current, total) => this._onPageChange(current, total),
-      onDocumentLoaded: (meta) => this._onDocumentLoaded(meta)
+      onDocumentLoaded: (meta) => this._onDocumentLoaded(meta),
+      onContentEdited: (editData) => this._handleDirectContentEdit(editData)
     });
 
     // 2. Organizer Engine
@@ -80,6 +81,24 @@ class PersonalPDFApp {
 
     btnOpenFile.onclick = () => fileInput.click();
     btnWelcomeOpen.onclick = () => fileInput.click();
+
+    // Tab close
+    const btnTabClose = document.getElementById('btn-tab-close');
+    if (btnTabClose) {
+      btnTabClose.onclick = (e) => {
+        e.stopPropagation();
+        this.currentPdfBytes = null;
+        this.viewer.pdfDoc = null;
+        document.getElementById('pdf-viewer').innerHTML = '';
+        document.getElementById('thumbnails-container').innerHTML = '';
+        document.getElementById('outline-container').innerHTML = '';
+        document.getElementById('welcome-screen').style.display = 'flex';
+        document.getElementById('current-doc-name').textContent = 'No document open';
+        document.getElementById('page-count').textContent = '0';
+        document.getElementById('page-num-input').value = '1';
+        this.ui.setStatus('Document closed');
+      };
+    }
 
     fileInput.onchange = (e) => {
       const file = e.target.files[0];
@@ -344,6 +363,44 @@ class PersonalPDFApp {
         this.viewer.goToPage(this.viewer.currentPage - 1);
       }
     });
+  }
+
+  _handleDirectContentEdit(editData) {
+    const wrapper = document.getElementById(`page-wrapper-${editData.pageNum}`);
+    if (!wrapper) return;
+
+    // 1. Create a whiteout box to mask the original text in the PDF stream
+    const whiteout = document.createElement('div');
+    whiteout.className = 'placed-stamp whiteout-box';
+    whiteout.style.left = `${editData.x - 2}px`;
+    whiteout.style.top = `${editData.y - 2}px`;
+    whiteout.style.width = `${editData.width + 4}px`;
+    whiteout.style.height = `${editData.height + 4}px`;
+    whiteout.style.backgroundColor = '#ffffff';
+
+    // 2. Create the replacement editable text block
+    const replacement = document.createElement('div');
+    replacement.className = 'annotation-textbox';
+    replacement.contentEditable = true;
+    replacement.style.left = `${editData.x}px`;
+    replacement.style.top = `${editData.y}px`;
+    replacement.style.fontSize = editData.fontSize;
+    replacement.style.fontFamily = editData.fontFamily;
+    replacement.style.color = editData.color;
+    replacement.innerText = editData.newText;
+
+    wrapper.appendChild(whiteout);
+    wrapper.appendChild(replacement);
+
+    // 3. Record in Undo stack
+    this.annotator.undoStack.push({
+      type: 'element',
+      pageNum: editData.pageNum,
+      elements: [whiteout, replacement]
+    });
+    this.annotator.redoStack = [];
+
+    this.ui.setStatus(`Modified text: "${editData.newText}"`);
   }
 
   _setupElectronBridge() {

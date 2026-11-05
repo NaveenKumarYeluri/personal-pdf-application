@@ -13,10 +13,45 @@ export class UIController {
     
     this._initModeTabs();
     this._initSidebarTabs();
+    this._initRightToolsPane();
     this._initModals();
     this._initTheme();
     this._initMaterialMobileUI();
     this.setMode('view');
+  }
+
+  _initRightToolsPane() {
+    const pane = document.getElementById('acrobat-tools-pane');
+    const btnToggle = document.getElementById('btn-toggle-tools-pane');
+    if (btnToggle && pane) {
+      btnToggle.onclick = () => {
+        pane.classList.toggle('collapsed');
+        btnToggle.textContent = pane.classList.contains('collapsed') ? '▶' : '◀';
+      };
+    }
+
+    const items = document.querySelectorAll('.acrobat-tool-item[data-acrobat-mode]');
+    items.forEach(item => {
+      item.onclick = () => {
+        const mode = item.dataset.acrobatMode;
+        // Sync top mode tabs
+        document.querySelectorAll('.mode-tab').forEach(t => {
+          if (t.dataset.mode === mode) t.classList.add('active');
+          else t.classList.remove('active');
+        });
+        this.setMode(mode);
+      };
+    });
+
+    document.getElementById('tool-quick-watermark')?.addEventListener('click', () => {
+      document.getElementById('modal-watermark')?.classList.add('open');
+    });
+    document.getElementById('tool-quick-bates')?.addEventListener('click', () => {
+      document.getElementById('modal-bates')?.classList.add('open');
+    });
+    document.getElementById('tool-quick-merge')?.addEventListener('click', () => {
+      document.getElementById('modal-merge')?.classList.add('open');
+    });
   }
 
   _initMaterialMobileUI() {
@@ -80,6 +115,26 @@ export class UIController {
     }
 
     // 3. Mobile Top App Bar
+    document.getElementById('m3-btn-undo')?.addEventListener('click', () => {
+      const ok = this.app.annotator.undo();
+      this.setStatus(ok ? 'Undo action' : 'Nothing to undo');
+    });
+
+    document.getElementById('m3-btn-redo')?.addEventListener('click', () => {
+      const ok = this.app.annotator.redo();
+      this.setStatus(ok ? 'Redo action' : 'Nothing to redo');
+    });
+
+    document.getElementById('m3-sheet-undo')?.addEventListener('click', () => {
+      const ok = this.app.annotator.undo();
+      this.setStatus(ok ? 'Undo action' : 'Nothing to undo');
+    });
+
+    document.getElementById('m3-sheet-redo')?.addEventListener('click', () => {
+      const ok = this.app.annotator.redo();
+      this.setStatus(ok ? 'Redo action' : 'Nothing to redo');
+    });
+
     document.getElementById('m3-btn-drawer')?.addEventListener('click', () => {
       drawer?.classList.add('open');
       scrim?.classList.add('open');
@@ -122,10 +177,15 @@ export class UIController {
         chips.forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         const tool = chip.dataset.m3Tool;
-        this.app.annotator.setTool(tool, {
-          color: this.app.annotator.color,
-          strokeWidth: 4
-        });
+        if (tool === 'select') {
+          this.app.annotator.setTool('none');
+          this.setStatus('Text selection active: long-press text to select or copy');
+        } else {
+          this.app.annotator.setTool(tool, {
+            color: this.app.annotator.color,
+            strokeWidth: 4
+          });
+        }
         closeAllSheets();
       };
     });
@@ -176,6 +236,11 @@ export class UIController {
       tab.onclick = () => {
         tabs.forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
+        // Sync right tools panel
+        document.querySelectorAll('.acrobat-tool-item[data-acrobat-mode]').forEach(i => {
+          if (i.dataset.acrobatMode === tab.dataset.mode) i.classList.add('active');
+          else i.classList.remove('active');
+        });
         this.setMode(tab.dataset.mode);
       };
     });
@@ -245,6 +310,11 @@ export class UIController {
     this.currentMode = mode;
     this.dynamicToolsContainer.innerHTML = '';
 
+    // Toggle in-place PDF content editing
+    if (this.app.viewer) {
+      this.app.viewer.setContentEditingMode(mode === 'edit');
+    }
+
     // Reset annotator tool if moving away from annotate
     if (mode !== 'annotate') {
       this.app.annotator.setTool('none');
@@ -279,24 +349,49 @@ export class UIController {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
         <button id="btn-tool-hand" class="tool-btn" title="Hand / Pan Tool">✋</button>
-        <button id="btn-tool-select" class="tool-btn active" title="Text Select Tool">I</button>
+        <button id="btn-tool-select" class="tool-btn active" title="Text Selection Tool">I</button>
+      </div>
+      <div class="divider"></div>
+      <div class="tool-group">
+        <button id="btn-copy-selection" class="btn btn-sm btn-outline" title="Copy selected text">Copy Text</button>
       </div>
     `;
 
     const btnHand = document.getElementById('btn-tool-hand');
     const btnSelect = document.getElementById('btn-tool-select');
+    const btnCopy = document.getElementById('btn-copy-selection');
     const container = document.getElementById('viewer-container');
 
     btnHand.onclick = () => {
       btnHand.classList.add('active');
       btnSelect.classList.remove('active');
       container.classList.add('hand-tool');
+      document.querySelectorAll('.textLayer').forEach(tl => {
+        tl.style.pointerEvents = 'none';
+        tl.style.userSelect = 'none';
+      });
+      this.setStatus('Hand tool active: drag to scroll');
     };
 
     btnSelect.onclick = () => {
       btnSelect.classList.add('active');
       btnHand.classList.remove('active');
       container.classList.remove('hand-tool');
+      document.querySelectorAll('.textLayer').forEach(tl => {
+        tl.style.pointerEvents = 'auto';
+        tl.style.userSelect = 'text';
+      });
+      this.setStatus('Text selection active: click & drag to select and copy');
+    };
+
+    btnCopy.onclick = () => {
+      const selectedText = window.getSelection().toString();
+      if (selectedText) {
+        navigator.clipboard.writeText(selectedText);
+        this.setStatus(`Copied ${selectedText.length} characters to clipboard`);
+      } else {
+        this.setStatus('No text currently selected to copy');
+      }
     };
   }
 

@@ -95,7 +95,24 @@ body.theme-night .page-wrapper canvas {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* Restrict unselectable behavior strictly to UI chrome, preserving document text selection */
+.app-header,
+.mode-ribbon,
+.sub-toolbar,
+.sidebar,
+.inspector,
+.modal-header,
+.modal-footer,
+.app-statusbar,
+.btn,
+.tool-btn,
+.m3-top-app-bar,
+.m3-bottom-nav,
+.m3-drawer {
   user-select: none;
+  -webkit-user-select: none;
 }
 
 body {
@@ -148,22 +165,120 @@ body {
   align-items: center;
 }
 
-.brand-name {
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: -0.2px;
+/* Document Tab (Adobe Acrobat Style) */
+.acrobat-doc-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  max-width: 340px;
 }
 
-.doc-title {
-  color: var(--text-secondary);
-  font-size: 12px;
-  margin-left: 8px;
-  padding-left: 10px;
-  border-left: 1px solid var(--border-color);
-  max-width: 320px;
+.acrobat-doc-tab .tab-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.acrobat-doc-tab .tab-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 14px;
+}
+.acrobat-doc-tab .tab-close:hover {
+  color: var(--accent-red);
+}
+
+/* Adobe Acrobat Pro Right Tools Panel */
+.acrobat-tools-pane {
+  width: 220px;
+  background-color: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: width 0.18s ease;
+  z-index: 20;
+}
+
+.acrobat-tools-pane.collapsed {
+  width: 44px;
+}
+
+.acrobat-tools-pane.collapsed .tool-label,
+.acrobat-tools-pane.collapsed .tools-pane-header span {
+  display: none;
+}
+
+.tools-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tools-pane-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.acrobat-tool-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  transition: all 0.12s ease;
+  width: 100%;
+}
+
+.acrobat-tool-item:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.acrobat-tool-item.active {
+  background-color: var(--bg-tertiary);
+  color: var(--accent-red);
+  border-color: var(--border-color);
+  font-weight: 600;
+}
+
+.acrobat-tool-item .tool-icon {
+  font-size: 16px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tools-divider {
+  height: 1px;
+  background-color: var(--border-subtle);
+  margin: 6px 0;
 }
 
 .menu-actions {

@@ -10,6 +10,7 @@ export class PDFViewerEngine {
     this.outlineContainer = options.outlineContainer;
     this.onPageChange = options.onPageChange || (() => {});
     this.onDocumentLoaded = options.onDocumentLoaded || (() => {});
+    this.onContentEdited = options.onContentEdited || (() => {});
     
     this.pdfDoc = null;
     this.pdfBytes = null;
@@ -18,6 +19,7 @@ export class PDFViewerEngine {
     this.scale = 1.0;
     this.currentZoomMode = 'page-width';
     this.rotation = 0;
+    this.isContentEditingActive = false;
     this.pageRenders = new Map();
     this.searchResults = [];
     this.currentSearchIndex = -1;
@@ -203,20 +205,93 @@ export class PDFViewerEngine {
       textLayer.innerHTML = '';
       textLayer.style.width = `${Math.floor(viewport.width)}px`;
       textLayer.style.height = `${Math.floor(viewport.height)}px`;
+      textLayer.style.setProperty('--scale-factor', viewport.scale);
 
       if (window.pdfjsLib.renderTextLayer) {
-        window.pdfjsLib.renderTextLayer({
+        const textTask = window.pdfjsLib.renderTextLayer({
           textContentSource: textContent,
           container: textLayer,
           viewport: viewport,
           textDivs: []
         });
+        if (textTask && textTask.promise) {
+          await textTask.promise;
+        }
       }
+
+      this._setupContentEditingHandlers(textLayer, pageNum, pageWrapper);
     } catch (e) {
       console.warn('Text layer render skipped:', e);
     }
 
     this.pageRenders.set(pageNum, { page, viewport });
+  }
+
+  setContentEditingMode(active) {
+    this.isContentEditingActive = active;
+    const wrappers = this.container.querySelectorAll('.page-wrapper');
+    wrappers.forEach(w => {
+      if (active) {
+        w.classList.add('editing-content');
+      } else {
+        w.classList.remove('editing-content');
+      }
+    });
+  }
+
+  _setupContentEditingHandlers(textLayer, pageNum, pageWrapper) {
+    textLayer.addEventListener('click', (e) => {
+      const span = e.target.closest('span');
+      if (!span || !this.isContentEditingActive) return;
+
+      e.stopPropagation();
+      if (span.isContentEditable) return;
+
+      const originalText = span.textContent;
+      const rect = span.getBoundingClientRect();
+      const wrapperRect = pageWrapper.getBoundingClientRect();
+
+      // Coordinates relative to pageWrapper
+      const relLeft = rect.left - wrapperRect.left;
+      const relTop = rect.top - wrapperRect.top;
+      const relWidth = rect.width;
+      const relHeight = rect.height;
+
+      span.contentEditable = 'true';
+      span.classList.add('inline-editing');
+      span.focus();
+
+      const finishEdit = () => {
+        span.contentEditable = 'false';
+        span.classList.remove('inline-editing');
+        const newText = span.textContent;
+        if (newText !== originalText) {
+          this.onContentEdited({
+            pageNum,
+            originalText,
+            newText,
+            x: relLeft,
+            y: relTop,
+            width: relWidth,
+            height: relHeight,
+            fontSize: window.getComputedStyle(span).fontSize,
+            fontFamily: window.getComputedStyle(span).fontFamily,
+            color: window.getComputedStyle(span).color
+          });
+        }
+      };
+
+      span.onblur = finishEdit;
+      span.onkeydown = (kEvt) => {
+        if (kEvt.key === 'Enter') {
+          kEvt.preventDefault();
+          span.blur();
+        } else if (kEvt.key === 'Escape') {
+          span.textContent = originalText;
+          span.blur();
+        }
+      };
+    });
   }
 
   async loadBookmarks() {
