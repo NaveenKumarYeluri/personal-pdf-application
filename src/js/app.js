@@ -10,6 +10,7 @@ import { PDFSignatureEngine } from './pdf-signature.js';
 import { PDFSecurityEngine } from './pdf-security.js';
 import { PDFExportEngine } from './pdf-export.js';
 import { ScreenWakeLockManager } from './wake-lock.js';
+import { StorageEngine } from './storage.js';
 import { UIController } from './ui.js';
 
 class PersonalPDFApp {
@@ -18,12 +19,15 @@ class PersonalPDFApp {
     this.currentPdfBytes = null;
     this.organizerCards = [];
     this.wakeLock = new ScreenWakeLockManager();
+    this.storage = new StorageEngine();
 
     this._initEngines();
     this._bindCoreEvents();
     this._bindOrganizerEvents();
     this._bindWatermarkEvents();
     this._setupElectronBridge();
+    this._initBackButton();
+    this._restoreSession();
 
     // Check if running in native desktop shell
     if (window.__TAURI__) {
@@ -86,6 +90,7 @@ class PersonalPDFApp {
     const btnWelcomeOpen = document.getElementById('btn-welcome-open');
     const btnLoadSample = document.getElementById('btn-load-sample');
     const btnSavePdf = document.getElementById('btn-save-pdf');
+    const btnSaveAsPdf = document.getElementById('btn-save-as-pdf');
     const btnPrint = document.getElementById('btn-print');
 
     btnOpenFile.onclick = () => fileInput.click();
@@ -94,10 +99,11 @@ class PersonalPDFApp {
     // Tab close
     const btnTabClose = document.getElementById('btn-tab-close');
     if (btnTabClose) {
-      btnTabClose.onclick = (e) => {
+      btnTabClose.onclick = async (e) => {
         e.stopPropagation();
         this.currentPdfBytes = null;
         this.viewer.pdfDoc = null;
+        if (this.storage) await this.storage.clearActiveDocument();
         if (this.wakeLock) this.wakeLock.release();
         const pdfViewer = document.getElementById('pdf-viewer');
         if (pdfViewer) {
@@ -122,6 +128,7 @@ class PersonalPDFApp {
 
     btnLoadSample.onclick = () => this.loadSamplePDF();
     btnSavePdf.onclick = () => this.saveDocument();
+    if (btnSaveAsPdf) btnSaveAsPdf.onclick = () => this.saveAsDocument();
     btnPrint.onclick = () => this.exporter.printDocument();
 
     // Drag and drop PDF files onto the window
@@ -399,7 +406,11 @@ class PersonalPDFApp {
           this.annotator.redo();
         } else if (e.key === 's' || e.key === 'S') {
           e.preventDefault();
-          this.saveDocument();
+          if (e.shiftKey) {
+            this.saveAsDocument();
+          } else {
+            this.saveDocument();
+          }
         } else if (e.key === 'p' || e.key === 'P') {
           e.preventDefault();
           this.exporter.printDocument();
@@ -609,7 +620,7 @@ class PersonalPDFApp {
     await this.loadArrayBuffer(arrayBuffer, file.name);
   }
 
-  async loadArrayBuffer(data, docName = 'document.pdf') {
+  async loadArrayBuffer(data, docName = 'document.pdf', persist = true) {
     this.currentDocName = docName;
     if (data instanceof Uint8Array) {
       this.currentPdfBytes = data.slice();
@@ -619,6 +630,10 @@ class PersonalPDFApp {
       this.currentPdfBytes = new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
     } else {
       this.currentPdfBytes = new Uint8Array(data);
+    }
+
+    if (persist && this.storage) {
+      this.storage.saveActiveDocument(this.currentDocName, this.currentPdfBytes, 1);
     }
 
     if (this.annotator) {
@@ -647,6 +662,9 @@ class PersonalPDFApp {
   }
 
   _onPageChange(current, total) {
+    if (this.storage) {
+      this.storage.updateActivePage(current);
+    }
     const pageInput = document.getElementById('page-num-input');
     const pageCount = document.getElementById('page-count');
     const m3Page = document.getElementById('m3-page-display');
@@ -771,18 +789,128 @@ class PersonalPDFApp {
 
     this.ui.setStatus('Compositing annotations and signatures into PDF...');
     try {
-      // 1. Burn all drawn strokes, highlighters, signatures, textboxes, and stamps directly into the PDF streams
       let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
-      
-      const saveName = this.currentDocName.endsWith('.pdf') 
-        ? this.currentDocName.replace('.pdf', '_edited.pdf')
-        : `${this.currentDocName}_edited.pdf`;
-
-      this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
+      const saveName = this.currentDocName;
+      await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
+      this.ui.showToast(`Saved: ${saveName}`, 'success');
       this.ui.setStatus(`Saved: ${saveName}`);
     } catch (err) {
       console.error(err);
+      this.ui.showToast(`Save error: ${err.message}`, 'error');
       this.ui.setStatus(`Save error: ${err.message}`);
+    }
+  }
+
+  async saveAsDocument() {
+    if (!this.currentPdfBytes) {
+      alert('No document is open to save.');
+      return;
+    }
+
+    const origName = this.currentDocName || 'document.pdf';
+    const baseName = origName.replace(/\.pdf$/i, '');
+    const defaultName = `${baseName}_copy.pdf`;
+
+    const customName = prompt('Save As - Enter name for new PDF copy:', defaultName);
+    if (!customName || !customName.trim()) {
+      return; // Cancelled
+    }
+
+    let saveName = customName.trim();
+    if (!saveName.toLowerCase().endsWith('.pdf')) {
+      saveName += '.pdf';
+    }
+
+    this.ui.setStatus('Compositing annotations and saving new PDF copy...');
+    try {
+      let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
+      await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
+      this.ui.showToast(`Saved As: ${saveName}`, 'success');
+      this.ui.setStatus(`Saved new copy: ${saveName}`);
+    } catch (err) {
+      console.error(err);
+      this.ui.showToast(`Save As error: ${err.message}`, 'error');
+      this.ui.setStatus(`Save As error: ${err.message}`);
+    }
+  }
+
+  saveAsModifiedPdf() {
+    return this.saveAsDocument();
+  }
+
+  async _restoreSession() {
+    try {
+      const saved = await this.storage.getActiveDocument();
+      if (saved && saved.bytes && !this.currentPdfBytes) {
+        console.log('Restoring previous PDF session:', saved.name);
+        await this.loadArrayBuffer(saved.bytes, saved.name, false);
+        if (saved.page && saved.page > 1) {
+          setTimeout(() => {
+            this.viewer.goToPage(saved.page);
+          }, 350);
+        }
+        this.ui.showToast(`Restored document: ${saved.name}`, 'info');
+      }
+    } catch (err) {
+      console.warn('Could not restore session:', err);
+    }
+  }
+
+  _initBackButton() {
+    // 1. Capacitor native back button listener for Android
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+      window.Capacitor.Plugins.App.addListener('backButton', () => {
+        this._handleBackPress();
+      });
+    }
+
+    // 2. HTML5 popstate fallback for Android back gestures
+    window.addEventListener('popstate', () => {
+      this._handleBackPress();
+    });
+
+    try {
+      history.pushState({ app: 'personal-pdf' }, '');
+    } catch (_) {}
+  }
+
+  _handleBackPress() {
+    try {
+      history.pushState({ app: 'personal-pdf' }, '');
+    } catch (_) {}
+
+    // A. Close open modal if any
+    const openModal = document.querySelector('.modal-backdrop.open');
+    if (openModal) {
+      openModal.classList.remove('open');
+      return true;
+    }
+
+    // B. Close open sheet or drawer on mobile
+    const openSheet = document.querySelector('.m3-bottom-sheet.open, .m3-drawer.open');
+    if (openSheet) {
+      openSheet.classList.remove('open');
+      document.getElementById('m3-sheet-backdrop')?.classList.remove('open');
+      return true;
+    }
+
+    // C. Revert to View mode if in any editing/organizing/annotating mode
+    if (this.ui && this.ui.currentMode !== 'view') {
+      const viewTab = document.querySelector('.mode-tab[data-mode="view"]');
+      if (viewTab) viewTab.click();
+      else this.ui.setMode('view');
+      return true;
+    }
+
+    // D. In View mode, require double tap within 2s to exit so document is not abruptly lost
+    if (!this._lastBackPressTime || Date.now() - this._lastBackPressTime > 2000) {
+      this._lastBackPressTime = Date.now();
+      if (this.ui) this.ui.showToast('Press back again to exit', 'info');
+      return true;
+    }
+
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+      window.Capacitor.Plugins.App.exitApp();
     }
   }
 

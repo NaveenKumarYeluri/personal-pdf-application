@@ -421,10 +421,22 @@ export class UIController {
     });
     document.getElementById('m3-tool-export-img')?.addEventListener('click', async () => {
       closeAllSheets();
-      const img = await this.app.exporter.exportPageAsImage(this.app.viewer.currentPage);
-      if (img) {
-        this.app.exporter.downloadFile(this._dataURLtoBlob(img), `page-${this.app.viewer.currentPage}.png`, 'image/png');
+      try {
+        const pageNum = this.app.viewer.currentPage || 1;
+        const img = await this.app.exporter.exportPageAsImage(pageNum);
+        if (img) {
+          await this.app.exporter.downloadFile(this._dataURLtoBlob(img), `page-${pageNum}.png`, 'image/png');
+          this.showToast(`Export Complete: Page ${pageNum} saved as PNG`, 'success');
+        } else {
+          this.showToast('No PDF document loaded to export', 'error');
+        }
+      } catch (err) {
+        this.showToast(`Export failed: ${err.message}`, 'error');
       }
+    });
+    document.getElementById('m3-tool-save-as')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.app.saveAsModifiedPdf();
     });
   }
 
@@ -1076,6 +1088,7 @@ export class UIController {
       btnImg.classList.remove('active');
       btnWhiteout.classList.remove('active');
       this.app.viewer.setContentEditingMode(false);
+      this.app.annotator.clearActiveEditing();
       this.app.annotator.setTool('text', {
         fontSize: parseInt(document.getElementById('edit-font-size').value, 10) || 16,
         fontFamily: document.getElementById('edit-font-family').value,
@@ -1122,6 +1135,16 @@ export class UIController {
     document.getElementById('edit-font-color').onchange = (e) => {
       this.app.annotator.setColor(e.target.value);
     };
+
+    // Prevent focus loss from active text box when clicking formatting toolbar buttons
+    const formatBtnIds = [
+      'btn-edit-bold', 'btn-edit-italic', 'btn-edit-underline', 'btn-edit-strike',
+      'btn-edit-align-left', 'btn-edit-align-center', 'btn-edit-align-right', 'btn-edit-align-justify'
+    ];
+    formatBtnIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.onmousedown = (e) => e.preventDefault();
+    });
 
     document.getElementById('btn-edit-bold').onclick = () => {
       const isBold = this.app.annotator.toggleBold();
@@ -1296,17 +1319,26 @@ export class UIController {
     `;
 
     document.getElementById('btn-export-page-img').onclick = async () => {
-      this.setStatus(`Exporting page ${this.app.viewer.currentPage} as PNG...`);
-      const img = await this.app.exporter.exportPageAsImage(this.app.viewer.currentPage);
-      if (img) {
-        const fileName = `page-${this.app.viewer.currentPage}.png`;
-        this.app.exporter.downloadFile(
-          this._dataURLtoBlob(img),
-          fileName,
-          'image/png'
-        );
-        this.showToast(`Export Complete: Page ${this.app.viewer.currentPage} saved as ${fileName}`, 'success');
-        this.setStatus(`Exported Page ${this.app.viewer.currentPage} successfully as PNG`);
+      try {
+        const pageNum = this.app.viewer.currentPage || 1;
+        this.setStatus(`Exporting page ${pageNum} as PNG...`);
+        const img = await this.app.exporter.exportPageAsImage(pageNum);
+        if (img) {
+          const fileName = `page-${pageNum}.png`;
+          await this.app.exporter.downloadFile(
+            this._dataURLtoBlob(img),
+            fileName,
+            'image/png'
+          );
+          this.showToast(`Export Complete: Page ${pageNum} saved as ${fileName}`, 'success');
+          this.setStatus(`Exported Page ${pageNum} successfully as PNG`);
+        } else {
+          this.showToast('No PDF document loaded to export', 'error');
+        }
+      } catch (err) {
+        console.error('Export PNG failed:', err);
+        this.showToast(`Export PNG failed: ${err.message}`, 'error');
+        this.setStatus(`Export PNG error: ${err.message}`);
       }
     };
 

@@ -459,12 +459,7 @@ export class PDFAnnotatorEngine {
 
     const selectThisBox = (e) => {
       e?.stopPropagation();
-      if (this.activeTextBox && this.activeTextBox !== box) {
-        this.activeTextBox.classList.remove('active');
-      }
-      this.activeTextBox = box;
-      box.classList.add('active');
-      this.onActiveTextBoxChange(box);
+      this.setActiveTextBox(box);
     };
 
     box.onclick = selectThisBox;
@@ -509,9 +504,13 @@ export class PDFAnnotatorEngine {
   }
 
   _getTargetElement() {
-    if (this.activeInPlaceSpan) return this.activeInPlaceSpan;
-    if (!this.activeTextBox) return null;
-    return this.activeTextBox.querySelector('.textbox-content') || this.activeTextBox;
+    if (this.activeTextBox) {
+      return this.activeTextBox.querySelector('.textbox-content') || this.activeTextBox;
+    }
+    if (this.activeInPlaceSpan) {
+      return this.activeInPlaceSpan;
+    }
+    return null;
   }
 
   setActiveTextBox(box) {
@@ -627,6 +626,10 @@ export class PDFAnnotatorEngine {
 
   toggleBold() {
     const el = this._getTargetElement();
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
+      document.execCommand('bold', false, null);
+    }
     const isBold = el
       ? (el.style.fontWeight === 'bold' || parseInt(window.getComputedStyle(el).fontWeight, 10) >= 700)
       : (this.fontWeight === 'bold');
@@ -640,6 +643,10 @@ export class PDFAnnotatorEngine {
 
   toggleItalic() {
     const el = this._getTargetElement();
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
+      document.execCommand('italic', false, null);
+    }
     const isItalic = el
       ? (el.style.fontStyle === 'italic')
       : (this.fontStyle === 'italic');
@@ -653,6 +660,10 @@ export class PDFAnnotatorEngine {
 
   toggleUnderline() {
     const el = this._getTargetElement();
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
+      document.execCommand('underline', false, null);
+    }
     const currentDec = el ? (el.style.textDecoration || '') : this.textDecoration;
     const hasUnder = currentDec.includes('underline');
     let newDec = '';
