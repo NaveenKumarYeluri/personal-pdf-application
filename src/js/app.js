@@ -331,6 +331,8 @@ class PersonalPDFApp {
     // Hide welcome card
     document.getElementById('welcome-screen').style.display = 'none';
     document.getElementById('current-doc-name').textContent = docName;
+    const m3Title = document.getElementById('m3-doc-title');
+    if (m3Title) m3Title.textContent = docName;
     this.ui.setStatus(`Loading ${docName}...`);
 
     try {

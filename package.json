@@ -6,8 +6,8 @@
   "scripts": {
     "start": "electron .",
     "serve": "python serve.py",
-    "build:windows": "electron-builder --win",
-    "build:linux": "electron-builder --linux AppImage tar.gz",
+    "build:windows": "electron-builder --win --publish never",
+    "build:linux": "electron-builder --linux --publish never",
     "build:android": "cap build android",
     "cap:sync": "cap sync android"
   },
@@ -36,7 +36,8 @@
     "appId": "com.personal.pdfsuite",
     "productName": "Personal PDF Suite",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "src/**/*",
@@ -47,16 +48,14 @@
       "target": [
         "nsis",
         "portable"
-      ],
-      "icon": "src/assets/icons/app-icon.ico"
+      ]
     },
     "linux": {
       "target": [
         "AppImage",
         "tar.gz"
       ],
-      "category": "Office",
-      "icon": "src/assets/icons/app-icon.png"
+      "category": "Office"
     }
   }
 }

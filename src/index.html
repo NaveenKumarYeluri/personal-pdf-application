@@ -2,19 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+  <meta name="theme-color" content="#141318">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Personal PDF Suite - Acrobat Edition</title>
   
-  <!-- Modern Inter & Roboto Mono Fonts -->
+  <!-- Modern Inter & Roboto Fonts (Material 3 Standard) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&family=Inter:wght@300;400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/viewer.css">
   <link rel="stylesheet" href="css/annotations.css">
   <link rel="stylesheet" href="css/organizer.css">
+  <link rel="stylesheet" href="css/material-mobile.css">
   
   <!-- PDF.js Engine (Mozilla) & pdf-lib (Offline capable with fallback) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -24,7 +28,29 @@
   <div id="app" class="app-layout">
     
     <!-- 1. Top Ribbon Navigation & Toolbar -->
-    <header class="app-header">
+    <!-- Material 3 Mobile Top App Bar (Mobile / Android) -->
+    <header class="m3-top-app-bar m3-only">
+      <div class="m3-app-bar-left">
+        <button id="m3-btn-drawer" class="m3-icon-btn" title="Open Navigation Drawer">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <span id="m3-doc-title" class="m3-app-bar-title">Personal PDF</span>
+      </div>
+      <div class="m3-app-bar-actions">
+        <button id="m3-btn-open" class="m3-icon-btn" title="Open Document">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+        </button>
+        <button id="m3-btn-save" class="m3-icon-btn" title="Save Document">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        </button>
+        <button id="m3-btn-more" class="m3-icon-btn" title="More Options">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Desktop Header & Ribbon (Desktop Only) -->
+    <header class="app-header desktop-only">
       <!-- Top Title & File Menu Bar -->
       <div class="menubar">
         <div class="brand">
@@ -519,8 +545,139 @@
       </div>
     </div>
 
-    <!-- Status Bar -->
-    <footer class="app-statusbar">
+    <!-- Material 3 Floating Action Button (FAB) (Mobile) -->
+    <button id="m3-fab" class="m3-fab m3-only" title="Quick Action">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+
+    <!-- Material 3 Mobile Bottom Navigation Bar (Mobile / Android) -->
+    <nav class="m3-bottom-nav m3-only">
+      <button class="m3-nav-item active" data-m3-tab="read">
+        <div class="m3-pill">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+        <span class="m3-nav-label">Read</span>
+      </button>
+
+      <button class="m3-nav-item" data-m3-tab="annotate">
+        <div class="m3-pill">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 2 4 4-12 12H6v-4L18 2z"/><path d="m14 6 4 4"/></svg>
+        </div>
+        <span class="m3-nav-label">Annotate</span>
+      </button>
+
+      <button class="m3-nav-item" data-m3-tab="pages">
+        <div class="m3-pill">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </div>
+        <span class="m3-nav-label">Pages</span>
+      </button>
+
+      <button class="m3-nav-item" data-m3-tab="sign">
+        <div class="m3-pill">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="m9 15 2 2 4-4"/></svg>
+        </div>
+        <span class="m3-nav-label">Sign</span>
+      </button>
+
+      <button class="m3-nav-item" data-m3-tab="tools">
+        <div class="m3-pill">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </div>
+        <span class="m3-nav-label">Tools</span>
+      </button>
+    </nav>
+
+    <!-- Material 3 Scrim (Dim Background) -->
+    <div id="m3-scrim" class="m3-scrim"></div>
+
+    <!-- Material 3 Mobile Navigation Drawer -->
+    <div id="m3-drawer" class="m3-drawer">
+      <div style="font-size:20px; font-weight:700; color:var(--m3-sys-on-surface); margin-bottom:20px;">Personal PDF Suite</div>
+      <button class="m3-list-tile" id="m3-drawer-open">
+        <span class="m3-list-icon">📂</span>
+        <span class="m3-list-title">Open Document</span>
+      </button>
+      <button class="m3-list-tile" id="m3-drawer-sample">
+        <span class="m3-list-icon">📄</span>
+        <span class="m3-list-title">Load Sample PDF</span>
+      </button>
+      <button class="m3-list-tile" id="m3-drawer-theme">
+        <span class="m3-list-icon">🌓</span>
+        <span class="m3-list-title">Toggle Dark/Light/Sepia</span>
+      </button>
+      <button class="m3-list-tile" id="m3-drawer-about">
+        <span class="m3-list-icon">ℹ️</span>
+        <span class="m3-list-title">About App</span>
+      </button>
+    </div>
+
+    <!-- Material 3 Bottom Sheet: Markup Tools -->
+    <div id="m3-sheet-markup" class="m3-bottom-sheet">
+      <div class="m3-sheet-handle"></div>
+      <div class="m3-sheet-header">
+        <span>Annotation & Markup</span>
+        <button class="tool-btn-sm" id="m3-close-markup">&times;</button>
+      </div>
+      <div class="m3-sheet-body">
+        <div class="m3-chip-group">
+          <div class="m3-chip active" data-m3-tool="pen">✏️ Pen</div>
+          <div class="m3-chip" data-m3-tool="highlighter">🖍️ Highlighter</div>
+          <div class="m3-chip" data-m3-tool="note">💬 Sticky Note</div>
+          <div class="m3-chip" data-m3-tool="text">T Text</div>
+          <div class="m3-chip" data-m3-tool="rectangle">▢ Rectangle</div>
+          <div class="m3-chip" data-m3-tool="circle">◯ Circle</div>
+        </div>
+
+        <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:8px;">Stroke Color</div>
+        <div class="m3-chip-group" id="m3-color-palette">
+          <span class="color-dot active" style="background:#ef4444; width:28px; height:28px;" data-m3-color="#ef4444"></span>
+          <span class="color-dot" style="background:#3b82f6; width:28px; height:28px;" data-m3-color="#3b82f6"></span>
+          <span class="color-dot" style="background:#10b981; width:28px; height:28px;" data-m3-color="#10b981"></span>
+          <span class="color-dot" style="background:#f59e0b; width:28px; height:28px;" data-m3-color="#f59e0b"></span>
+          <span class="color-dot" style="background:#8b5cf6; width:28px; height:28px;" data-m3-color="#8b5cf6"></span>
+          <span class="color-dot" style="background:#000000; width:28px; height:28px;" data-m3-color="#000000"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Material 3 Bottom Sheet: Tools Menu -->
+    <div id="m3-sheet-tools" class="m3-bottom-sheet">
+      <div class="m3-sheet-handle"></div>
+      <div class="m3-sheet-header">
+        <span>PDF Tools & Utilities</span>
+        <button class="tool-btn-sm" id="m3-close-tools">&times;</button>
+      </div>
+      <div class="m3-sheet-body">
+        <button class="m3-list-tile" id="m3-tool-watermark">
+          <span class="m3-list-icon">🌊</span>
+          <span class="m3-list-title">Add Watermark</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-bates">
+          <span class="m3-list-icon">🔢</span>
+          <span class="m3-list-title">Page Numbers / Bates</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-merge">
+          <span class="m3-list-icon">📑</span>
+          <span class="m3-list-title">Combine / Merge PDFs</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-split">
+          <span class="m3-list-icon">✂️</span>
+          <span class="m3-list-title">Split Document</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-protect">
+          <span class="m3-list-icon">🔒</span>
+          <span class="m3-list-title">Password Protection</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-export-img">
+          <span class="m3-list-icon">🖼️</span>
+          <span class="m3-list-title">Export Page to PNG</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Status Bar (Desktop Only) -->
+    <footer class="app-statusbar desktop-only">
       <div class="status-item" id="status-message">Ready</div>
       <div class="status-right">
         <span class="status-item" id="status-zoom">100%</span>

@@ -1,0 +1,353 @@
+/* ==========================================================================
+   Personal PDF Suite - Material 3 (M3) Mobile & Touch UI
+   Provides genuine native Android / Material Design experience on mobile devices.
+   ========================================================================== */
+
+:root {
+  /* Material 3 Dark Color System Tokens */
+  --m3-sys-primary: #ffb4ab;
+  --m3-sys-on-primary: #690005;
+  --m3-sys-primary-container: #93000a;
+  --m3-sys-on-primary-container: #ffdad6;
+  --m3-sys-surface: #141318;
+  --m3-sys-surface-dim: #111014;
+  --m3-sys-surface-container: #211f26;
+  --m3-sys-surface-container-high: #2b2930;
+  --m3-sys-surface-container-highest: #36343b;
+  --m3-sys-on-surface: #e6e0e9;
+  --m3-sys-on-surface-variant: #cac4d0;
+  --m3-sys-outline: #938f99;
+  --m3-sys-outline-variant: #49454f;
+  --m3-elevation-2: 0px 1px 2px rgba(0,0,0,0.3), 0px 2px 6px 2px rgba(0,0,0,0.15);
+  --m3-elevation-3: 0px 4px 8px 3px rgba(0,0,0,0.15), 0px 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Hide M3 mobile elements on desktop by default */
+.m3-only {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Mobile Adaptive Layout (@media max-width: 768px)
+   ========================================================================== */
+@media (max-width: 768px) {
+  
+  /* Hide desktop ribbon & desktop menubar */
+  .desktop-only {
+    display: none !important;
+  }
+
+  /* Show M3 mobile components */
+  .m3-only {
+    display: flex !important;
+  }
+
+  body {
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    overflow: hidden;
+    touch-action: pan-x pan-y;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app-layout {
+    height: 100dvh;
+  }
+
+  /* Material 3 Top App Bar */
+  .m3-top-app-bar {
+    height: 64px;
+    background-color: var(--m3-sys-surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--m3-sys-outline-variant);
+    z-index: 100;
+    flex-shrink: 0;
+  }
+
+  .m3-app-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .m3-icon-btn {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 24px;
+    background: transparent;
+    border: none;
+    color: var(--m3-sys-on-surface);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .m3-icon-btn:active {
+    background-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .m3-app-bar-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--m3-sys-on-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .m3-app-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Material 3 Bottom Navigation Bar */
+  .m3-bottom-nav {
+    height: 80px;
+    background-color: var(--m3-sys-surface-container);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 8px;
+    border-top: 1px solid var(--m3-sys-outline-variant);
+    z-index: 100;
+    flex-shrink: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .m3-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--m3-sys-on-surface-variant);
+    cursor: pointer;
+    flex: 1;
+    gap: 4px;
+    padding: 8px 0;
+  }
+
+  .m3-pill {
+    width: 64px;
+    height: 32px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  .m3-nav-label {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+  }
+
+  .m3-nav-item.active {
+    color: var(--m3-sys-on-surface);
+  }
+
+  .m3-nav-item.active .m3-pill {
+    background-color: var(--m3-sys-primary-container);
+    color: var(--m3-sys-on-primary-container);
+  }
+
+  .m3-nav-item.active .m3-nav-label {
+    font-weight: 700;
+  }
+
+  /* Material 3 Floating Action Button (FAB) */
+  .m3-fab {
+    position: fixed;
+    right: 20px;
+    bottom: 96px;
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background-color: var(--m3-sys-primary-container);
+    color: var(--m3-sys-on-primary-container);
+    border: none;
+    box-shadow: var(--m3-elevation-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 90;
+    transition: transform 0.15s ease, background-color 0.15s ease;
+  }
+
+  .m3-fab:active {
+    transform: scale(0.92);
+  }
+
+  /* Material 3 Bottom Sheet */
+  .m3-bottom-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--m3-sys-surface-container-high);
+    border-radius: 28px 28px 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+    z-index: 200;
+    transform: translateY(100%);
+    transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+  }
+
+  .m3-bottom-sheet.open {
+    transform: translateY(0);
+  }
+
+  .m3-sheet-handle {
+    width: 32px;
+    height: 4px;
+    background-color: var(--m3-sys-outline);
+    border-radius: 2px;
+    margin: 12px auto 8px auto;
+    flex-shrink: 0;
+  }
+
+  .m3-sheet-header {
+    padding: 8px 20px 12px 20px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--m3-sys-on-surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .m3-sheet-body {
+    padding: 0 20px 20px 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Material Filter & Action Chips */
+  .m3-chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .m3-chip {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--m3-sys-outline-variant);
+    background-color: var(--m3-sys-surface-container);
+    color: var(--m3-sys-on-surface);
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    min-height: 40px;
+  }
+
+  .m3-chip.active {
+    background-color: var(--m3-sys-primary-container);
+    color: var(--m3-sys-on-primary-container);
+    border-color: transparent;
+  }
+
+  /* Material List Tile */
+  .m3-list-tile {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--m3-sys-on-surface);
+    cursor: pointer;
+    border: none;
+    width: 100%;
+    text-align: left;
+    min-height: 52px;
+  }
+
+  .m3-list-tile:active {
+    background-color: var(--m3-sys-surface-container-highest);
+  }
+
+  .m3-list-icon {
+    color: var(--m3-sys-primary);
+  }
+
+  .m3-list-title {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  /* Scrim Backdrop */
+  .m3-scrim {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.55);
+    z-index: 150;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .m3-scrim.open {
+    display: block;
+    opacity: 1;
+  }
+
+  /* Material Drawer */
+  .m3-drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 300px;
+    background-color: var(--m3-sys-surface-container-high);
+    border-radius: 0 28px 28px 0;
+    z-index: 250;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 16px;
+    box-shadow: var(--m3-elevation-3);
+  }
+
+  .m3-drawer.open {
+    transform: translateX(0);
+  }
+
+  /* Mobile PDF Viewport adjustments */
+  .viewer-container {
+    padding: 8px 0 96px 0 !important;
+  }
+
+  .page-wrapper {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35) !important;
+  }
+
+  /* Hide left desktop sidebar completely on mobile */
+  .sidebar {
+    display: none !important;
+  }
+}

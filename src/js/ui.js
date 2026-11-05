@@ -15,7 +15,159 @@ export class UIController {
     this._initSidebarTabs();
     this._initModals();
     this._initTheme();
+    this._initMaterialMobileUI();
     this.setMode('view');
+  }
+
+  _initMaterialMobileUI() {
+    // 1. Mobile Bottom Nav Tabs
+    const navItems = document.querySelectorAll('.m3-nav-item');
+    const sheetMarkup = document.getElementById('m3-sheet-markup');
+    const sheetTools = document.getElementById('m3-sheet-tools');
+    const scrim = document.getElementById('m3-scrim');
+    const drawer = document.getElementById('m3-drawer');
+
+    const closeAllSheets = () => {
+      sheetMarkup?.classList.remove('open');
+      sheetTools?.classList.remove('open');
+      drawer?.classList.remove('open');
+      scrim?.classList.remove('open');
+    };
+
+    scrim?.addEventListener('click', closeAllSheets);
+    document.getElementById('m3-close-markup')?.addEventListener('click', closeAllSheets);
+    document.getElementById('m3-close-tools')?.addEventListener('click', closeAllSheets);
+
+    navItems.forEach(item => {
+      item.onclick = () => {
+        navItems.forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        const tab = item.dataset.m3Tab;
+
+        if (tab === 'read') {
+          closeAllSheets();
+          this.setMode('view');
+        } else if (tab === 'annotate') {
+          closeAllSheets();
+          this.setMode('annotate');
+          sheetMarkup?.classList.add('open');
+          scrim?.classList.add('open');
+        } else if (tab === 'pages') {
+          closeAllSheets();
+          this.app.openOrganizerModal();
+        } else if (tab === 'sign') {
+          closeAllSheets();
+          this.app.signature.openModal();
+        } else if (tab === 'tools') {
+          closeAllSheets();
+          sheetTools?.classList.add('open');
+          scrim?.classList.add('open');
+        }
+      };
+    });
+
+    // 2. Mobile FAB (Floating Action Button)
+    const fab = document.getElementById('m3-fab');
+    if (fab) {
+      fab.onclick = () => {
+        if (this.currentMode === 'annotate') {
+          sheetMarkup?.classList.toggle('open');
+          scrim?.classList.toggle('open');
+        } else {
+          document.getElementById('file-input')?.click();
+        }
+      };
+    }
+
+    // 3. Mobile Top App Bar
+    document.getElementById('m3-btn-drawer')?.addEventListener('click', () => {
+      drawer?.classList.add('open');
+      scrim?.classList.add('open');
+    });
+
+    document.getElementById('m3-btn-open')?.addEventListener('click', () => {
+      document.getElementById('file-input')?.click();
+    });
+
+    document.getElementById('m3-btn-save')?.addEventListener('click', () => {
+      this.app.saveDocument();
+    });
+
+    document.getElementById('m3-btn-more')?.addEventListener('click', () => {
+      sheetTools?.classList.add('open');
+      scrim?.classList.add('open');
+    });
+
+    // 4. Mobile Drawer Actions
+    document.getElementById('m3-drawer-open')?.addEventListener('click', () => {
+      closeAllSheets();
+      document.getElementById('file-input')?.click();
+    });
+    document.getElementById('m3-drawer-sample')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.app.loadSamplePDF();
+    });
+    document.getElementById('m3-drawer-theme')?.addEventListener('click', () => {
+      document.getElementById('btn-toggle-theme')?.click();
+    });
+    document.getElementById('m3-drawer-about')?.addEventListener('click', () => {
+      closeAllSheets();
+      alert('Personal PDF Suite - Material 3 Edition\nCross-platform Adobe Acrobat alternative.');
+    });
+
+    // 5. Mobile Annotation Chips
+    const chips = document.querySelectorAll('.m3-chip');
+    chips.forEach(chip => {
+      chip.onclick = () => {
+        chips.forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        const tool = chip.dataset.m3Tool;
+        this.app.annotator.setTool(tool, {
+          color: this.app.annotator.color,
+          strokeWidth: 4
+        });
+        closeAllSheets();
+      };
+    });
+
+    // 6. Mobile Color Palette
+    const colorDots = document.querySelectorAll('#m3-color-palette .color-dot');
+    colorDots.forEach(dot => {
+      dot.onclick = () => {
+        colorDots.forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+        this.app.annotator.color = dot.dataset.m3Color;
+      };
+    });
+
+    // 7. Mobile Tools Menu Actions
+    document.getElementById('m3-tool-watermark')?.addEventListener('click', () => {
+      closeAllSheets();
+      document.getElementById('modal-watermark')?.classList.add('open');
+    });
+    document.getElementById('m3-tool-bates')?.addEventListener('click', () => {
+      closeAllSheets();
+      document.getElementById('modal-bates')?.classList.add('open');
+    });
+    document.getElementById('m3-tool-merge')?.addEventListener('click', () => {
+      closeAllSheets();
+      document.getElementById('modal-merge')?.classList.add('open');
+    });
+    document.getElementById('m3-tool-split')?.addEventListener('click', () => {
+      closeAllSheets();
+      document.getElementById('modal-split')?.classList.add('open');
+    });
+    document.getElementById('m3-tool-protect')?.addEventListener('click', () => {
+      closeAllSheets();
+      document.getElementById('modal-protect')?.classList.add('open');
+    });
+    document.getElementById('m3-tool-export-img')?.addEventListener('click', async () => {
+      closeAllSheets();
+      const img = await this.app.exporter.exportPageAsImage(this.app.viewer.currentPage);
+      if (img) {
+        this.app.exporter.downloadFile(this._dataURLtoBlob(img), `page-${this.app.viewer.currentPage}.png`, 'image/png');
+      }
+    });
   }
 
   _initModeTabs() {

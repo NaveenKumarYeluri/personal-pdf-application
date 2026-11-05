@@ -29,6 +29,44 @@ export class PDFViewerEngine {
     }
 
     this._setupIntersectionObserver();
+    this._setupPinchToZoom();
+  }
+
+  _setupPinchToZoom() {
+    let initialDistance = 0;
+    let initialScale = 1.0;
+
+    this.container.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        initialDistance = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        initialScale = this.scale;
+      }
+    }, { passive: true });
+
+    this.container.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && initialDistance > 0) {
+        const currentDistance = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const factor = currentDistance / initialDistance;
+        const newScale = Math.min(3.0, Math.max(0.4, initialScale * factor));
+        
+        // Debounce render if significant change
+        if (Math.abs(newScale - this.scale) > 0.15) {
+          this.setZoom('custom', newScale);
+        }
+      }
+    }, { passive: true });
+
+    this.container.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) {
+        initialDistance = 0;
+      }
+    }, { passive: true });
   }
 
   _setupIntersectionObserver() {
