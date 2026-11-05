@@ -318,6 +318,115 @@ export class PDFAnnotatorEngine {
     wrapper.appendChild(stamp);
   }
 
+  /**
+   * Burns all visual annotations (ink, highlights, textboxes, stamps)
+   * into the underlying PDF using pdf-lib by compositing them onto each page.
+   */
+  async burnAnnotationsToPdf(pdfBytes) {
+    if (!window.PDFLib) return pdfBytes;
+    const { PDFDocument } = window.PDFLib;
+    const doc = await PDFDocument.load(pdfBytes);
+    const pages = doc.getPages();
+
+    for (let i = 0; i < pages.length; i++) {
+      const pageNum = i + 1;
+      const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+      if (!wrapper) continue;
+
+      const page = pages[i];
+      const { width, height } = page.getSize();
+
+      // Check if there are annotations or drawings on this page
+      const annotCanvas = document.getElementById(`annot-canvas-${pageNum}`);
+      const textboxes = wrapper.querySelectorAll('.annotation-textbox');
+      const stamps = wrapper.querySelectorAll('.placed-stamp');
+      const redactions = wrapper.querySelectorAll('.redaction-box');
+
+      const hasContent = (this.annotations.has(pageNum) && this.annotations.get(pageNum).length > 0) ||
+                         textboxes.length > 0 ||
+                         stamps.length > 0 ||
+                         redactions.length > 0;
+
+      if (!hasContent) continue;
+
+      // Composite onto a high-res temporary canvas
+      const compCanvas = document.createElement('canvas');
+      compCanvas.width = annotCanvas.width;
+      compCanvas.height = annotCanvas.height;
+      const compCtx = compCanvas.getContext('2d');
+
+      // 1. Draw ink canvas
+      if (annotCanvas) {
+        compCtx.drawImage(annotCanvas, 0, 0);
+      }
+
+      // 2. Draw placed stamps
+      const scaleX = compCanvas.width / wrapper.clientWidth;
+      const scaleY = compCanvas.height / wrapper.clientHeight;
+
+      for (const stamp of stamps) {
+        const sx = stamp.offsetLeft * scaleX;
+        const sy = stamp.offsetTop * scaleY;
+        const sw = stamp.offsetWidth * scaleX;
+        const sh = stamp.offsetHeight * scaleY;
+
+        const img = stamp.querySelector('img');
+        if (img && img.complete) {
+          compCtx.drawImage(img, sx, sy, sw, sh);
+        } else {
+          const badge = stamp.querySelector('.stamp-badge');
+          if (badge) {
+            compCtx.save();
+            compCtx.translate(sx + sw / 2, sy + sh / 2);
+            compCtx.rotate(-8 * Math.PI / 180);
+            compCtx.font = `bold ${Math.round(20 * scaleX)}px sans-serif`;
+            compCtx.strokeStyle = window.getComputedStyle(badge).color;
+            compCtx.lineWidth = 3 * scaleX;
+            compCtx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+            compCtx.fillStyle = compCtx.strokeStyle;
+            compCtx.textAlign = 'center';
+            compCtx.textBaseline = 'middle';
+            compCtx.fillText(badge.textContent, 0, 0);
+            compCtx.restore();
+          }
+        }
+      }
+
+      // 3. Draw text boxes
+      for (const tb of textboxes) {
+        const tx = tb.offsetLeft * scaleX;
+        const ty = tb.offsetTop * scaleY;
+        const fSize = parseFloat(window.getComputedStyle(tb).fontSize) * scaleY;
+        compCtx.font = `${fSize}px sans-serif`;
+        compCtx.fillStyle = window.getComputedStyle(tb).color || '#000000';
+        compCtx.textBaseline = 'top';
+        compCtx.fillText(tb.innerText, tx, ty);
+      }
+
+      // 4. Draw redaction blackouts
+      for (const rb of redactions) {
+        const rx = rb.offsetLeft * scaleX;
+        const ry = rb.offsetTop * scaleY;
+        const rw = rb.offsetWidth * scaleX;
+        const rh = rb.offsetHeight * scaleY;
+        compCtx.fillStyle = '#000000';
+        compCtx.fillRect(rx, ry, rw, rh);
+      }
+
+      // Embed composite canvas image into PDF page
+      const pngDataUrl = compCanvas.toDataURL('image/png');
+      const pngImage = await doc.embedPng(pngDataUrl);
+      page.drawImage(pngImage, {
+        x: 0,
+        y: 0,
+        width: width,
+        height: height
+      });
+    }
+
+    return await doc.save();
+  }
+
   _makeDraggable(element, parent) {
     let isDragging = false;
     let startX, startY, initialX, initialY;
@@ -349,3 +458,4 @@ export class PDFAnnotatorEngine {
     };
   }
 }
+

@@ -153,3 +153,4 @@ personal-pdf-application/
 ## 🔒 Privacy & Offline Operation
 
 This application does not connect to any third-party cloud service or analytics. All document parsing, rendering, signing, and saving occur strictly client-side on your device.
+

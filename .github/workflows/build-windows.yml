@@ -37,3 +37,4 @@ jobs:
             dist/*.exe
             dist/*.zip
           if-no-files-found: error
+

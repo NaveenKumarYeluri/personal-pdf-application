@@ -50,8 +50,11 @@
           <button id="btn-print" class="btn btn-ghost" title="Print Document (Ctrl+P)">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           </button>
-          <button id="btn-toggle-theme" class="btn btn-ghost" title="Toggle Dark/Light Mode">
+          <button id="btn-toggle-theme" class="btn btn-ghost" title="Toggle Theme (Dark / Light / Sepia / Night)">
             <svg id="theme-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          </button>
+          <button id="btn-doc-props" class="btn btn-ghost" title="Document Properties">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           </button>
         </div>
       </div>
@@ -395,6 +398,127 @@
       </div>
     </div>
 
+    <!-- Merge PDFs Modal -->
+    <div id="modal-merge" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Combine & Merge PDFs</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-hint">Select multiple PDF files to merge into a single document.</p>
+          <input type="file" id="merge-files-input" accept="application/pdf" multiple class="form-input" style="margin-bottom:12px;">
+          <div id="merge-files-list" class="merge-list">
+            <!-- Selected files listed here -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost modal-close">Cancel</button>
+          <button id="btn-apply-merge" class="btn btn-primary">Merge Files</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Split PDF Modal -->
+    <div id="modal-split" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Split PDF Document</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Page Ranges (e.g., <code>1-3, 4, 5-8</code>)</label>
+            <input type="text" id="split-ranges-input" placeholder="e.g. 1-2, 3-5" class="form-input">
+            <p class="modal-hint" style="margin-top:6px;">Each range will be saved as an independent PDF file.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost modal-close">Cancel</button>
+          <button id="btn-apply-split" class="btn btn-primary">Split & Download</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bates Numbering & Header/Footer Modal -->
+    <div id="modal-bates" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Headers, Footers & Bates Numbering</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Prefix (optional)</label>
+              <input type="text" id="bates-prefix" placeholder="e.g. CONF- or DOC-" class="form-input">
+            </div>
+            <div class="form-group">
+              <label>Start Number</label>
+              <input type="number" id="bates-start" value="1" min="1" class="form-input">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Numbering Format</label>
+              <select id="bates-format" class="form-select">
+                <option value="Page {page} of {total}" selected>Page {page} of {total}</option>
+                <option value="{page}">Simple ({page})</option>
+                <option value="Page {page}">Page {page}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Position</label>
+              <select id="bates-position" class="form-select">
+                <option value="bottom-center" selected>Bottom Center</option>
+                <option value="bottom-right">Bottom Right</option>
+                <option value="bottom-left">Bottom Left</option>
+                <option value="top-center">Top Center</option>
+                <option value="top-right">Top Right</option>
+                <option value="top-left">Top Left</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost modal-close">Cancel</button>
+          <button id="btn-apply-bates" class="btn btn-primary">Apply Numbering</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Document Properties Modal -->
+    <div id="modal-props" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Document Properties</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Title</label>
+            <input type="text" id="meta-title" class="form-input">
+          </div>
+          <div class="form-group">
+            <label>Author</label>
+            <input type="text" id="meta-author" class="form-input">
+          </div>
+          <div class="form-group">
+            <label>Subject</label>
+            <input type="text" id="meta-subject" class="form-input">
+          </div>
+          <div class="form-group">
+            <label>Keywords</label>
+            <input type="text" id="meta-keywords" class="form-input">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost modal-close">Cancel</button>
+          <button id="btn-apply-props" class="btn btn-primary">Save Properties</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Status Bar -->
     <footer class="app-statusbar">
       <div class="status-item" id="status-message">Ready</div>
@@ -411,3 +535,4 @@
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
+

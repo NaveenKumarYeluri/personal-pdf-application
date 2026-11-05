@@ -50,6 +50,44 @@ body.theme-light {
   --shadow-pdf: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
+body.theme-sepia {
+  --bg-primary: #f4ecd8;
+  --bg-secondary: #e8dec4;
+  --bg-tertiary: #dfd4b8;
+  --bg-canvas: #dcd0b4;
+  --bg-surface: #fbf0d9;
+  --border-color: #cfbe9b;
+  --border-subtle: #d9caa7;
+
+  --text-primary: #433422;
+  --text-secondary: #6e5c46;
+  --text-muted: #8c7860;
+
+  --shadow-pdf: 0 8px 24px rgba(67, 52, 34, 0.2);
+}
+
+body.theme-night .page-wrapper canvas {
+  filter: invert(0.9) hue-rotate(180deg);
+}
+
+.merge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.merge-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -606,3 +644,4 @@ body {
   border-radius: 3px;
   color: var(--text-secondary);
 }
+

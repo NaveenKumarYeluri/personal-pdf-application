@@ -227,3 +227,4 @@ export class PDFSignatureEngine {
     wrapper.appendChild(container);
   }
 }
+

@@ -56,27 +56,99 @@ export class PDFSecurityEngine {
     return await doc.save();
   }
 
-  async addPageNumbers(pdfBytes, format = 'Page {page} of {total}') {
+  async addPageNumbers(pdfBytes, options = {}) {
     this._checkLib();
     const doc = await this.PDFDocument.load(pdfBytes);
     const font = await doc.embedFont(this.StandardFonts.Helvetica);
     const pages = doc.getPages();
     const total = pages.length;
 
+    const format = options.format || 'Page {page} of {total}';
+    const position = options.position || 'bottom-center'; // 'top-left', 'top-center', 'top-right', 'bottom-left', 'bottom-center', 'bottom-right'
+    const startNum = options.startNumber || 1;
+    const prefix = options.prefix || '';
+    const fontSize = options.fontSize || 10;
+
     pages.forEach((page, idx) => {
-      const { width } = page.getSize();
-      const text = format.replace('{page}', (idx + 1).toString()).replace('{total}', total.toString());
-      const textWidth = font.widthOfTextAtSize(text, 10);
+      const { width, height } = page.getSize();
+      const currentNum = startNum + idx;
+      let text = format.replace('{page}', currentNum.toString()).replace('{total}', (startNum + total - 1).toString());
+      if (prefix) text = `${prefix} ${text}`;
+
+      const textWidth = font.widthOfTextAtSize(text, fontSize);
+      let x = width / 2 - textWidth / 2;
+      let y = 25;
+
+      if (position === 'bottom-left') {
+        x = 35;
+        y = 25;
+      } else if (position === 'bottom-right') {
+        x = width - textWidth - 35;
+        y = 25;
+      } else if (position === 'top-left') {
+        x = 35;
+        y = height - 30;
+      } else if (position === 'top-center') {
+        x = width / 2 - textWidth / 2;
+        y = height - 30;
+      } else if (position === 'top-right') {
+        x = width - textWidth - 35;
+        y = height - 30;
+      }
 
       page.drawText(text, {
-        x: width / 2 - textWidth / 2,
-        y: 20,
-        size: 10,
+        x,
+        y,
+        size: fontSize,
         font: font,
-        color: this.rgb(0.4, 0.4, 0.4)
+        color: this.rgb(0.3, 0.3, 0.3)
       });
     });
 
+    return await doc.save();
+  }
+
+  async getMetadata(pdfBytes) {
+    this._checkLib();
+    const doc = await this.PDFDocument.load(pdfBytes);
+    return {
+      title: doc.getTitle() || '',
+      author: doc.getAuthor() || '',
+      subject: doc.getSubject() || '',
+      keywords: doc.getKeywords() || '',
+      creator: doc.getCreator() || '',
+      producer: doc.getProducer() || '',
+      pageCount: doc.getPageCount()
+    };
+  }
+
+  async updateMetadata(pdfBytes, meta = {}) {
+    this._checkLib();
+    const doc = await this.PDFDocument.load(pdfBytes);
+    if (meta.title !== undefined) doc.setTitle(meta.title);
+    if (meta.author !== undefined) doc.setAuthor(meta.author);
+    if (meta.subject !== undefined) doc.setSubject(meta.subject);
+    if (meta.keywords !== undefined) doc.setKeywords(meta.keywords);
+    if (meta.creator !== undefined) doc.setCreator(meta.creator);
+    return await doc.save();
+  }
+
+  async burnRedactions(pdfBytes, redactionList = []) {
+    // redactionList: Array<{ pageIndex: number, x: number, y: number, width: number, height: number }>
+    this._checkLib();
+    const doc = await this.PDFDocument.load(pdfBytes);
+    for (const r of redactionList) {
+      const page = doc.getPage(r.pageIndex);
+      const { height } = page.getSize();
+      // PDF coordinate system origin is bottom-left
+      page.drawRectangle({
+        x: r.x,
+        y: height - r.y - r.height,
+        width: r.width,
+        height: r.height,
+        color: this.rgb(0, 0, 0)
+      });
+    }
     return await doc.save();
   }
 
@@ -96,3 +168,4 @@ export class PDFSecurityEngine {
     wrapper.appendChild(box);
   }
 }
+

@@ -138,13 +138,116 @@ class PersonalPDFApp {
       this.viewer.rotateClockwise();
     };
 
-    // Sidebar Toggle
-    document.getElementById('btn-toggle-sidebar').onclick = () => {
-      const sidebar = document.getElementById('sidebar');
-      const btn = document.getElementById('btn-toggle-sidebar');
-      sidebar.classList.toggle('collapsed');
-      btn.classList.toggle('active');
-    };
+    // Document Properties
+    const btnDocProps = document.getElementById('btn-doc-props');
+    if (btnDocProps) {
+      btnDocProps.onclick = async () => {
+        if (!this.currentPdfBytes) {
+          alert('Please open a PDF document first.');
+          return;
+        }
+        const meta = await this.security.getMetadata(this.currentPdfBytes);
+        document.getElementById('meta-title').value = meta.title;
+        document.getElementById('meta-author').value = meta.author;
+        document.getElementById('meta-subject').value = meta.subject;
+        document.getElementById('meta-keywords').value = meta.keywords;
+        document.getElementById('modal-props').classList.add('open');
+      };
+    }
+
+    const btnApplyProps = document.getElementById('btn-apply-props');
+    if (btnApplyProps) {
+      btnApplyProps.onclick = async () => {
+        if (!this.currentPdfBytes) return;
+        const meta = {
+          title: document.getElementById('meta-title').value,
+          author: document.getElementById('meta-author').value,
+          subject: document.getElementById('meta-subject').value,
+          keywords: document.getElementById('meta-keywords').value
+        };
+        this.currentPdfBytes = await this.security.updateMetadata(this.currentPdfBytes, meta);
+        document.getElementById('modal-props').classList.remove('open');
+        this.ui.setStatus('Document properties updated successfully');
+      };
+    }
+
+    // Merge Files
+    const mergeInput = document.getElementById('merge-files-input');
+    const mergeList = document.getElementById('merge-files-list');
+    let mergeBuffers = [];
+
+    if (mergeInput) {
+      mergeInput.onchange = async (e) => {
+        mergeBuffers = [];
+        mergeList.innerHTML = '';
+        for (const file of e.target.files) {
+          const buf = await file.arrayBuffer();
+          mergeBuffers.push(buf);
+          const item = document.createElement('div');
+          item.className = 'merge-item';
+          item.innerHTML = `<span>📄 ${file.name}</span> <span class="text-muted">${Math.round(file.size / 1024)} KB</span>`;
+          mergeList.appendChild(item);
+        }
+      };
+    }
+
+    const btnApplyMerge = document.getElementById('btn-apply-merge');
+    if (btnApplyMerge) {
+      btnApplyMerge.onclick = async () => {
+        if (mergeBuffers.length < 2) {
+          alert('Please select at least 2 PDF files to combine.');
+          return;
+        }
+        this.ui.setStatus('Combining documents...');
+        const mergedBytes = await this.organizer.mergeDocuments(mergeBuffers);
+        await this.loadArrayBuffer(mergedBytes, 'Merged_Document.pdf');
+        document.getElementById('modal-merge').classList.remove('open');
+        this.ui.setStatus('PDFs merged successfully');
+      };
+    }
+
+    // Split Files
+    const btnApplySplit = document.getElementById('btn-apply-split');
+    if (btnApplySplit) {
+      btnApplySplit.onclick = async () => {
+        if (!this.currentPdfBytes) return;
+        const rangeStr = document.getElementById('split-ranges-input').value.trim();
+        if (!rangeStr) {
+          alert('Please enter page ranges, e.g. 1-2, 3-5');
+          return;
+        }
+        this.ui.setStatus('Splitting document...');
+        const parts = await this.organizer.splitByRanges(this.currentPdfBytes, rangeStr, this.currentDocName.replace('.pdf', ''));
+        parts.forEach(p => {
+          this.exporter.downloadFile(p.bytes, p.name, 'application/pdf');
+        });
+        document.getElementById('modal-split').classList.remove('open');
+        this.ui.setStatus(`Document split into ${parts.length} files`);
+      };
+    }
+
+    // Bates / Header & Footer
+    const btnApplyBates = document.getElementById('btn-apply-bates');
+    if (btnApplyBates) {
+      btnApplyBates.onclick = async () => {
+        if (!this.currentPdfBytes) return;
+        const prefix = document.getElementById('bates-prefix').value.trim();
+        const startNumber = parseInt(document.getElementById('bates-start').value, 10) || 1;
+        const format = document.getElementById('bates-format').value;
+        const position = document.getElementById('bates-position').value;
+
+        this.ui.setStatus('Applying numbering...');
+        const updated = await this.security.addPageNumbers(this.currentPdfBytes, {
+          prefix,
+          startNumber,
+          format,
+          position
+        });
+        await this.loadArrayBuffer(updated, this.currentDocName);
+        document.getElementById('modal-bates').classList.remove('open');
+        this.ui.setStatus('Header/Footer numbering applied');
+      };
+    }
 
     // Full-Text Search
     const searchInput = document.getElementById('search-input');
@@ -346,11 +449,15 @@ class PersonalPDFApp {
       return;
     }
 
-    this.ui.setStatus('Preparing document save...');
+    this.ui.setStatus('Compositing annotations and signatures into PDF...');
     try {
-      // In future: burn visual annotations into PDF if requested
-      const outputBytes = this.currentPdfBytes;
-      const saveName = this.currentDocName.replace('.pdf', '_edited.pdf');
+      // 1. Burn all drawn strokes, highlighters, signatures, textboxes, and stamps directly into the PDF streams
+      let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
+      
+      const saveName = this.currentDocName.endsWith('.pdf') 
+        ? this.currentDocName.replace('.pdf', '_edited.pdf')
+        : `${this.currentDocName}_edited.pdf`;
+
       this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
       this.ui.setStatus(`Saved: ${saveName}`);
     } catch (err) {
@@ -562,3 +669,4 @@ class PersonalPDFApp {
 window.addEventListener('DOMContentLoaded', () => {
   window.app = new PersonalPDFApp();
 });
+

@@ -50,3 +50,4 @@ jobs:
           name: personal-pdf-suite-android-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+

@@ -6,3 +6,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onTriggerSave: (callback) => ipcRenderer.on('trigger-save', () => callback()),
   onTriggerPrint: (callback) => ipcRenderer.on('trigger-print', () => callback())
 });
+

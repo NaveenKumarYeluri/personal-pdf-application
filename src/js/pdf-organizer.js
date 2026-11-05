@@ -71,6 +71,46 @@ export class PDFOrganizerEngine {
     return await newDoc.save();
   }
 
+  /**
+   * Split PDF by comma-separated page ranges, e.g. "1-3, 5, 7-10"
+   * Returns Array<{ name: string, bytes: Uint8Array }>
+   */
+  async splitByRanges(pdfBytes, rangeString, baseName = 'document') {
+    this._checkLib();
+    const srcDoc = await this.PDFDocument.load(pdfBytes);
+    const totalPages = srcDoc.getPageCount();
+    const results = [];
+
+    const ranges = rangeString.split(',').map(r => r.trim()).filter(Boolean);
+
+    for (const r of ranges) {
+      const parts = r.split('-').map(p => parseInt(p.trim(), 10));
+      let start = parts[0];
+      let end = parts.length > 1 ? parts[1] : start;
+
+      if (isNaN(start) || start < 1) start = 1;
+      if (isNaN(end) || end > totalPages) end = totalPages;
+      if (start > end) [start, end] = [end, start];
+
+      const indices = [];
+      for (let i = start; i <= end; i++) {
+        indices.push(i - 1);
+      }
+
+      const newDoc = await this.PDFDocument.create();
+      const copiedPages = await newDoc.copyPages(srcDoc, indices);
+      copiedPages.forEach(p => newDoc.addPage(p));
+      const bytes = await newDoc.save();
+
+      results.push({
+        name: `${baseName}_pages_${start}-${end}.pdf`,
+        bytes: bytes
+      });
+    }
+
+    return results;
+  }
+
   async mergeDocuments(pdfByteArrayList) {
     this._checkLib();
     const mergedDoc = await this.PDFDocument.create();
@@ -93,3 +133,4 @@ export class PDFOrganizerEngine {
     return await doc.save();
   }
 }
+

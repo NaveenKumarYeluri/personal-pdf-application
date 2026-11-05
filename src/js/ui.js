@@ -56,10 +56,15 @@ export class UIController {
 
   _initTheme() {
     const btnTheme = document.getElementById('btn-toggle-theme');
+    const themes = ['theme-dark', 'theme-light', 'theme-sepia', 'theme-night'];
+    let themeIndex = 0;
+
     if (btnTheme) {
       btnTheme.onclick = () => {
-        document.body.classList.toggle('theme-light');
-        document.body.classList.toggle('theme-dark');
+        document.body.classList.remove(themes[themeIndex]);
+        themeIndex = (themeIndex + 1) % themes.length;
+        document.body.classList.add(themes[themeIndex]);
+        this.setStatus(`Theme set to ${themes[themeIndex].replace('theme-', '')}`);
       };
     }
   }
@@ -196,11 +201,12 @@ export class UIController {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
         <button id="btn-open-organizer-modal" class="btn btn-sm btn-outline">
-          <span>⊞ Open Visual Page Grid</span>
+          <span>⊞ Visual Page Grid</span>
         </button>
         <button id="btn-org-add-blank" class="btn btn-sm btn-outline">+ Blank Page</button>
-        <button id="btn-org-rotate-all" class="btn btn-sm btn-outline">↻ Rotate All CW</button>
-        <button id="btn-org-merge" class="btn btn-sm btn-outline">Combine PDFs...</button>
+        <button id="btn-org-rotate-all" class="btn btn-sm btn-outline">↻ Rotate 90° CW</button>
+        <button id="btn-open-merge" class="btn btn-sm btn-outline">Combine PDFs...</button>
+        <button id="btn-open-split" class="btn btn-sm btn-outline">Split PDF...</button>
       </div>
     `;
 
@@ -216,8 +222,12 @@ export class UIController {
       this.app.viewer.rotateClockwise();
     };
 
-    document.getElementById('btn-org-merge').onclick = () => {
-      this.app.openMergeDialog();
+    document.getElementById('btn-open-merge').onclick = () => {
+      document.getElementById('modal-merge').classList.add('open');
+    };
+
+    document.getElementById('btn-open-split').onclick = () => {
+      document.getElementById('modal-split').classList.add('open');
     };
   }
 
@@ -225,7 +235,7 @@ export class UIController {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
         <button id="btn-open-watermark" class="btn btn-sm btn-outline">Add Watermark</button>
-        <button id="btn-add-numbers" class="btn btn-sm btn-outline">Add Page Numbers</button>
+        <button id="btn-open-bates" class="btn btn-sm btn-outline">Header / Footer / Bates</button>
       </div>
     `;
 
@@ -233,8 +243,8 @@ export class UIController {
       document.getElementById('modal-watermark').classList.add('open');
     };
 
-    document.getElementById('btn-add-numbers').onclick = async () => {
-      await this.app.applyPageNumbers();
+    document.getElementById('btn-open-bates').onclick = () => {
+      document.getElementById('modal-bates').classList.add('open');
     };
   }
 
@@ -322,3 +332,4 @@ export class UIController {
     if (el) el.textContent = zoomText;
   }
 }
+

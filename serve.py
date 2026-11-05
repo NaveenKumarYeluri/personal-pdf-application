@@ -62,3 +62,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nPersonal PDF Suite closed.")
         sys.exit(0)
+
