@@ -7,7 +7,59 @@
   --font-mono: 'JetBrains Mono', monospace;
   --font-sig: 'Dancing Script', cursive;
 
-  /* Color Palette - Dark Mode (Default) */
+  /* Dynamic Multi-Color Theme Accent (Customizable by User) */
+  --accent-color: #ea2e3f;       /* Default Adobe Red accent */
+  --accent-color-hover: #d22333;
+  --accent-red: var(--accent-color);
+  --accent-red-hover: var(--accent-color-hover);
+  --accent-blue: #2563eb;
+  --accent-blue-hover: #1d4ed8;
+  --accent-green: #059669;
+  --accent-amber: #d97706;
+  --danger: #ef4444;
+
+  /* Color Palette - Light Mode (Default) */
+  color-scheme: light;
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --bg-canvas: #e2e8f0;
+  --bg-surface: #ffffff;
+  --border-color: #cbd5e1;
+  --border-subtle: #e2e8f0;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-pdf: 0 4px 18px rgba(0, 0, 0, 0.12);
+}
+
+body.theme-light {
+  color-scheme: light;
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --bg-canvas: #e2e8f0;
+  --bg-surface: #ffffff;
+  --border-color: #cbd5e1;
+  --border-subtle: #e2e8f0;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-pdf: 0 4px 18px rgba(0, 0, 0, 0.12);
+}
+
+body.theme-dark {
+  color-scheme: dark;
   --bg-primary: #18191c;
   --bg-secondary: #222328;
   --bg-tertiary: #2a2b32;
@@ -20,29 +72,11 @@
   --text-secondary: #a0a4b0;
   --text-muted: #6e7280;
 
-  --accent-red: #ea2e3f;       /* Acrobat Red accent */
-  --accent-red-hover: #d22333;
-  --accent-blue: #3b82f6;
-  --accent-blue-hover: #2563eb;
-  --accent-green: #10b981;
-  --accent-amber: #f59e0b;
-  --danger: #ef4444;
-
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
   --shadow-pdf: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
-
-body.theme-light {
-  color-scheme: light;
-  --bg-primary: #f8fafc;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #f1f5f9;
-  --bg-canvas: #e5e7eb;
-  --bg-surface: #ffffff;
-  --border-color: #d1d5db;
-  --border-subtle: #e5e7eb;
 
   --text-primary: #111827;
   --text-secondary: #4b5563;
@@ -364,6 +398,69 @@ body {
 .btn-lg {
   padding: 10px 18px;
   font-size: 14px;
+}
+
+/* Theme Accent Color Picker Dropdown */
+.accent-palette-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.accent-palette-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 190px;
+}
+
+.accent-palette-dropdown.open {
+  display: flex;
+}
+
+.accent-palette-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.accent-palette-grid {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accent-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  padding: 0;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.accent-swatch:hover {
+  transform: scale(1.15);
+}
+
+.accent-swatch.active {
+  border-color: var(--text-primary);
+  transform: scale(1.18);
+  box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--text-primary);
 }
 
 /* Mode Switcher Tabs */

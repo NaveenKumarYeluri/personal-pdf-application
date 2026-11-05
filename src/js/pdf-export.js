@@ -139,6 +139,12 @@ export class PDFExportEngine {
   }
 
   printDocument() {
+    if (!this.app.viewer || !this.app.viewer.pdfDoc) {
+      if (this.app.ui && this.app.ui.showToast) {
+        this.app.ui.showToast('Please open a PDF document to print', 'warning');
+      }
+      return;
+    }
     window.print();
   }
 }

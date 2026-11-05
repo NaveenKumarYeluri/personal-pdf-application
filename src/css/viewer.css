@@ -147,8 +147,10 @@
 /* Edit PDF Content In-Place Mode (Adobe Acrobat Style) */
 .page-wrapper.editing-content .textLayer,
 .textLayer.has-modifications,
+.textLayer.has-search-matches,
 .textLayer:has(.in-place-modified),
-.textLayer:has(.inline-editing) {
+.textLayer:has(.inline-editing),
+.textLayer:has(.search-highlight) {
   opacity: 1 !important;
   z-index: 10 !important;
 }
@@ -209,20 +211,124 @@ body.mode-view .textLayer span.inline-editing {
 /* Search Highlights (Adobe Acrobat Style) */
 .textLayer .search-highlight,
 .textLayer .highlight {
-  background-color: rgba(254, 240, 138, 0.85) !important;
-  color: #111827 !important;
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.45);
+  background-color: #fde047 !important;
+  color: transparent !important;
+  opacity: 0.65 !important;
+  border-radius: 2px !important;
+  box-shadow: 0 0 0 1px rgba(202, 138, 4, 0.6) !important;
+  mix-blend-mode: multiply !important;
   transition: all 0.15s ease;
+  cursor: text;
 }
 
 .textLayer .search-highlight.active-match,
 .textLayer .highlight.selected {
-  background-color: rgba(249, 115, 22, 0.95) !important;
-  color: #ffffff !important;
+  background-color: #fb923c !important;
+  color: transparent !important;
+  opacity: 0.85 !important;
   box-shadow: 0 0 0 2px #ea580c !important;
-  font-weight: 700;
-  z-index: 20;
+  mix-blend-mode: multiply !important;
+  z-index: 20 !important;
+}
+
+/* Print Stylesheet (Clean, full-width, multi-page printing without UI chrome clipping) */
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  /* 1. Hide all application bars, headers, ribbons, toolbars, sidebars, modals, mobile controls */
+  .app-header,
+  .mode-ribbon,
+  .sub-toolbar,
+  .sidebar,
+  .inspector,
+  .app-statusbar,
+  .modal-backdrop,
+  .app-toast-container,
+  .m3-top-app-bar,
+  .m3-bottom-nav,
+  .m3-drawer,
+  .m3-search-bar,
+  .m3-sheet,
+  #welcome-screen,
+  .textLayer,
+  .tab-close,
+  .acrobat-doc-tab,
+  .stamp-resize-handle,
+  .textbox-delete-btn,
+  .bookmark-delete-btn,
+  .desktop-only,
+  .m3-only {
+    display: none !important;
+  }
+
+  /* 2. Expand all outer layout wrappers to full 100% width, unconstrained height, visible overflow */
+  html,
+  body,
+  #app,
+  .app-layout,
+  .app-body,
+  #viewer-container,
+  .viewer-container,
+  #pdf-viewer,
+  .pdf-viewer {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* 3. Each PDF page breaks cleanly onto a printed sheet */
+  .page-wrapper {
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    display: block !important;
+    position: relative !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: transparent !important;
+  }
+
+  /* 4. Canvas takes full page width */
+  .page-wrapper canvas,
+  .pdf-canvas {
+    width: 100% !important;
+    height: auto !important;
+    max-width: 100% !important;
+    display: block !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* 5. Annotation canvas layers overlay properly */
+  .annotation-layer,
+  .annotation-layer canvas {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
 }
 
 /* Interactive Overlay Layer for Annotations & Drawings */

@@ -281,17 +281,21 @@ export class UIController {
       if (searchBar.classList.contains('open')) {
         searchInput.focus();
       } else {
-        searchInput.value = '';
-        this.app.viewer.clearSearch();
-        searchCount.textContent = '0/0';
+        closeMobileSearch();
       }
     };
 
     const closeMobileSearch = () => {
       searchBar.classList.remove('open');
-      searchInput.value = '';
+      if (searchInput) {
+        searchInput.value = '';
+        searchInput.blur();
+      }
+      if (document.activeElement) document.activeElement.blur();
       this.app.viewer.clearSearch();
-      searchCount.textContent = '0/0';
+      if (searchCount) searchCount.textContent = '0/0';
+      const container = document.getElementById('viewer-container');
+      if (container) container.focus();
     };
 
     document.getElementById('m3-btn-search')?.addEventListener('click', toggleMobileSearch);
@@ -304,6 +308,17 @@ export class UIController {
         closeMobileSearch();
       });
     }
+
+    searchInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMobileSearch();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const res = this.app.viewer.nextSearchResult();
+        if (res && searchCount) searchCount.textContent = `${res.current}/${res.total}`;
+      }
+    });
 
     let mobileSearchTimeout = null;
     searchInput?.addEventListener('input', () => {
@@ -586,12 +601,12 @@ export class UIController {
       }
     };
 
-    // Load saved theme preference
+    // Load saved theme preference - default to LIGHT theme
     const saved = localStorage.getItem('personal-pdf-theme');
-    if (saved === 'light') {
-      updateThemeState(false);
-    } else {
+    if (saved === 'dark') {
       updateThemeState(true);
+    } else {
+      updateThemeState(false);
     }
 
     if (btnTheme) {
@@ -600,6 +615,58 @@ export class UIController {
         updateThemeState(!isCurrentlyDark);
       };
     }
+
+    // Dynamic Multi-Color Theme Accent Management
+    const setAccentColor = (color, hoverColor) => {
+      if (!color) return;
+      const hover = hoverColor || color;
+      document.documentElement.style.setProperty('--accent-color', color);
+      document.documentElement.style.setProperty('--accent-color-hover', hover);
+      document.documentElement.style.setProperty('--accent-red', color);
+      document.documentElement.style.setProperty('--accent-red-hover', hover);
+
+      localStorage.setItem('personal-pdf-accent-color', color);
+      localStorage.setItem('personal-pdf-accent-hover', hover);
+
+      // Update active state in all swatch buttons
+      document.querySelectorAll('.accent-swatch').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.color.toLowerCase() === color.toLowerCase());
+      });
+      this.setStatus(`Accent theme set to ${color}`);
+    };
+
+    // Load saved accent color or default to #ea2e3f (Acrobat Red)
+    const savedAccent = localStorage.getItem('personal-pdf-accent-color') || '#ea2e3f';
+    const savedHover = localStorage.getItem('personal-pdf-accent-hover') || '#d22333';
+    setAccentColor(savedAccent, savedHover);
+
+    // Accent Palette Dropdown Toggle
+    const btnPalette = document.getElementById('btn-accent-palette');
+    const dropdown = document.getElementById('accent-palette-dropdown');
+
+    if (btnPalette && dropdown) {
+      btnPalette.onclick = (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('open');
+      };
+
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.accent-palette-wrapper')) {
+          dropdown.classList.remove('open');
+        }
+      });
+    }
+
+    // Wire up all accent swatches (desktop dropdown + mobile drawer)
+    document.querySelectorAll('.accent-swatch').forEach(swatch => {
+      swatch.onclick = (e) => {
+        e.stopPropagation();
+        const color = swatch.dataset.color;
+        const hover = swatch.dataset.hover || color;
+        setAccentColor(color, hover);
+        if (dropdown) dropdown.classList.remove('open');
+      };
+    });
   }
 
   setMode(mode) {

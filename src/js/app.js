@@ -365,7 +365,12 @@ class PersonalPDFApp {
         this.viewer.clearSearch();
         searchCount.textContent = '0/0';
         searchInput.blur();
-        document.getElementById('viewer-container')?.focus();
+        if (document.activeElement) document.activeElement.blur();
+        const container = document.getElementById('viewer-container');
+        if (container) {
+          container.focus();
+        }
+        window.focus();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (e.shiftKey) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-  <meta name="theme-color" content="#141318">
+  <meta name="theme-color" content="#ffffff">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Personal PDF Suite - Acrobat Edition</title>
@@ -26,7 +26,7 @@
   <script src="vendor/pdf.min.js"></script>
   <script src="vendor/pdf-lib.min.js"></script>
 </head>
-<body class="theme-dark">
+<body class="theme-light">
   <div id="app" class="app-layout">
     
     <!-- 1. Top Ribbon Navigation & Toolbar -->
@@ -104,9 +104,33 @@
           <button id="btn-print" class="btn btn-ghost" title="Print Document (Ctrl+P)">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           </button>
-          <button id="btn-toggle-theme" class="btn btn-ghost" title="Toggle Theme (Dark / Light / Sepia / Night)">
-            <svg id="theme-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <button id="btn-toggle-theme" class="btn btn-ghost" title="Toggle Theme (Dark / Light)">
+            <svg id="theme-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           </button>
+          <!-- Multi-Color Theme Accent Palette -->
+          <div class="accent-palette-wrapper">
+            <button id="btn-accent-palette" class="btn btn-ghost" title="Customize Accent Theme Color">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
+                <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
+                <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
+                <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+              </svg>
+            </button>
+            <div id="accent-palette-dropdown" class="accent-palette-dropdown">
+              <div class="accent-palette-title">Accent Theme Color</div>
+              <div class="accent-palette-grid">
+                <button class="accent-swatch active" data-color="#ea2e3f" data-hover="#d22333" title="Acrobat Red" style="background:#ea2e3f;"></button>
+                <button class="accent-swatch" data-color="#2563eb" data-hover="#1d4ed8" title="Royal Blue" style="background:#2563eb;"></button>
+                <button class="accent-swatch" data-color="#059669" data-hover="#047857" title="Emerald Green" style="background:#059669;"></button>
+                <button class="accent-swatch" data-color="#7c3aed" data-hover="#6d28d9" title="Amethyst Purple" style="background:#7c3aed;"></button>
+                <button class="accent-swatch" data-color="#d97706" data-hover="#b45309" title="Sunset Amber" style="background:#d97706;"></button>
+                <button class="accent-swatch" data-color="#0d9488" data-hover="#0f766e" title="Ocean Teal" style="background:#0d9488;"></button>
+                <button class="accent-swatch" data-color="#475569" data-hover="#334155" title="Slate Gray" style="background:#475569;"></button>
+              </div>
+            </div>
+          </div>
           <button id="btn-doc-props" class="btn btn-ghost" title="Document Properties">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           </button>
@@ -272,7 +296,7 @@
       </aside>
 
       <!-- Center PDF Viewport (Continuous Scrolling & Canvas Layers) -->
-      <section id="viewer-container" class="viewer-container">
+      <section id="viewer-container" class="viewer-container" tabindex="-1" style="outline:none;">
         <!-- Welcome Screen (When no PDF is loaded) -->
         <div id="welcome-screen" class="welcome-screen">
           <div class="welcome-card">
@@ -731,6 +755,18 @@
             <span class="m3-list-icon">🌓</span>
             <span class="m3-list-title">Toggle Dark / Light Theme</span>
           </button>
+          <div style="padding: 10px 16px; border-bottom: 1px solid var(--border-subtle);">
+            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Accent Theme Color</div>
+            <div class="accent-palette-grid" id="m3-drawer-accent-palette">
+              <button class="accent-swatch active" data-color="#ea2e3f" data-hover="#d22333" title="Acrobat Red" style="background:#ea2e3f;"></button>
+              <button class="accent-swatch" data-color="#2563eb" data-hover="#1d4ed8" title="Royal Blue" style="background:#2563eb;"></button>
+              <button class="accent-swatch" data-color="#059669" data-hover="#047857" title="Emerald Green" style="background:#059669;"></button>
+              <button class="accent-swatch" data-color="#7c3aed" data-hover="#6d28d9" title="Amethyst Purple" style="background:#7c3aed;"></button>
+              <button class="accent-swatch" data-color="#d97706" data-hover="#b45309" title="Sunset Amber" style="background:#d97706;"></button>
+              <button class="accent-swatch" data-color="#0d9488" data-hover="#0f766e" title="Ocean Teal" style="background:#0d9488;"></button>
+              <button class="accent-swatch" data-color="#475569" data-hover="#334155" title="Slate Gray" style="background:#475569;"></button>
+            </div>
+          </div>
           <button class="m3-list-tile" id="m3-drawer-props">
             <span class="m3-list-icon">ℹ️</span>
             <span class="m3-list-title">Document Properties</span>

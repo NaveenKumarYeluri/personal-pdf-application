@@ -25,6 +25,7 @@ export class PDFViewerEngine {
     this.pageRenders = new Map();
     this.searchResults = [];
     this.currentSearchIndex = -1;
+    this.currentSearchQuery = '';
 
     // Configure PDF.js worker (Bundled offline first with CDN fallback)
     if (window.pdfjsLib) {
@@ -235,6 +236,9 @@ export class PDFViewerEngine {
       }
 
       this._setupContentEditingHandlers(textLayer, pageNum, pageWrapper);
+      if (this.currentSearchQuery) {
+        this._applySearchHighlightToPage(pageNum, textLayer);
+      }
       if (this.onPageRendered) {
         this.onPageRendered(pageNum, textLayer, pageWrapper);
       }
@@ -394,12 +398,50 @@ export class PDFViewerEngine {
   }
 
   clearSearch() {
+    this.currentSearchQuery = '';
     this.searchResults = [];
     this.currentSearchIndex = -1;
     const target = this.pagesContainer || this.container;
     target.querySelectorAll('.search-highlight, .active-match').forEach(el => {
       el.classList.remove('search-highlight', 'active-match', 'highlight', 'selected');
     });
+    target.querySelectorAll('.has-search-matches').forEach(tl => {
+      tl.classList.remove('has-search-matches');
+    });
+  }
+
+  _applySearchHighlightToPage(pageNum, textLayer) {
+    if (!this.currentSearchQuery || !textLayer) return;
+    const q = this.currentSearchQuery.toLowerCase();
+    const spans = textLayer.querySelectorAll('span');
+    let hasMatches = false;
+
+    spans.forEach((span, spanIdx) => {
+      const text = span.textContent || '';
+      if (text.toLowerCase().includes(q)) {
+        span.classList.add('search-highlight');
+        hasMatches = true;
+
+        // If this page was re-rendered (e.g. after zoom), restore element pointer
+        const existing = this.searchResults.find(r => r.pageNum === pageNum && (r.spanIndex === spanIdx || r.text === text));
+        if (existing) {
+          existing.element = span;
+        }
+
+        // If this is the active match, restore the active highlight class
+        if (this.currentSearchIndex >= 0 && this.searchResults[this.currentSearchIndex]?.pageNum === pageNum) {
+          const activeMatch = this.searchResults[this.currentSearchIndex];
+          if (activeMatch.spanIndex === spanIdx || activeMatch.text === text) {
+            span.classList.add('active-match');
+            activeMatch.element = span;
+          }
+        }
+      }
+    });
+
+    if (hasMatches) {
+      textLayer.classList.add('has-search-matches');
+    }
   }
 
   async searchText(query) {
@@ -409,9 +451,10 @@ export class PDFViewerEngine {
     }
 
     const q = query.trim().toLowerCase();
+    this.currentSearchQuery = q;
     const target = this.pagesContainer || this.container;
 
-    // Search across rendered textLayers first for precise DOM highlighting & instant centering
+    // Search across rendered textLayers for precise DOM highlighting & instant centering
     for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
       const pageWrapper = target.querySelector(`#page-wrapper-${pageNum}`);
       if (!pageWrapper) continue;
@@ -419,17 +462,25 @@ export class PDFViewerEngine {
       if (!textLayer) continue;
 
       const spans = textLayer.querySelectorAll('span');
-      spans.forEach(span => {
+      let pageHasMatches = false;
+
+      spans.forEach((span, spanIdx) => {
         const text = span.textContent || '';
         if (text.toLowerCase().includes(q)) {
           span.classList.add('search-highlight');
+          pageHasMatches = true;
           this.searchResults.push({
             pageNum,
+            spanIndex: spanIdx,
             element: span,
             text
           });
         }
       });
+
+      if (pageHasMatches) {
+        textLayer.classList.add('has-search-matches');
+      }
     }
 
     if (this.searchResults.length > 0) {
@@ -451,15 +502,48 @@ export class PDFViewerEngine {
     const target = this.pagesContainer || this.container;
     target.querySelectorAll('.active-match').forEach(el => el.classList.remove('active-match'));
 
-    if (match.element) {
+    // Highlight active element
+    if (match.element && match.element.isConnected) {
       match.element.classList.add('active-match');
-      match.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      this.currentPage = match.pageNum;
-      this.onPageChange(match.pageNum, this.totalPages);
-      this._highlightThumbnail(match.pageNum);
     } else {
-      this.goToPage(match.pageNum);
+      const pw = target.querySelector(`#page-wrapper-${match.pageNum}`);
+      if (pw) {
+        const spans = pw.querySelectorAll('.textLayer span');
+        const targetSpan = spans[match.spanIndex] || Array.from(spans).find(s => (s.textContent || '').toLowerCase().includes(this.currentSearchQuery));
+        if (targetSpan) {
+          targetSpan.classList.add('search-highlight', 'active-match');
+          match.element = targetSpan;
+        }
+      }
     }
+
+    // Scroll smoothly to the match location across ALL pages 1..N
+    this._scrollToMatch(match);
+  }
+
+  _scrollToMatch(match) {
+    const pageWrapper = document.getElementById(`page-wrapper-${match.pageNum}`);
+    if (!pageWrapper || !this.container) return;
+
+    const containerRect = this.container.getBoundingClientRect();
+    let targetScrollTop = 0;
+
+    if (match.element && match.element.isConnected) {
+      const elemRect = match.element.getBoundingClientRect();
+      targetScrollTop = (elemRect.top - containerRect.top) + this.container.scrollTop - (containerRect.height / 2) + (elemRect.height / 2);
+    } else {
+      const pageRect = pageWrapper.getBoundingClientRect();
+      targetScrollTop = (pageRect.top - containerRect.top) + this.container.scrollTop - 40;
+    }
+
+    this.container.scrollTo({
+      top: Math.max(0, targetScrollTop),
+      behavior: 'smooth'
+    });
+
+    this.currentPage = match.pageNum;
+    this.onPageChange(match.pageNum, this.totalPages);
+    this._highlightThumbnail(match.pageNum);
   }
 
   nextSearchResult() {
