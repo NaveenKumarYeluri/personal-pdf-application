@@ -45,7 +45,8 @@ class PersonalPDFApp {
       outlineContainer: outlineContainer,
       onPageChange: (current, total) => this._onPageChange(current, total),
       onDocumentLoaded: (meta) => this._onDocumentLoaded(meta),
-      onContentEdited: (editData) => this._handleDirectContentEdit(editData)
+      onContentEdited: (editData) => this._handleDirectContentEdit(editData),
+      onPageRendered: (pageNum, textLayer) => this._restoreInPlaceEdits(pageNum, textLayer)
     });
 
     // 2. Organizer Engine
@@ -403,106 +404,104 @@ class PersonalPDFApp {
   }
 
   _handleDirectContentEdit(editData) {
-    const wrapper = document.getElementById(`page-wrapper-${editData.pageNum}`);
-    if (!wrapper) return;
+    const span = editData.span;
+    if (!span) return;
+    const pageNum = editData.pageNum;
+    const pageWrapper = editData.pageWrapper || document.getElementById(`page-wrapper-${pageNum}`);
 
-    // If this span already has an active editor, focus and sync it
-    if (editData.span && editData.span._linkedEditor && editData.span._linkedEditor.parentNode) {
-      this.annotator.setActiveTextBox(editData.span._linkedEditor);
-      editData.span._linkedEditor.focus();
+    // If already editing this span, re-focus
+    if (span.classList.contains('inline-editing')) {
+      span.focus();
       return;
     }
 
-    // 1. Hide the original text layer span so mouse events don't collide
-    if (editData.span) {
-      editData.span.style.visibility = 'hidden';
+    // Save initial text once
+    if (span._originalText === undefined) {
+      span._originalText = span.textContent;
     }
 
-    // 2. Create the exact replacement editable text block matching position and metrics
-    const editor = document.createElement('div');
-    editor.className = 'annotation-textbox in-place-editor active';
-    editor.contentEditable = 'true';
-    editor.style.left = `${Math.round(editData.x)}px`;
-    editor.style.top = `${Math.round(editData.y)}px`;
-    editor.style.minWidth = `${Math.max(24, Math.round(editData.width))}px`;
-    editor.style.minHeight = `${Math.max(14, Math.round(editData.height))}px`;
-    editor.style.fontSize = editData.fontSize;
-    editor.style.fontFamily = editData.fontFamily;
-    editor.style.fontWeight = editData.fontWeight || 'normal';
-    editor.style.color = editData.color || '#111827';
-    editor.style.lineHeight = editData.lineHeight || '1.15';
-    editor.innerText = editData.originalText;
-    editor._originalSpan = editData.span;
-    editor._originalText = editData.originalText;
+    // Set as active in-place span in annotator engine
+    this.annotator.setActiveInPlaceSpan(span);
 
-    if (editData.span) {
-      editData.span._linkedEditor = editor;
+    // Make native PDF span directly editable in-place
+    span.contentEditable = 'true';
+    span.spellcheck = false;
+    span.classList.add('inline-editing');
+    span.style.cursor = 'text';
+
+    span._pageNum = pageNum;
+    span._pageWrapper = pageWrapper;
+
+    // Sync toolbar font, size, bold, italic, color to match native PDF styling
+    if (this.ui) {
+      this.ui.syncInPlaceSpan(span);
     }
 
-    // Delete button (Reverts back to original PDF text)
-    const btnDel = document.createElement('button');
-    btnDel.className = 'textbox-delete-btn';
-    btnDel.innerHTML = '&times;';
-    btnDel.title = 'Revert text';
-    btnDel.onclick = (e) => {
-      e.stopPropagation();
-      if (editData.span) {
-        editData.span.style.visibility = 'visible';
-        editData.span._linkedEditor = null;
-      }
-      editor.remove();
-      if (this.annotator.activeTextBox === editor) {
-        this.annotator.activeTextBox = null;
-        this.annotator.onActiveTextBoxChange(null);
-      }
-      this.ui.setStatus('Reverted in-place text edit');
-    };
-    editor.appendChild(btnDel);
+    // Attach listeners on this span if not yet attached
+    if (!span._hasDirectEditListeners) {
+      span._hasDirectEditListeners = true;
 
-    editor.onclick = editor.onfocus = (e) => {
-      e?.stopPropagation();
-      this.annotator.setActiveTextBox(editor);
-    };
+      span.addEventListener('input', () => {
+        this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+      });
 
-    editor.onblur = () => {
-      if (!editor.innerText.trim()) {
-        btnDel.click();
-      }
-    };
+      span.addEventListener('keydown', (kEvt) => {
+        if (kEvt.key === 'Escape') {
+          kEvt.preventDefault();
+          this.annotator.revertInPlaceEdit(span, pageNum);
+          span.blur();
+          this.ui.setStatus('Reverted in-place text edit');
+        } else if (kEvt.key === 'Enter' && !kEvt.shiftKey) {
+          kEvt.preventDefault();
+          span.blur();
+        }
+      });
 
-    editor.onkeydown = (kEvt) => {
-      if (kEvt.key === 'Escape') {
-        editor.innerText = editData.originalText;
-        editor.blur();
-      }
-    };
+      span.addEventListener('blur', () => {
+        span.contentEditable = 'false';
+        span.classList.remove('inline-editing');
+        if (span.textContent !== span._originalText) {
+          span.classList.add('in-place-modified');
+          this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+          this.ui.setStatus('In-place text edit saved');
+        } else {
+          span.classList.remove('in-place-modified');
+          this.annotator.revertInPlaceEdit(span, pageNum);
+        }
+      });
+    }
 
-    wrapper.appendChild(editor);
-    this.annotator._makeDraggable(editor, wrapper);
-
-    // Focus editor and select all text for immediate typing
-    editor.focus();
+    // Focus and select contents
+    span.focus();
     try {
       const range = document.createRange();
-      range.selectNodeContents(editor);
+      range.selectNodeContents(span);
       const sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
     } catch (_) {}
 
-    this.annotator.setActiveTextBox(editor);
+    this.ui.setStatus(`In-place edit active: editing with PDF's embedded font`);
+  }
 
-    // 3. Record in Undo stack
-    this.annotator.undoStack.push({
-      type: 'in-place-edit',
-      pageNum: editData.pageNum,
-      editorEl: editor,
-      span: editData.span,
-      originalText: editData.originalText
-    });
-    this.annotator.redoStack = [];
+  _restoreInPlaceEdits(pageNum, textLayer) {
+    if (!this.annotator || !this.annotator.inPlaceEdits) return;
+    const pageEdits = this.annotator.inPlaceEdits.get(pageNum);
+    if (!pageEdits || pageEdits.size === 0) return;
 
-    this.ui.setStatus('Editing text: change content, font, size, or color from the toolbar');
+    const spans = textLayer.querySelectorAll('span');
+    for (const [origSpan, edit] of Array.from(pageEdits.entries())) {
+      for (const span of spans) {
+        if (span.textContent === edit.originalText || (edit.originalText && span.textContent.includes(edit.originalText))) {
+          span._originalText = edit.originalText;
+          span.textContent = edit.newText;
+          span.classList.add('in-place-modified');
+          pageEdits.delete(origSpan);
+          pageEdits.set(span, edit);
+          break;
+        }
+      }
+    }
   }
 
   _setupElectronBridge() {
@@ -532,6 +531,10 @@ class PersonalPDFApp {
       this.currentPdfBytes = new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
     } else {
       this.currentPdfBytes = new Uint8Array(data);
+    }
+
+    if (this.annotator) {
+      this.annotator.clearAllEdits();
     }
 
     // Safely toggle welcome screen and viewer

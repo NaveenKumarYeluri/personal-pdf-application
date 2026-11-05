@@ -434,14 +434,26 @@ export class UIController {
     if (titleEl) titleEl.textContent = this.app.currentDocName || 'Personal PDF Suite';
     if (subEl) subEl.textContent = `${this.app.viewer.totalPages || 0} pages • Page ${this.app.viewer.currentPage || 1}`;
 
-    // Sync Thumbnails to mobile drawer
+    // Sync Thumbnails to mobile drawer (preserving canvas pixel bitmap data)
     const drawerThumbs = document.getElementById('m3-drawer-thumbs');
     const desktopThumbs = document.getElementById('thumbnails-container');
     if (drawerThumbs && desktopThumbs) {
       drawerThumbs.innerHTML = '';
       desktopThumbs.querySelectorAll('.thumbnail-item').forEach(item => {
+        const pageNum = parseInt(item.id.replace('thumb-', ''), 10);
         const clone = item.cloneNode(true);
-        const pageNum = parseInt(clone.id.replace('thumb-', ''), 10);
+        const origCanvas = item.querySelector('canvas');
+        const newCanvas = clone.querySelector('canvas');
+        if (origCanvas && newCanvas) {
+          if (origCanvas.width > 0 && origCanvas.height > 0) {
+            newCanvas.width = origCanvas.width;
+            newCanvas.height = origCanvas.height;
+            const ctx = newCanvas.getContext('2d');
+            ctx.drawImage(origCanvas, 0, 0);
+          } else if (this.app.viewer._renderThumbnailCanvas) {
+            this.app.viewer._renderThumbnailCanvas(pageNum, newCanvas);
+          }
+        }
         clone.onclick = () => {
           this.app.viewer.goToPage(pageNum);
           document.getElementById('m3-drawer')?.classList.remove('open');
@@ -1071,6 +1083,11 @@ export class UIController {
     btnInline.click();
   }
 
+  syncInPlaceSpan(span) {
+    if (!span) return;
+    this.syncActiveTextBox(span);
+  }
+
   syncActiveTextBox(box) {
     if (!box) return;
     const targetEl = box.querySelector?.('.textbox-content') || box;
@@ -1083,9 +1100,42 @@ export class UIController {
     const underlineBtn = document.getElementById('btn-edit-underline') || document.getElementById('btn-text-underline');
     const strikeBtn = document.getElementById('btn-edit-strike') || document.getElementById('btn-text-strike');
 
+    if (fontFamEl) {
+      const activeFont = targetEl.style.fontFamily || cs.fontFamily;
+      if (activeFont) {
+        let found = false;
+        const cleanFont = activeFont.split(',')[0].replace(/['"]/g, '').trim().toLowerCase();
+        for (let i = 0; i < fontFamEl.options.length; i++) {
+          const optVal = fontFamEl.options[i].value.toLowerCase();
+          const optText = fontFamEl.options[i].text.toLowerCase();
+          if (optVal.includes(cleanFont) || optText.includes(cleanFont)) {
+            fontFamEl.selectedIndex = i;
+            found = true;
+            break;
+          }
+        }
+        if (!found && cleanFont) {
+          const displayFont = activeFont.split(',')[0].replace(/['"]/g, '').trim();
+          const opt = new Option(`PDF Font: ${displayFont}`, activeFont, true, true);
+          fontFamEl.add(opt, 0);
+          fontFamEl.selectedIndex = 0;
+        }
+      }
+    }
+
     if (fontSizeEl) {
       const fSize = parseInt(targetEl.style.fontSize || cs.fontSize, 10);
       if (fSize) fontSizeEl.value = fSize.toString();
+    }
+    if (colorEl) {
+      const colorVal = targetEl.style.color || cs.color;
+      if (colorVal && colorVal.startsWith('rgb')) {
+        const rgb = colorVal.match(/\d+/g);
+        if (rgb && rgb.length >= 3) {
+          const hex = '#' + ((1 << 24) + (parseInt(rgb[0], 10) << 16) + (parseInt(rgb[1], 10) << 8) + parseInt(rgb[2], 10)).toString(16).slice(1);
+          colorEl.value = hex;
+        }
+      }
     }
     if (boldBtn) {
       const isBold = targetEl.style.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 700;

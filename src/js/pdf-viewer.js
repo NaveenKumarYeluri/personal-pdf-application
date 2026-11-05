@@ -12,6 +12,7 @@ export class PDFViewerEngine {
     this.onPageChange = options.onPageChange || (() => {});
     this.onDocumentLoaded = options.onDocumentLoaded || (() => {});
     this.onContentEdited = options.onContentEdited || (() => {});
+    this.onPageRendered = options.onPageRendered || (() => {});
     
     this.pdfDoc = null;
     this.pdfBytes = null;
@@ -234,6 +235,9 @@ export class PDFViewerEngine {
       }
 
       this._setupContentEditingHandlers(textLayer, pageNum, pageWrapper);
+      if (this.onPageRendered) {
+        this.onPageRendered(pageNum, textLayer, pageWrapper);
+      }
     } catch (e) {
       console.warn('Text layer render skipped:', e);
     }
@@ -243,7 +247,7 @@ export class PDFViewerEngine {
 
   setContentEditingMode(active) {
     this.isContentEditingActive = active;
-    const wrappers = this.container.querySelectorAll('.page-wrapper');
+    const wrappers = (this.pagesContainer || this.container).querySelectorAll('.page-wrapper');
     wrappers.forEach(w => {
       if (active) {
         w.classList.add('editing-content');
@@ -260,32 +264,10 @@ export class PDFViewerEngine {
 
       e.stopPropagation();
 
-      const originalText = span.textContent;
-      const rect = span.getBoundingClientRect();
-      const wrapperRect = pageWrapper.getBoundingClientRect();
-
-      // Coordinates relative to pageWrapper
-      const relLeft = rect.left - wrapperRect.left;
-      const relTop = rect.top - wrapperRect.top;
-      const relWidth = rect.width;
-      const relHeight = rect.height;
-
-      const cs = window.getComputedStyle(span);
-
       this.onContentEdited({
         span,
         pageNum,
-        pageWrapper,
-        originalText,
-        x: relLeft,
-        y: relTop,
-        width: relWidth,
-        height: relHeight,
-        fontSize: cs.fontSize,
-        fontFamily: cs.fontFamily,
-        fontWeight: cs.fontWeight,
-        color: cs.color,
-        lineHeight: cs.lineHeight
+        pageWrapper
       });
     });
   }

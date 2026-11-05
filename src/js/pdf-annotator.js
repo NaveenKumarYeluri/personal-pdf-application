@@ -19,6 +19,8 @@ export class PDFAnnotatorEngine {
     this.lineHeight = 1.25;
 
     this.activeTextBox = null;
+    this.activeInPlaceSpan = null;
+    this.inPlaceEdits = new Map(); // Map<pageNum, Map<span, editData>>
     this.onActiveTextBoxChange = options.onActiveTextBoxChange || (() => {});
     
     // Store annotations per page
@@ -507,11 +509,16 @@ export class PDFAnnotatorEngine {
   }
 
   _getTargetElement() {
+    if (this.activeInPlaceSpan) return this.activeInPlaceSpan;
     if (!this.activeTextBox) return null;
     return this.activeTextBox.querySelector('.textbox-content') || this.activeTextBox;
   }
 
   setActiveTextBox(box) {
+    if (this.activeInPlaceSpan) {
+      this.activeInPlaceSpan.classList.remove('inline-editing');
+      this.activeInPlaceSpan = null;
+    }
     if (this.activeTextBox && this.activeTextBox !== box) {
       this.activeTextBox.classList.remove('active');
     }
@@ -522,6 +529,73 @@ export class PDFAnnotatorEngine {
     } else {
       this.onActiveTextBoxChange(null);
     }
+  }
+
+  setActiveInPlaceSpan(span) {
+    if (this.activeTextBox) {
+      this.activeTextBox.classList.remove('active');
+      this.activeTextBox = null;
+    }
+    if (this.activeInPlaceSpan && this.activeInPlaceSpan !== span) {
+      this.activeInPlaceSpan.classList.remove('inline-editing');
+    }
+    this.activeInPlaceSpan = span;
+    if (span) {
+      this.onActiveTextBoxChange(span);
+    } else {
+      this.onActiveTextBoxChange(null);
+    }
+  }
+
+  clearActiveEditing() {
+    if (this.activeTextBox) {
+      this.activeTextBox.classList.remove('active');
+      this.activeTextBox = null;
+    }
+    if (this.activeInPlaceSpan) {
+      this.activeInPlaceSpan.classList.remove('inline-editing');
+      this.activeInPlaceSpan = null;
+    }
+    this.onActiveTextBoxChange(null);
+  }
+
+  recordInPlaceEdit(span, pageNum, pageWrapper) {
+    if (!this.inPlaceEdits.has(pageNum)) {
+      this.inPlaceEdits.set(pageNum, new Map());
+    }
+    const pageMap = this.inPlaceEdits.get(pageNum);
+    const prevText = pageMap.has(span) ? pageMap.get(span).newText : (span._originalText !== undefined ? span._originalText : '');
+    pageMap.set(span, {
+      span,
+      originalText: span._originalText,
+      newText: span.textContent,
+      pageNum
+    });
+    this.undoStack.push({
+      type: 'in-place-edit',
+      pageNum,
+      span,
+      prevText,
+      newText: span.textContent
+    });
+    this.redoStack = [];
+  }
+
+  revertInPlaceEdit(span, pageNum) {
+    if (this.inPlaceEdits.has(pageNum)) {
+      this.inPlaceEdits.get(pageNum).delete(span);
+    }
+    span.textContent = span._originalText !== undefined ? span._originalText : span.textContent;
+    span.classList.remove('inline-editing', 'in-place-modified');
+  }
+
+  clearAllEdits() {
+    this.annotations.clear();
+    this.undoStack = [];
+    this.redoStack = [];
+    this.inPlaceEdits.clear();
+    this.activeInPlaceSpan = null;
+    this.activeTextBox = null;
   }
 
   setFontFamily(family) {
@@ -626,21 +700,21 @@ export class PDFAnnotatorEngine {
   }
 
   deleteActiveTextBox() {
+    if (this.activeInPlaceSpan) {
+      const span = this.activeInPlaceSpan;
+      const pageNum = span._pageNum || 1;
+      this.revertInPlaceEdit(span, pageNum);
+      this.clearActiveEditing();
+      return;
+    }
     if (this.activeTextBox) {
       const box = this.activeTextBox;
       const pageWrapper = box.closest('.page-wrapper');
       const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
       
-      if (box._originalSpan) {
-        box._originalSpan.style.visibility = 'visible';
-        box._originalSpan._linkedEditor = null;
-      }
-
       this.undoStack.push({
-        type: box._originalSpan ? 'in-place-edit' : 'element',
+        type: 'element',
         pageNum,
-        editorEl: box,
-        span: box._originalSpan || null,
         elements: [box]
       });
       box._savedParent = box.parentNode;
@@ -693,16 +767,24 @@ export class PDFAnnotatorEngine {
         this._redrawPageAnnotations(action.pageNum);
       }
     } else if (action.type === 'in-place-edit') {
-      if (action.editorEl && action.editorEl.parentNode) {
-        action.editorEl.remove();
-      }
       if (action.span) {
-        action.span.style.visibility = 'visible';
-        action.span._linkedEditor = null;
-      }
-      if (this.activeTextBox === action.editorEl) {
-        this.activeTextBox = null;
-        this.onActiveTextBoxChange(null);
+        action.span.textContent = action.prevText;
+        if (action.prevText === action.span._originalText) {
+          action.span.classList.remove('inline-editing', 'in-place-modified');
+          if (this.inPlaceEdits.has(action.pageNum)) {
+            this.inPlaceEdits.get(action.pageNum).delete(action.span);
+          }
+        } else {
+          action.span.classList.add('in-place-modified');
+          if (this.inPlaceEdits.has(action.pageNum)) {
+            this.inPlaceEdits.get(action.pageNum).set(action.span, {
+              span: action.span,
+              originalText: action.span._originalText,
+              newText: action.prevText,
+              pageNum: action.pageNum
+            });
+          }
+        }
       }
     } else if (action.type === 'element') {
       action.elements.forEach(el => {
@@ -728,13 +810,17 @@ export class PDFAnnotatorEngine {
       this._redrawPageAnnotations(action.pageNum);
     } else if (action.type === 'in-place-edit') {
       if (action.span) {
-        action.span.style.visibility = 'hidden';
-        action.span._linkedEditor = action.editorEl;
-      }
-      const wrapper = document.getElementById(`page-wrapper-${action.pageNum}`);
-      if (wrapper && action.editorEl) {
-        wrapper.appendChild(action.editorEl);
-        this.setActiveTextBox(action.editorEl);
+        action.span.textContent = action.newText;
+        action.span.classList.add('in-place-modified');
+        if (!this.inPlaceEdits.has(action.pageNum)) {
+          this.inPlaceEdits.set(action.pageNum, new Map());
+        }
+        this.inPlaceEdits.get(action.pageNum).set(action.span, {
+          span: action.span,
+          originalText: action.span._originalText,
+          newText: action.newText,
+          pageNum: action.pageNum
+        });
       }
     } else if (action.type === 'element') {
       action.elements.forEach(el => {
@@ -772,12 +858,15 @@ export class PDFAnnotatorEngine {
       const stamps = wrapper.querySelectorAll('.placed-stamp');
       const redactions = wrapper.querySelectorAll('.redaction-box');
       const whiteouts = wrapper.querySelectorAll('.whiteout-box');
+      const pageInPlaceEdits = this.inPlaceEdits?.get(pageNum);
+      const hasInPlaceEdits = pageInPlaceEdits && pageInPlaceEdits.size > 0;
 
       const hasContent = (this.annotations.has(pageNum) && this.annotations.get(pageNum).length > 0) ||
                          textboxes.length > 0 ||
                          stamps.length > 0 ||
                          redactions.length > 0 ||
-                         whiteouts.length > 0;
+                         whiteouts.length > 0 ||
+                         hasInPlaceEdits;
 
       if (!hasContent) continue;
 
@@ -803,6 +892,41 @@ export class PDFAnnotatorEngine {
         const wh = wb.offsetHeight * scaleY;
         compCtx.fillStyle = '#ffffff';
         compCtx.fillRect(wx, wy, ww, wh);
+      }
+
+      // 2b. Draw In-Place Text Edits (Mask original canvas text with white and render new text using PDF's exact font)
+      if (hasInPlaceEdits) {
+        for (const [span, edit] of pageInPlaceEdits.entries()) {
+          const textToDraw = span.textContent;
+          if (textToDraw === undefined || textToDraw === null) continue;
+
+          const cs = window.getComputedStyle(span);
+          const wrapperRect = wrapper.getBoundingClientRect();
+          const spanRect = span.getBoundingClientRect();
+
+          const sx = (spanRect.left - wrapperRect.left) * scaleX;
+          const sy = (spanRect.top - wrapperRect.top) * scaleY;
+          const sw = spanRect.width * scaleX;
+          const sh = spanRect.height * scaleY;
+
+          // Mask original PDF text underneath with crisp white rectangle
+          compCtx.fillStyle = '#ffffff';
+          compCtx.fillRect(Math.floor(sx) - 1, Math.floor(sy) - 1, Math.ceil(sw) + 2, Math.ceil(sh) + 2);
+
+          // Render modified text using PDF's exact font, size, and styling
+          const fSize = parseFloat(cs.fontSize) * scaleY;
+          const fontFamily = cs.fontFamily || 'Inter, sans-serif';
+          const fontWeight = cs.fontWeight || 'normal';
+          const fontStyle = cs.fontStyle || 'normal';
+          const color = cs.color || '#111827';
+
+          compCtx.save();
+          compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
+          compCtx.fillStyle = color;
+          compCtx.textBaseline = 'top';
+          compCtx.fillText(textToDraw, sx, sy);
+          compCtx.restore();
+        }
       }
 
       // 3. Draw placed stamps and signatures
