@@ -5,18 +5,20 @@
 
 export class PDFSecurityEngine {
   constructor() {
-    this.PDFDocument = window.PDFLib ? window.PDFLib.PDFDocument : null;
-    this.rgb = window.PDFLib ? window.PDFLib.rgb : null;
-    this.degrees = window.PDFLib ? window.PDFLib.degrees : null;
-    this.StandardFonts = window.PDFLib ? window.PDFLib.StandardFonts : null;
+    const lib = window.PDFLib || window.pdfLib;
+    this.PDFDocument = lib ? lib.PDFDocument : null;
+    this.rgb = lib ? lib.rgb : null;
+    this.degrees = lib ? lib.degrees : null;
+    this.StandardFonts = lib ? lib.StandardFonts : null;
   }
 
   _checkLib() {
-    if (!this.PDFDocument && window.PDFLib) {
-      this.PDFDocument = window.PDFLib.PDFDocument;
-      this.rgb = window.PDFLib.rgb;
-      this.degrees = window.PDFLib.degrees;
-      this.StandardFonts = window.PDFLib.StandardFonts;
+    const lib = window.PDFLib || window.pdfLib;
+    if (lib) {
+      this.PDFDocument = lib.PDFDocument;
+      this.rgb = lib.rgb;
+      this.degrees = lib.degrees;
+      this.StandardFonts = lib.StandardFonts;
     }
     if (!this.PDFDocument) {
       throw new Error('PDF-lib library not loaded.');

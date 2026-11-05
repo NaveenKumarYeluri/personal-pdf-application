@@ -270,16 +270,34 @@ export class UIController {
     const searchInput = document.getElementById('m3-search-input');
     const searchCount = document.getElementById('m3-search-count');
 
-    document.getElementById('m3-btn-search')?.addEventListener('click', () => {
-      searchBar.style.display = searchBar.style.display === 'none' ? 'flex' : 'none';
-      if (searchBar.style.display === 'flex') {
+    const toggleMobileSearch = () => {
+      searchBar.classList.toggle('open');
+      if (searchBar.classList.contains('open')) {
         searchInput.focus();
+      } else {
+        searchInput.value = '';
+        this.app.viewer.clearSearch();
+        searchCount.textContent = '0/0';
       }
-    });
+    };
 
-    document.getElementById('m3-search-close')?.addEventListener('click', () => {
-      searchBar.style.display = 'none';
-    });
+    const closeMobileSearch = () => {
+      searchBar.classList.remove('open');
+      searchInput.value = '';
+      this.app.viewer.clearSearch();
+      searchCount.textContent = '0/0';
+    };
+
+    document.getElementById('m3-btn-search')?.addEventListener('click', toggleMobileSearch);
+
+    const btnCloseSearch = document.getElementById('m3-search-close');
+    if (btnCloseSearch) {
+      btnCloseSearch.addEventListener('click', closeMobileSearch);
+      btnCloseSearch.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        closeMobileSearch();
+      });
+    }
 
     let mobileSearchTimeout = null;
     searchInput?.addEventListener('input', () => {
@@ -298,6 +316,8 @@ export class UIController {
 
     document.getElementById('m3-search-prev')?.addEventListener('click', () => {
       const res = this.app.viewer.prevSearchResult();
+      if (res) searchCount.textContent = `${res.current}/${res.total}`;
+    });
       if (res) searchCount.textContent = `${res.current}/${res.total}`;
     });
 
@@ -530,6 +550,20 @@ export class UIController {
     this.currentMode = mode;
     this.dynamicToolsContainer.innerHTML = '';
 
+    // Update body mode classes for CSS scoping (e.g. body.mode-view hides all delete buttons & editing borders)
+    const modeClasses = ['mode-view', 'mode-annotate', 'mode-organize', 'mode-edit', 'mode-forms', 'mode-protect', 'mode-export'];
+    modeClasses.forEach(c => document.body.classList.remove(c));
+    document.body.classList.add(`mode-${mode}`);
+
+    // Deselect any active text box or editor when switching modes
+    if (this.app.annotator) {
+      if (this.app.annotator.activeTextBox) {
+        this.app.annotator.activeTextBox.classList.remove('active');
+        this.app.annotator.activeTextBox = null;
+        this.app.annotator.onActiveTextBoxChange(null);
+      }
+    }
+
     // Toggle in-place PDF content editing
     if (this.app.viewer) {
       this.app.viewer.setContentEditingMode(mode === 'edit');
@@ -666,10 +700,10 @@ export class UIController {
           <option value="32">32 pt</option>
           <option value="48">48 pt</option>
         </select>
-        <button id="btn-text-bold" class="tool-btn" title="Bold Text">𝐁</button>
-        <button id="btn-text-italic" class="tool-btn" title="Italic Text">𝑰</button>
-        <button id="btn-text-underline" class="tool-btn" title="Underline Text">𝐔̲</button>
-        <button id="btn-text-delete" class="tool-btn" style="color:#ef4444;" title="Delete Active Text Box">🗑</button>
+        <button id="btn-text-bold" class="tool-btn" title="Bold Text"><b>B</b></button>
+        <button id="btn-text-italic" class="tool-btn" title="Italic Text"><i>I</i></button>
+        <button id="btn-text-underline" class="tool-btn" title="Underline Text"><u>U</u></button>
+        <button id="btn-text-delete" class="tool-btn" style="color:#ef4444;" title="Delete Active Text Box">🗑 Del</button>
         <select id="annot-stamp" class="tool-select" title="Place Stamp">
           <option value="">Stamp...</option>
           <option value="APPROVED">APPROVED</option>
@@ -855,12 +889,12 @@ export class UIController {
           <option value="64">64 pt</option>
           <option value="72">72 pt</option>
         </select>
-        <button id="btn-edit-bold" class="tool-btn" title="Bold">𝐁</button>
-        <button id="btn-edit-italic" class="tool-btn" title="Italic">𝑰</button>
-        <button id="btn-edit-underline" class="tool-btn" title="Underline">𝐔̲</button>
-        <button id="btn-edit-align-left" class="tool-btn" title="Align Left">⇤</button>
-        <button id="btn-edit-align-center" class="tool-btn" title="Align Center">⇋</button>
-        <button id="btn-edit-align-right" class="tool-btn" title="Align Right">⇥</button>
+        <button id="btn-edit-bold" class="tool-btn" title="Bold"><b>B</b></button>
+        <button id="btn-edit-italic" class="tool-btn" title="Italic"><i>I</i></button>
+        <button id="btn-edit-underline" class="tool-btn" title="Underline"><u>U</u></button>
+        <button id="btn-edit-align-left" class="tool-btn" title="Align Left">&#x2261;L</button>
+        <button id="btn-edit-align-center" class="tool-btn" title="Align Center">&#x2261;C</button>
+        <button id="btn-edit-align-right" class="tool-btn" title="Align Right">&#x2261;R</button>
         <select id="edit-line-spacing" class="tool-select" title="Line Spacing">
           <option value="1.0">1.0x</option>
           <option value="1.25" selected>1.25x</option>
@@ -868,7 +902,7 @@ export class UIController {
           <option value="2.0">2.0x</option>
         </select>
         <input type="color" id="edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:28px; height:28px;" title="Text Color">
-        <button id="btn-edit-delete-box" class="tool-btn" style="color:#ef4444;" title="Delete Selected Text Box">🗑</button>
+        <button id="btn-edit-delete-box" class="tool-btn" style="color:#ef4444;" title="Delete Selected Text Box">🗑 Del</button>
       </div>
       <div class="divider"></div>
       <div class="tool-group">

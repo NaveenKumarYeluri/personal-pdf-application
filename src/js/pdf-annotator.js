@@ -570,9 +570,17 @@ export class PDFAnnotatorEngine {
       const box = this.activeTextBox;
       const pageWrapper = box.closest('.page-wrapper');
       const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+      
+      if (box._originalSpan) {
+        box._originalSpan.style.visibility = 'visible';
+        box._originalSpan._linkedEditor = null;
+      }
+
       this.undoStack.push({
-        type: 'element',
+        type: box._originalSpan ? 'in-place-edit' : 'element',
         pageNum,
+        editorEl: box,
+        span: box._originalSpan || null,
         elements: [box]
       });
       box._savedParent = box.parentNode;
@@ -624,6 +632,18 @@ export class PDFAnnotatorEngine {
         }
         this._redrawPageAnnotations(action.pageNum);
       }
+    } else if (action.type === 'in-place-edit') {
+      if (action.editorEl && action.editorEl.parentNode) {
+        action.editorEl.remove();
+      }
+      if (action.span) {
+        action.span.style.visibility = 'visible';
+        action.span._linkedEditor = null;
+      }
+      if (this.activeTextBox === action.editorEl) {
+        this.activeTextBox = null;
+        this.onActiveTextBoxChange(null);
+      }
     } else if (action.type === 'element') {
       action.elements.forEach(el => {
         if (el && el.parentNode) {
@@ -646,6 +666,16 @@ export class PDFAnnotatorEngine {
       }
       this.annotations.get(action.pageNum).push(action.data);
       this._redrawPageAnnotations(action.pageNum);
+    } else if (action.type === 'in-place-edit') {
+      if (action.span) {
+        action.span.style.visibility = 'hidden';
+        action.span._linkedEditor = action.editorEl;
+      }
+      const wrapper = document.getElementById(`page-wrapper-${action.pageNum}`);
+      if (wrapper && action.editorEl) {
+        wrapper.appendChild(action.editorEl);
+        this.setActiveTextBox(action.editorEl);
+      }
     } else if (action.type === 'element') {
       action.elements.forEach(el => {
         if (el && el._savedParent) {
@@ -661,8 +691,9 @@ export class PDFAnnotatorEngine {
    * into the underlying PDF using pdf-lib by compositing them onto each page.
    */
   async burnAnnotationsToPdf(pdfBytes) {
-    if (!window.PDFLib) return pdfBytes;
-    const { PDFDocument } = window.PDFLib;
+    const lib = window.PDFLib || window.pdfLib;
+    if (!lib) return pdfBytes;
+    const { PDFDocument } = lib;
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
     const doc = await PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const pages = doc.getPages();
@@ -767,6 +798,12 @@ export class PDFAnnotatorEngine {
           ? parsedLineHeight * scaleY
           : fSize * 1.3;
 
+        // If this textbox has a white background (e.g. in-place editor) or explicit background, mask the canvas behind it
+        if (tb.classList.contains('in-place-editor') || (cs.backgroundColor && cs.backgroundColor.includes('255, 255, 255'))) {
+          compCtx.fillStyle = '#ffffff';
+          compCtx.fillRect(tx - 1, ty - 1, tw + 2, (tb.offsetHeight * scaleY) + 2);
+        }
+
         compCtx.save();
         compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
         compCtx.fillStyle = color;
@@ -818,32 +855,52 @@ export class PDFAnnotatorEngine {
     let startX, startY, initialX, initialY;
     const container = document.getElementById('viewer-container');
 
+    let scrollTimer = null;
+    let currentClientY = 0;
+
+    const runAutoScroll = () => {
+      if (!isDragging || !container) return;
+      const cRect = container.getBoundingClientRect();
+      const topDist = currentClientY - cRect.top;
+      const bottomDist = cRect.bottom - currentClientY;
+
+      if (topDist < 80 && topDist > -30) {
+        container.scrollTop -= Math.max(5, Math.round((80 - topDist) * 0.35));
+      } else if (bottomDist < 80 && bottomDist > -30) {
+        container.scrollTop += Math.max(5, Math.round((80 - bottomDist) * 0.35));
+      }
+      scrollTimer = requestAnimationFrame(runAutoScroll);
+    };
+
     const startDrag = (clientX, clientY) => {
       isDragging = true;
       startX = clientX;
       startY = clientY;
       initialX = element.offsetLeft;
       initialY = element.offsetTop;
+      currentClientY = clientY;
       element.classList.add('is-dragging');
+      if (scrollTimer) cancelAnimationFrame(scrollTimer);
+      scrollTimer = requestAnimationFrame(runAutoScroll);
     };
 
     const moveDrag = (clientX, clientY) => {
       if (!isDragging) return;
+      currentClientY = clientY;
       const dx = clientX - startX;
       const dy = clientY - startY;
       element.style.left = `${initialX + dx}px`;
       element.style.top = `${initialY + dy}px`;
 
-      // Auto-scroll viewer container when near top or bottom edges
-      if (container) {
-        const cRect = container.getBoundingClientRect();
-        const topDist = clientY - cRect.top;
-        const bottomDist = cRect.bottom - clientY;
-        if (topDist < 70 && topDist > 0) {
-          container.scrollTop -= Math.round((70 - topDist) * 0.35);
-        } else if (bottomDist < 70 && bottomDist > 0) {
-          container.scrollTop += Math.round((70 - bottomDist) * 0.35);
-        }
+      // Live cross-page reparenting while dragging across pages
+      const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
+      const targetWrapper = elementsAtPoint.find(el => el.classList && el.classList.contains('page-wrapper'));
+      if (targetWrapper && targetWrapper !== element.parentNode) {
+        const elRect = element.getBoundingClientRect();
+        const targetRect = targetWrapper.getBoundingClientRect();
+        targetWrapper.appendChild(element);
+        initialX = elRect.left - targetRect.left - dx;
+        initialY = elRect.top - targetRect.top - dy;
       }
     };
 
@@ -851,8 +908,12 @@ export class PDFAnnotatorEngine {
       if (!isDragging) return;
       isDragging = false;
       element.classList.remove('is-dragging');
+      if (scrollTimer) {
+        cancelAnimationFrame(scrollTimer);
+        scrollTimer = null;
+      }
 
-      // Check cross-page reparenting if element was moved across pages
+      // Final cross-page adjustment
       if (clientX !== undefined && clientY !== undefined) {
         const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
         const targetWrapper = elementsAtPoint.find(el => el.classList && el.classList.contains('page-wrapper'));

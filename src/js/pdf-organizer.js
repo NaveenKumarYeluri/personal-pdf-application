@@ -5,14 +5,16 @@
 
 export class PDFOrganizerEngine {
   constructor() {
-    this.PDFDocument = window.PDFLib ? window.PDFLib.PDFDocument : null;
-    this.degrees = window.PDFLib ? window.PDFLib.degrees : null;
+    const lib = window.PDFLib || window.pdfLib;
+    this.PDFDocument = lib ? lib.PDFDocument : null;
+    this.degrees = lib ? lib.degrees : null;
   }
 
   _checkLib() {
-    if (!this.PDFDocument && window.PDFLib) {
-      this.PDFDocument = window.PDFLib.PDFDocument;
-      this.degrees = window.PDFLib.degrees;
+    const lib = window.PDFLib || window.pdfLib;
+    if (lib) {
+      this.PDFDocument = lib.PDFDocument;
+      this.degrees = lib.degrees;
     }
     if (!this.PDFDocument) {
       throw new Error('PDF-lib library not loaded.');

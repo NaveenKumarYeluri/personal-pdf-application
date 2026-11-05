@@ -21,10 +21,10 @@
   <link rel="stylesheet" href="css/organizer.css">
   <link rel="stylesheet" href="css/material-mobile.css">
   
-  <!-- PDF.js Engine (Mozilla) & pdf-lib (Offline capable with fallback) -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.9/pdf-lib.min.js"></script>
+  <!-- PDF.js Engine (Mozilla) & pdf-lib (Offline Bundled for 100% offline desktop & Android) -->
+  <link rel="stylesheet" href="vendor/pdf_viewer.min.css">
+  <script src="vendor/pdf.min.js"></script>
+  <script src="vendor/pdf-lib.min.js"></script>
 </head>
 <body class="theme-dark">
   <div id="app" class="app-layout">
@@ -61,11 +61,11 @@
     </header>
 
     <!-- Mobile Search Bar Overlay (Material 3) -->
-    <div id="m3-search-bar" class="m3-search-bar m3-only" style="display:none;">
+    <div id="m3-search-bar" class="m3-search-bar">
       <input type="text" id="m3-search-input" placeholder="Search in document..." class="form-input" style="flex:1;">
       <span id="m3-search-count" class="m3-search-count" style="font-size:12px; color:var(--m3-sys-on-surface-variant); padding:0 6px;">0/0</span>
-      <button id="m3-search-prev" class="tool-btn-sm" title="Previous match">▲</button>
-      <button id="m3-search-next" class="tool-btn-sm" title="Next match">▼</button>
+      <button id="m3-search-prev" class="tool-btn-sm" title="Previous match">&#x25C0;</button>
+      <button id="m3-search-next" class="tool-btn-sm" title="Next match">&#x25B6;</button>
       <button id="m3-search-close" class="tool-btn-sm" title="Close search">&times;</button>
     </div>
 
@@ -762,8 +762,8 @@
               <option value="32">32 pt</option>
               <option value="48">48 pt</option>
             </select>
-            <button id="m3-edit-bold" class="tool-btn" style="border:1px solid var(--border-color); width:36px; height:36px;" title="Bold">𝐁</button>
-            <button id="m3-edit-italic" class="tool-btn" style="border:1px solid var(--border-color); width:36px; height:36px;" title="Italic">𝑰</button>
+            <button id="m3-edit-bold" class="tool-btn" style="border:1px solid var(--border-color); width:36px; height:36px;" title="Bold"><b>B</b></button>
+            <button id="m3-edit-italic" class="tool-btn" style="border:1px solid var(--border-color); width:36px; height:36px;" title="Italic"><i>I</i></button>
             <input type="color" id="m3-edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:44px; height:36px;">
           </div>
         </div>

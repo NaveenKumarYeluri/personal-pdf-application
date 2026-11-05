@@ -24,10 +24,9 @@ export class PDFViewerEngine {
     this.searchResults = [];
     this.currentSearchIndex = -1;
 
-    // Configure PDF.js worker
+    // Configure PDF.js worker (Bundled offline first with CDN fallback)
     if (window.pdfjsLib) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
     }
 
     this._setupIntersectionObserver();
@@ -245,7 +244,6 @@ export class PDFViewerEngine {
       if (!span || !this.isContentEditingActive) return;
 
       e.stopPropagation();
-      if (span.isContentEditable) return;
 
       const originalText = span.textContent;
       const rect = span.getBoundingClientRect();
@@ -257,40 +255,23 @@ export class PDFViewerEngine {
       const relWidth = rect.width;
       const relHeight = rect.height;
 
-      span.contentEditable = 'true';
-      span.classList.add('inline-editing');
-      span.focus();
+      const cs = window.getComputedStyle(span);
 
-      const finishEdit = () => {
-        span.contentEditable = 'false';
-        span.classList.remove('inline-editing');
-        const newText = span.textContent;
-        if (newText !== originalText) {
-          this.onContentEdited({
-            pageNum,
-            originalText,
-            newText,
-            x: relLeft,
-            y: relTop,
-            width: relWidth,
-            height: relHeight,
-            fontSize: window.getComputedStyle(span).fontSize,
-            fontFamily: window.getComputedStyle(span).fontFamily,
-            color: window.getComputedStyle(span).color
-          });
-        }
-      };
-
-      span.onblur = finishEdit;
-      span.onkeydown = (kEvt) => {
-        if (kEvt.key === 'Enter') {
-          kEvt.preventDefault();
-          span.blur();
-        } else if (kEvt.key === 'Escape') {
-          span.textContent = originalText;
-          span.blur();
-        }
-      };
+      this.onContentEdited({
+        span,
+        pageNum,
+        pageWrapper,
+        originalText,
+        x: relLeft,
+        y: relTop,
+        width: relWidth,
+        height: relHeight,
+        fontSize: cs.fontSize,
+        fontFamily: cs.fontFamily,
+        fontWeight: cs.fontWeight,
+        color: cs.color,
+        lineHeight: cs.lineHeight
+      });
     });
   }
 

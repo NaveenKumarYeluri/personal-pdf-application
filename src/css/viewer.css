@@ -96,12 +96,12 @@
 .page-wrapper {
   position: relative;
   background-color: #ffffff;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 2px;
   transition: box-shadow 0.2s ease, transform 0.15s ease;
   user-select: text;
-  margin-bottom: 32px !important;
+  margin: 24px auto !important;
 }
 
 .page-wrapper:hover {

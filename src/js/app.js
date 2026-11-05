@@ -394,38 +394,103 @@ class PersonalPDFApp {
     const wrapper = document.getElementById(`page-wrapper-${editData.pageNum}`);
     if (!wrapper) return;
 
-    // 1. Create a whiteout box to mask the original text in the PDF stream
-    const whiteout = document.createElement('div');
-    whiteout.className = 'placed-stamp whiteout-box';
-    whiteout.style.left = `${editData.x - 2}px`;
-    whiteout.style.top = `${editData.y - 2}px`;
-    whiteout.style.width = `${editData.width + 4}px`;
-    whiteout.style.height = `${editData.height + 4}px`;
-    whiteout.style.backgroundColor = '#ffffff';
+    // If this span already has an active editor, focus and sync it
+    if (editData.span && editData.span._linkedEditor && editData.span._linkedEditor.parentNode) {
+      this.annotator.setActiveTextBox(editData.span._linkedEditor);
+      editData.span._linkedEditor.focus();
+      return;
+    }
 
-    // 2. Create the replacement editable text block
-    const replacement = document.createElement('div');
-    replacement.className = 'annotation-textbox';
-    replacement.contentEditable = true;
-    replacement.style.left = `${editData.x}px`;
-    replacement.style.top = `${editData.y}px`;
-    replacement.style.fontSize = editData.fontSize;
-    replacement.style.fontFamily = editData.fontFamily;
-    replacement.style.color = editData.color;
-    replacement.innerText = editData.newText;
+    // 1. Hide the original text layer span so mouse events don't collide
+    if (editData.span) {
+      editData.span.style.visibility = 'hidden';
+    }
 
-    wrapper.appendChild(whiteout);
-    wrapper.appendChild(replacement);
+    // 2. Create the exact replacement editable text block matching position and metrics
+    const editor = document.createElement('div');
+    editor.className = 'annotation-textbox in-place-editor active';
+    editor.contentEditable = 'true';
+    editor.style.left = `${Math.round(editData.x)}px`;
+    editor.style.top = `${Math.round(editData.y)}px`;
+    editor.style.minWidth = `${Math.max(24, Math.round(editData.width))}px`;
+    editor.style.minHeight = `${Math.max(14, Math.round(editData.height))}px`;
+    editor.style.fontSize = editData.fontSize;
+    editor.style.fontFamily = editData.fontFamily;
+    editor.style.fontWeight = editData.fontWeight || 'normal';
+    editor.style.color = editData.color || '#111827';
+    editor.style.lineHeight = editData.lineHeight || '1.15';
+    editor.innerText = editData.originalText;
+    editor._originalSpan = editData.span;
+    editor._originalText = editData.originalText;
+
+    if (editData.span) {
+      editData.span._linkedEditor = editor;
+    }
+
+    // Delete button (Reverts back to original PDF text)
+    const btnDel = document.createElement('button');
+    btnDel.className = 'textbox-delete-btn';
+    btnDel.innerHTML = '&times;';
+    btnDel.title = 'Revert text';
+    btnDel.onclick = (e) => {
+      e.stopPropagation();
+      if (editData.span) {
+        editData.span.style.visibility = 'visible';
+        editData.span._linkedEditor = null;
+      }
+      editor.remove();
+      if (this.annotator.activeTextBox === editor) {
+        this.annotator.activeTextBox = null;
+        this.annotator.onActiveTextBoxChange(null);
+      }
+      this.ui.setStatus('Reverted in-place text edit');
+    };
+    editor.appendChild(btnDel);
+
+    editor.onclick = editor.onfocus = (e) => {
+      e?.stopPropagation();
+      this.annotator.setActiveTextBox(editor);
+    };
+
+    editor.onblur = () => {
+      if (!editor.innerText.trim()) {
+        btnDel.click();
+      }
+    };
+
+    editor.onkeydown = (kEvt) => {
+      if (kEvt.key === 'Escape') {
+        editor.innerText = editData.originalText;
+        editor.blur();
+      }
+    };
+
+    wrapper.appendChild(editor);
+    this.annotator._makeDraggable(editor, wrapper);
+
+    // Focus editor and select all text for immediate typing
+    editor.focus();
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (_) {}
+
+    this.annotator.setActiveTextBox(editor);
 
     // 3. Record in Undo stack
     this.annotator.undoStack.push({
-      type: 'element',
+      type: 'in-place-edit',
       pageNum: editData.pageNum,
-      elements: [whiteout, replacement]
+      editorEl: editor,
+      span: editData.span,
+      originalText: editData.originalText
     });
     this.annotator.redoStack = [];
 
-    this.ui.setStatus(`Modified text: "${editData.newText}"`);
+    this.ui.setStatus('Editing text: change content, font, size, or color from the toolbar');
   }
 
   _setupElectronBridge() {
@@ -503,11 +568,12 @@ class PersonalPDFApp {
   async loadSamplePDF() {
     this.ui.setStatus('Generating sample PDF...');
     try {
-      if (!window.PDFLib) {
+      const lib = window.PDFLib || window.pdfLib;
+      if (!lib) {
         alert('PDF library is loading, please wait a moment...');
         return;
       }
-      const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
+      const { PDFDocument, rgb, StandardFonts } = lib;
       const doc = await PDFDocument.create();
 
       // Page 1: Welcome & Overview
@@ -613,39 +679,20 @@ class PersonalPDFApp {
   }
 
   getVisibleCenterTarget() {
+    const pageNum = (this.viewer && this.viewer.currentPage) ? this.viewer.currentPage : 1;
+    const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     const container = document.getElementById('viewer-container');
-    if (!container) return { pageNum: this.viewer.currentPage || 1, x: 120, y: 150 };
-
-    const cRect = container.getBoundingClientRect();
-    const centerY = cRect.top + cRect.height / 2;
-    const centerX = cRect.left + cRect.width / 2;
-
-    const wrappers = Array.from(document.querySelectorAll('.page-wrapper'));
-    if (wrappers.length === 0) return { pageNum: 1, x: 120, y: 150 };
-
-    let bestWrapper = wrappers[0];
-    let minDistance = Infinity;
-
-    for (const wrapper of wrappers) {
-      const rect = wrapper.getBoundingClientRect();
-      if (centerY >= rect.top && centerY <= rect.bottom) {
-        bestWrapper = wrapper;
-        break;
-      }
-      const dist = Math.min(Math.abs(centerY - rect.top), Math.abs(centerY - rect.bottom));
-      if (dist < minDistance) {
-        minDistance = dist;
-        bestWrapper = wrapper;
-      }
+    if (wrapper && container) {
+      const cRect = container.getBoundingClientRect();
+      const wRect = wrapper.getBoundingClientRect();
+      const x = Math.max(30, Math.min(wRect.width - 220, Math.round((wRect.width - 180) / 2)));
+      const visibleTop = Math.max(cRect.top, wRect.top);
+      const visibleBottom = Math.min(cRect.bottom, wRect.bottom);
+      const visibleCenter = (visibleTop + visibleBottom) / 2;
+      const y = Math.max(30, Math.min(wRect.height - 120, Math.round(visibleCenter - wRect.top - 40)));
+      return { pageNum, x, y };
     }
-
-    const rect = bestWrapper.getBoundingClientRect();
-    const pageNum = parseInt(bestWrapper.dataset.pageNumber, 10) || 1;
-    // Calculate centered x and y within target page wrapper
-    const targetX = Math.max(30, Math.min(rect.width - 240, (centerX - rect.left) - 100));
-    const targetY = Math.max(30, Math.min(rect.height - 120, (centerY - rect.top) - 50));
-
-    return { pageNum, x: Math.round(targetX), y: Math.round(targetY) };
+    return { pageNum: 1, x: 120, y: 150 };
   }
 
   openMergeModal() {

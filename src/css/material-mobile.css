@@ -138,6 +138,27 @@ body.theme-light {
     text-overflow: ellipsis;
   }
 
+  /* Material 3 Mobile Search Bar Overlay */
+  .m3-search-bar {
+    position: fixed;
+    top: 64px;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background-color: var(--m3-sys-surface-container);
+    border-bottom: 1px solid var(--m3-sys-outline-variant);
+    display: none !important;
+    align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+    z-index: 95;
+    box-shadow: var(--m3-elevation-2);
+  }
+
+  .m3-search-bar.open {
+    display: flex !important;
+  }
+
   .m3-app-bar-actions {
     display: flex;
     align-items: center;
