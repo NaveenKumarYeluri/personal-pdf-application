@@ -572,9 +572,21 @@ class PersonalPDFApp {
     const baseFontSize = span._baseFontSize || (computedFontSizePx / scaleFactor);
     span._baseFontSize = baseFontSize;
     span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
-    span.style.lineHeight = '1';
+    span.style.lineHeight = '1.15';
     span.style.webkitTextSizeAdjust = 'none';
     span.style.textSizeAdjust = 'none';
+
+    // Reset artificial PDF.js transform and spacing so typography flows naturally
+    span.style.transform = 'none';
+    span.style.letterSpacing = 'normal';
+
+    // Constrain max-width to right margin to prevent overflowing past page boundary
+    const wrapW = pageWrapper.clientWidth || 800;
+    const maxW = Math.max(80, wrapW - span.offsetLeft - 24);
+    span.style.maxWidth = `${maxW}px`;
+    span.style.whiteSpace = 'pre-wrap';
+    span.style.wordBreak = 'break-word';
+    span.style.overflowWrap = 'break-word';
 
     // Set as active in-place span in annotator engine
     this.annotator.setActiveInPlaceSpan(span);
@@ -599,9 +611,15 @@ class PersonalPDFApp {
       }
       span.style.fontFamily = fontStack;
       span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
-      span.style.lineHeight = '1';
+      span.style.lineHeight = '1.15';
       span.style.webkitTextSizeAdjust = 'none';
       span.style.textSizeAdjust = 'none';
+      span.style.transform = 'none';
+      span.style.letterSpacing = 'normal';
+      span.style.maxWidth = `${maxW}px`;
+      span.style.whiteSpace = 'pre-wrap';
+      span.style.wordBreak = 'break-word';
+      span.style.overflowWrap = 'break-word';
     };
 
     // Sync toolbar font, size, bold, italic, color to match native PDF styling
@@ -638,10 +656,20 @@ class PersonalPDFApp {
         if (span.textContent !== span._originalText) {
           span.classList.add('in-place-modified');
           if (tLayer) tLayer.classList.add('has-modifications');
-          
-          if (span._normRect && pageWrapper) {
-            span.style.minWidth = `${Math.ceil(span._normRect.w * (pageWrapper.clientWidth || 1))}px`;
-          }
+
+          // Explicitly ensure solid text visibility and natural wrapping
+          span.style.transform = 'none';
+          span.style.letterSpacing = 'normal';
+          span.style.maxWidth = `${maxW}px`;
+          span.style.whiteSpace = 'pre-wrap';
+          span.style.wordBreak = 'break-word';
+          span.style.overflowWrap = 'break-word';
+          span.style.width = 'auto';
+          span.style.minWidth = '0';
+          span.style.color = '#111827';
+          span.style.backgroundColor = '#ffffff';
+          span.style.opacity = '1';
+          span.style.visibility = 'visible';
 
           // Directly erase original text pixels from underlying PDF canvas using normalized coordinates
           const pageCanvas = pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
@@ -756,7 +784,18 @@ class PersonalPDFApp {
         matchedSpan.classList.add('in-place-modified');
         matchedSpan.style.webkitTextSizeAdjust = 'none';
         matchedSpan.style.textSizeAdjust = 'none';
-        matchedSpan.style.lineHeight = '1';
+        matchedSpan.style.lineHeight = '1.15';
+        matchedSpan.style.transform = 'none';
+        matchedSpan.style.letterSpacing = 'normal';
+        matchedSpan.style.whiteSpace = 'pre-wrap';
+        matchedSpan.style.wordBreak = 'break-word';
+        matchedSpan.style.overflowWrap = 'break-word';
+        matchedSpan.style.width = 'auto';
+        matchedSpan.style.minWidth = '0';
+        matchedSpan.style.color = '#111827';
+        matchedSpan.style.backgroundColor = '#ffffff';
+        matchedSpan.style.opacity = '1';
+        matchedSpan.style.visibility = 'visible';
 
         if (matchedSpan._customFontStack) {
           matchedSpan.style.fontFamily = matchedSpan._customFontStack;
@@ -764,8 +803,9 @@ class PersonalPDFApp {
         if (matchedSpan._baseFontSize) {
           matchedSpan.style.fontSize = `calc(var(--scale-factor, 1) * ${matchedSpan._baseFontSize.toFixed(2)}px)`;
         }
-        if (matchedSpan._normRect && pageWrapper) {
-          matchedSpan.style.minWidth = `${Math.ceil(matchedSpan._normRect.w * (pageWrapper.clientWidth || 1))}px`;
+        if (pageWrapper) {
+          const maxW = Math.max(80, (pageWrapper.clientWidth || 800) - matchedSpan.offsetLeft - 24);
+          matchedSpan.style.maxWidth = `${maxW}px`;
         }
 
         const normRect = matchedSpan._normRect;

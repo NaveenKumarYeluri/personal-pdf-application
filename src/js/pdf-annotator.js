@@ -1146,7 +1146,27 @@ export class PDFAnnotatorEngine {
           compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
           compCtx.fillStyle = color;
           compCtx.textBaseline = 'top';
-          compCtx.fillText(textToDraw, sx, sy);
+
+          const maxTextW = Math.max(80, (wrapper.clientWidth - (spanRect.left - wrapperRect.left) - 24) * scaleX);
+          const words = textToDraw.split(' ');
+          let currentLine = '';
+          let lineY = sy;
+          const lineHeight = fSize * 1.2;
+
+          for (let w = 0; w < words.length; w++) {
+            const testLine = currentLine ? `${currentLine} ${words[w]}` : words[w];
+            const metrics = compCtx.measureText(testLine);
+            if (metrics.width > maxTextW && currentLine) {
+              compCtx.fillText(currentLine, sx, lineY);
+              currentLine = words[w];
+              lineY += lineHeight;
+            } else {
+              currentLine = testLine;
+            }
+          }
+          if (currentLine) {
+            compCtx.fillText(currentLine, sx, lineY);
+          }
           compCtx.restore();
         }
       }

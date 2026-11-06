@@ -171,7 +171,7 @@
   z-index: 10 !important;
 }
 
-.page-wrapper.editing-content .textLayer span {
+.page-wrapper.editing-content .textLayer span:not(.in-place-modified):not(.inline-editing) {
   color: transparent !important;
   background-color: transparent !important;
   outline: none !important;
@@ -183,7 +183,7 @@
   -webkit-user-select: none;
 }
 
-.page-wrapper.editing-content .textLayer span:hover {
+.page-wrapper.editing-content .textLayer span:not(.in-place-modified):not(.inline-editing):hover {
   outline: 1.5px dashed #2563eb !important;
   outline-offset: 1px !important;
   background-color: rgba(37, 99, 235, 0.08) !important;
@@ -200,18 +200,21 @@
   background-color: #ffffff !important;
   box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgba(37, 99, 235, 0.25) !important;
   z-index: 100 !important;
-  white-space: pre !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
   user-select: text !important;
   -webkit-user-select: text !important;
   color: #111827 !important;
   opacity: 1 !important;
-  padding: 0 !important;
+  visibility: visible !important;
+  padding: 0 2px !important;
   margin: 0 !important;
   box-sizing: border-box !important;
   -webkit-text-size-adjust: none !important;
   text-size-adjust: none !important;
   -webkit-font-smoothing: antialiased !important;
-  line-height: 1 !important;
+  line-height: 1.15 !important;
   caret-color: #2563eb !important;
 }
 
@@ -224,23 +227,28 @@
 }
 
 /* Modified text spans persist seamlessly across View & Edit modes */
+.page-wrapper.editing-content .textLayer span.in-place-modified,
+.page-wrapper .textLayer span.in-place-modified,
 .textLayer span.in-place-modified {
   color: #111827 !important;
   background-color: #ffffff !important;
+  opacity: 1 !important;
+  visibility: visible !important;
   border: none !important;
   outline: none !important;
   box-shadow: 0 0 0 2px #ffffff !important;
   z-index: 50 !important;
   cursor: text !important;
-  white-space: pre !important;
-  opacity: 1 !important;
-  padding: 0 !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  padding: 0 2px !important;
   margin: 0 !important;
   box-sizing: border-box !important;
   -webkit-text-size-adjust: none !important;
   text-size-adjust: none !important;
   -webkit-font-smoothing: antialiased !important;
-  line-height: 1 !important;
+  line-height: 1.15 !important;
 }
 
 body.mode-edit .textLayer span.in-place-modified {
