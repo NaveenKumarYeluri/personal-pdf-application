@@ -10,6 +10,7 @@ export class UIController {
     this.dynamicToolsContainer = document.getElementById('dynamic-mode-tools');
     this.inspector = document.getElementById('inspector');
     this.inspectorContent = document.getElementById('inspector-content');
+    this.documentFonts = [];
     
     this._initModeTabs();
     this._initSidebarTabs();
@@ -669,6 +670,41 @@ export class UIController {
     });
   }
 
+  setDocumentFonts(fonts = []) {
+    if (!fonts || fonts.length === 0) return;
+    this.documentFonts = fonts;
+
+    const selects = [
+      document.getElementById('edit-font-family'),
+      document.getElementById('annot-font-family'),
+      document.getElementById('m3-edit-font-family')
+    ].filter(Boolean);
+
+    selects.forEach(sel => {
+      const oldGroup = sel.querySelector('optgroup[data-doc-fonts="true"]');
+      if (oldGroup) oldGroup.remove();
+
+      const group = document.createElement('optgroup');
+      group.label = 'Document Embedded Fonts';
+      group.dataset.docFonts = 'true';
+
+      fonts.forEach((font, idx) => {
+        const opt = document.createElement('option');
+        opt.value = `'${font}', sans-serif`;
+        opt.textContent = `${font} (Document)`;
+        if (idx === 0) opt.selected = true;
+        group.appendChild(opt);
+      });
+
+      sel.insertBefore(group, sel.firstChild);
+      sel.selectedIndex = 0;
+    });
+
+    if (this.app.annotator && fonts[0]) {
+      this.app.annotator.fontFamily = `'${fonts[0]}', sans-serif`;
+    }
+  }
+
   setMode(mode) {
     this.currentMode = mode;
     this.dynamicToolsContainer.innerHTML = '';
@@ -823,7 +859,7 @@ export class UIController {
 
       if (selectedText && selectedText.trim()) {
         // Clean encoding: replace corrupted ligatures, PUA chars, soft hyphens, and non-standard spacing
-        const cleanText = selectedText
+        let cleanText = selectedText
           .replace(/\uFB01/g, 'fi')
           .replace(/\uFB02/g, 'fl')
           .replace(/\uFB00/g, 'ff')
@@ -837,6 +873,22 @@ export class UIController {
           .replace(/\u00A0/g, ' ')
           .replace(/[\uE000-\uF8FF]/g, '') // Remove Private Use Area characters
           .normalize('NFC');
+
+        // Restore corrupted ligatures (ti, tt, ft) common in PDFs with non-standard ToUnicode CMaps
+        cleanText = cleanText
+          .replace(/([a-zA-Z])[\uFFFD?](on\b|ons\b|ve\b|vity\b|vities\b|ng\b|ngs\b)/gi, '$1ti$2')
+          .replace(/mul[\uFFFD?]ple/gi, 'multiple')
+          .replace(/par[\uFFFD?]on/gi, 'partition')
+          .replace(/alloca[\uFFFD?]on/gi, 'allocation')
+          .replace(/loca[\uFFFD?]on/gi, 'location')
+          .replace(/posi[\uFFFD?]on/gi, 'position')
+          .replace(/a[\uFFFD?]er/gi, 'after')
+          .replace(/swi[\uFFFD?]/gi, 'swift')
+          .replace(/se[\uFFFD?]ng/gi, 'setting')
+          .replace(/be[\uFFFD?]er/gi, 'better')
+          .replace(/li[\uFFFD?]le/gi, 'little')
+          .replace(/o[\uFFFD?]en/gi, 'often')
+          .replace(/[\uFFFD]/g, '');
 
         try {
           await navigator.clipboard.writeText(cleanText);
@@ -918,6 +970,10 @@ export class UIController {
         </select>
       </div>
     `;
+
+    if (this.documentFonts && this.documentFonts.length > 0) {
+      this.setDocumentFonts(this.documentFonts);
+    }
 
     // Tool switching
     const tools = ['select', 'pen', 'highlighter', 'eraser', 'note', 'text', 'rect', 'circle', 'line'];
@@ -1130,6 +1186,10 @@ export class UIController {
         <button id="btn-open-bates" class="btn btn-sm btn-outline">Bates Numbers</button>
       </div>
     `;
+
+    if (this.documentFonts && this.documentFonts.length > 0) {
+      this.setDocumentFonts(this.documentFonts);
+    }
 
     const btnInline = document.getElementById('btn-edit-inline');
     const btnText = document.getElementById('btn-edit-add-text');

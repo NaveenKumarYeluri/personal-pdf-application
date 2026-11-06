@@ -509,7 +509,7 @@ class PersonalPDFApp {
           }
 
           // Directly erase original text pixels from underlying PDF canvas
-          const pageCanvas = pageWrapper.querySelector('canvas.pdf-canvas');
+          const pageCanvas = pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
           if (pageCanvas) {
             const canvasCtx = pageCanvas.getContext('2d');
             const cScaleX = pageCanvas.width / pageWrapper.clientWidth;
@@ -561,7 +561,7 @@ class PersonalPDFApp {
 
     textLayer.classList.add('has-modifications');
     const pageWrapper = textLayer.closest('.page-wrapper');
-    const pageCanvas = pageWrapper ? pageWrapper.querySelector('canvas.pdf-canvas') : null;
+    const pageCanvas = pageWrapper ? pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]') : null;
 
     const spans = textLayer.querySelectorAll('span');
     for (const [origSpan, edit] of Array.from(pageEdits.entries())) {
@@ -693,6 +693,9 @@ class PersonalPDFApp {
     if (m3Sub) m3Sub.textContent = `${meta.pages} pages • Page 1`;
     document.getElementById('status-size').textContent = `${Math.round(meta.bytes / 1024)} KB`;
     this.ui.setZoomStatus(`${Math.round(this.viewer.scale * 100)}%`);
+    if (this.ui && meta.fonts && meta.fonts.length > 0) {
+      this.ui.setDocumentFonts(meta.fonts);
+    }
   }
 
   async loadSamplePDF() {
@@ -957,12 +960,33 @@ class PersonalPDFApp {
 
   _renderMergeList() {
     const mergeList = document.getElementById('merge-files-list');
+    const btnMerge = document.getElementById('btn-apply-merge');
     if (!mergeList) return;
     mergeList.innerHTML = '';
+
+    const count = this.mergeItems ? this.mergeItems.length : 0;
+    if (btnMerge) {
+      btnMerge.textContent = count >= 2 ? `Combine (${count} Documents)` : 'Combine Documents';
+      btnMerge.disabled = count < 2;
+      btnMerge.style.opacity = count < 2 ? '0.6' : '1';
+    }
 
     if (!this.mergeItems || this.mergeItems.length === 0) {
       mergeList.innerHTML = '<div class="empty-state" style="padding:16px; font-size:12px; color:var(--text-muted); text-align:center;">No files selected yet. Choose PDF files below to combine.</div>';
       return;
+    }
+
+    if (count === 1 && this.mergeItems[0].isCurrent) {
+      const helper = document.createElement('div');
+      helper.style.padding = '8px 12px';
+      helper.style.marginBottom = '10px';
+      helper.style.fontSize = '12px';
+      helper.style.background = 'rgba(59, 130, 246, 0.08)';
+      helper.style.borderRadius = '6px';
+      helper.style.border = '1px solid rgba(59, 130, 246, 0.2)';
+      helper.style.color = 'var(--text-primary)';
+      helper.innerHTML = `ℹ️ Current document <strong>${this.mergeItems[0].name}</strong> is loaded. Click <strong>+ Add PDF Files to Combine...</strong> above to select at least 1 more document to combine.`;
+      mergeList.appendChild(helper);
     }
 
     this.mergeItems.forEach((item, idx) => {
@@ -1424,6 +1448,11 @@ class PersonalPDFApp {
         } else {
           grid.appendChild(card);
         }
+
+        grid.querySelectorAll('.organizer-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        this.ui.showToast('Blank page inserted into grid', 'info');
 
         this._renumberOrganizerCards();
         this._setupDragAndDropReorder(grid);

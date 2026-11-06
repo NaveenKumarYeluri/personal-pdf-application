@@ -158,45 +158,59 @@
 .page-wrapper.editing-content .textLayer span {
   color: #111827 !important;
   background-color: rgba(255, 255, 255, 0.95);
-  border: 1px dashed rgba(59, 130, 246, 0.5);
+  outline: 1.5px dashed rgba(59, 130, 246, 0.5) !important;
+  outline-offset: 1px !important;
+  border: none !important;
   border-radius: 2px;
   cursor: text;
+  box-sizing: border-box !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .page-wrapper.editing-content .textLayer span:hover {
-  border-color: #2563eb;
-  background-color: #ffffff;
+  outline-color: #2563eb !important;
+  background-color: #ffffff !important;
   box-shadow: 0 0 6px rgba(59, 130, 246, 0.35);
 }
 
 .page-wrapper.editing-content .textLayer span.inline-editing,
 .textLayer span.inline-editing {
-  border: 1.5px solid #2563eb !important;
+  border: none !important;
+  outline: 2px solid #2563eb !important;
+  outline-offset: 1px !important;
   background-color: #ffffff !important;
   box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgba(37, 99, 235, 0.35) !important;
-  outline: none !important;
   z-index: 100 !important;
   white-space: pre !important;
   user-select: text !important;
   -webkit-user-select: text !important;
   color: #111827 !important;
   opacity: 1 !important;
-  padding: 1px 3px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
 }
 
 /* Modified text spans persist seamlessly across View & Edit modes */
 .textLayer span.in-place-modified {
   color: #111827 !important;
   background-color: #ffffff !important;
+  border: none !important;
+  outline: none !important;
   box-shadow: 0 0 0 2px #ffffff !important;
-  border: 1px dashed rgba(37, 99, 235, 0.4) !important;
-  border-radius: 2px !important;
   z-index: 50 !important;
   cursor: text !important;
   white-space: pre !important;
   opacity: 1 !important;
-  display: inline-block !important;
-  padding: 1px 3px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+body.mode-edit .textLayer span.in-place-modified {
+  outline: 1.5px dashed rgba(37, 99, 235, 0.6) !important;
+  outline-offset: 1px !important;
 }
 
 /* In View & Read mode, hide dashed border on modified spans so they appear as pure native PDF text */

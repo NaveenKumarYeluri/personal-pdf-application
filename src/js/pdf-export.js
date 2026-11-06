@@ -11,7 +11,7 @@ export class PDFExportEngine {
   async exportPageAsImage(pageNum, format = 'image/png') {
     const targetPage = Math.max(1, Math.min(pageNum || 1, this.viewer.totalPages || 1));
     const wrapper = document.getElementById(`page-wrapper-${targetPage}`);
-    const origCanvas = wrapper?.querySelector('canvas.pdf-canvas');
+    const origCanvas = wrapper?.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
 
     // Strategy 1: High-res composite directly from viewer DOM if page is rendered
     if (origCanvas && origCanvas.width > 0 && origCanvas.height > 0) {

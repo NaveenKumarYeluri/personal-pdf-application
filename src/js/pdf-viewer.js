@@ -26,6 +26,7 @@ export class PDFViewerEngine {
     this.searchResults = [];
     this.currentSearchIndex = -1;
     this.currentSearchQuery = '';
+    this.documentFonts = new Set();
 
     // Configure PDF.js worker (Bundled offline first with CDN fallback)
     if (window.pdfjsLib) {
@@ -90,6 +91,7 @@ export class PDFViewerEngine {
 
   async loadDocument(data, fileName = 'document.pdf') {
     try {
+      this.documentFonts.clear();
       this.pdfBytes = data instanceof Uint8Array ? data : new Uint8Array(data);
       const loadingTask = window.pdfjsLib.getDocument({ data: this.pdfBytes.slice() });
       this.pdfDoc = await loadingTask.promise;
@@ -109,7 +111,8 @@ export class PDFViewerEngine {
       this.onDocumentLoaded({
         title: fileName,
         pages: this.totalPages,
-        bytes: this.pdfBytes.length
+        bytes: this.pdfBytes.length,
+        fonts: Array.from(this.documentFonts)
       });
 
       return true;
@@ -135,6 +138,7 @@ export class PDFViewerEngine {
 
       const canvas = document.createElement('canvas');
       canvas.id = `page-canvas-${pageNum}`;
+      canvas.className = 'pdf-canvas';
       pageWrapper.appendChild(canvas);
 
       // Text Layer container for selection & search
@@ -218,6 +222,18 @@ export class PDFViewerEngine {
     // Render Text Layer
     try {
       const textContent = await page.getTextContent();
+      if (textContent && textContent.styles) {
+        Object.values(textContent.styles).forEach(s => {
+          if (s.fontFamily) {
+            let clean = s.fontFamily.replace(/^[A-Z0-9]{6}\+/, '').trim();
+            clean = clean.replace(/-(?:Bold|Italic|Regular|BoldItalic|Oblique|BoldOblique)$/i, '');
+            if (clean && !clean.startsWith('g_d') && !this.documentFonts.has(clean)) {
+              this.documentFonts.add(clean);
+            }
+          }
+        });
+      }
+
       textLayer.innerHTML = '';
       textLayer.style.width = `${Math.floor(viewport.width)}px`;
       textLayer.style.height = `${Math.floor(viewport.height)}px`;
@@ -410,15 +426,31 @@ export class PDFViewerEngine {
     });
   }
 
+  _buildSearchRegex(query) {
+    if (!query) return null;
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Normalize English ligatures to match both standard chars and unicode replacements (\uFFFD / ?)
+    const withLigatures = escaped
+      .replace(/ti/gi, '(?:ti|[\\uFFFD?])')
+      .replace(/tt/gi, '(?:tt|[\\uFFFD?])')
+      .replace(/ft/gi, '(?:ft|[\\uFFFD?])')
+      .replace(/fi/gi, '(?:fi|[\\uFFFD?])')
+      .replace(/fl/gi, '(?:fl|[\\uFFFD?])')
+      .replace(/ff/gi, '(?:ff|[\\uFFFD?])');
+    return new RegExp(withLigatures, 'i');
+  }
+
   _applySearchHighlightToPage(pageNum, textLayer) {
     if (!this.currentSearchQuery || !textLayer) return;
-    const q = this.currentSearchQuery.toLowerCase();
+    const searchRegex = this._buildSearchRegex(this.currentSearchQuery);
+    if (!searchRegex) return;
+
     const spans = textLayer.querySelectorAll('span');
     let hasMatches = false;
 
     spans.forEach((span, spanIdx) => {
       const text = span.textContent || '';
-      if (text.toLowerCase().includes(q)) {
+      if (searchRegex.test(text)) {
         span.classList.add('search-highlight');
         hasMatches = true;
 
@@ -450,8 +482,11 @@ export class PDFViewerEngine {
       return { total: 0, current: 0 };
     }
 
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     this.currentSearchQuery = q;
+    const searchRegex = this._buildSearchRegex(q);
+    if (!searchRegex) return { total: 0, current: 0 };
+
     const target = this.pagesContainer || this.container;
 
     // Search across rendered textLayers for precise DOM highlighting & instant centering
@@ -461,12 +496,13 @@ export class PDFViewerEngine {
       const textLayer = pageWrapper.querySelector('.textLayer');
       if (!textLayer) continue;
 
-      const spans = textLayer.querySelectorAll('span');
+      const spans = Array.from(textLayer.querySelectorAll('span'));
       let pageHasMatches = false;
 
+      // 1. Single span match
       spans.forEach((span, spanIdx) => {
         const text = span.textContent || '';
-        if (text.toLowerCase().includes(q)) {
+        if (searchRegex.test(text)) {
           span.classList.add('search-highlight');
           pageHasMatches = true;
           this.searchResults.push({
@@ -477,6 +513,26 @@ export class PDFViewerEngine {
           });
         }
       });
+
+      // 2. Adjacent multi-span matching (e.g. phrases split across adjacent text chunks on same line)
+      for (let i = 0; i < spans.length - 1; i++) {
+        const s1 = spans[i];
+        const s2 = spans[i + 1];
+        if (Math.abs(s1.offsetTop - s2.offsetTop) < 6) {
+          const combined = (s1.textContent || '') + ' ' + (s2.textContent || '');
+          if (searchRegex.test(combined) && !s1.classList.contains('search-highlight') && !s2.classList.contains('search-highlight')) {
+            s1.classList.add('search-highlight');
+            s2.classList.add('search-highlight');
+            pageHasMatches = true;
+            this.searchResults.push({
+              pageNum,
+              spanIndex: i,
+              element: s1,
+              text: combined
+            });
+          }
+        }
+      }
 
       if (pageHasMatches) {
         textLayer.classList.add('has-search-matches');
