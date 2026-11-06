@@ -89,10 +89,45 @@ export class PDFViewerEngine {
     }, { root: this.container, threshold: 0.5 });
   }
 
+  async _extractDocumentFonts(pdfBytes) {
+    if (!pdfBytes) return;
+    try {
+      const lib = window.PDFLib || window.pdfLib;
+      if (!lib) return;
+      const { PDFDocument, PDFName } = lib;
+      const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+      const doc = await PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
+      const objects = doc.context.enumerateIndirectObjects();
+      for (const [ref, obj] of objects) {
+        if (obj && typeof obj.get === 'function') {
+          const baseFont = obj.get(PDFName.of('BaseFont'));
+          if (baseFont) {
+            let name = baseFont.name || baseFont.encodedName || (typeof baseFont.toString === 'function' ? baseFont.toString() : '');
+            if (name.startsWith('/')) name = name.substring(1);
+            name = name.replace(/^[A-Z0-9]{6}\+/, '');
+            name = name.replace(/-(?:Bold|Italic|Regular|BoldItalic|Oblique|BoldOblique).*$/i, '').trim();
+            if (name && name.length >= 2 && !name.startsWith('g_d') && !name.startsWith('F')) {
+              this.documentFonts.add(name);
+            }
+          }
+        }
+      }
+      if (this.documentFonts.size > 0 && window.app && window.app.ui) {
+        window.app.ui.setDocumentFonts(Array.from(this.documentFonts));
+      }
+    } catch (e) {
+      console.warn('Document font extraction via PDFLib:', e);
+    }
+  }
+
   async loadDocument(data, fileName = 'document.pdf') {
     try {
       this.documentFonts.clear();
       this.pdfBytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+      
+      // Concurrently extract real font metadata from PDF indirect objects
+      this._extractDocumentFonts(this.pdfBytes);
+
       const loadingTask = window.pdfjsLib.getDocument({ data: this.pdfBytes.slice() });
       this.pdfDoc = await loadingTask.promise;
       this.totalPages = this.pdfDoc.numPages;
@@ -289,6 +324,36 @@ export class PDFViewerEngine {
         pageNum,
         pageWrapper
       });
+    });
+
+    // Touch tap detection for responsive Android mobile editing
+    let touchStartX = 0;
+    let touchStartY = 0;
+    textLayer.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches.length === 1) {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    textLayer.addEventListener('touchend', (e) => {
+      if (!this.isContentEditingActive) return;
+      if (e.changedTouches && e.changedTouches.length === 1) {
+        const dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
+        const dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
+        if (dx < 10 && dy < 10) {
+          const span = e.target.closest('span');
+          if (span) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.onContentEdited({
+              span,
+              pageNum,
+              pageWrapper
+            });
+          }
+        }
+      }
     });
   }
 

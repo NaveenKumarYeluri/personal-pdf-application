@@ -690,7 +690,18 @@ export class UIController {
 
       fonts.forEach((font, idx) => {
         const opt = document.createElement('option');
-        opt.value = `'${font}', sans-serif`;
+        const fl = (font || '').toLowerCase();
+        let stack = `'${font}', sans-serif`;
+        if (fl.includes('consolas') || fl.includes('courier') || fl.includes('mono')) {
+          stack = `'${font}', 'Consolas', 'Courier New', 'Liberation Mono', monospace`;
+        } else if (fl.includes('times') || fl.includes('cambria') || fl.includes('serif')) {
+          stack = `'${font}', 'Cambria', 'Times New Roman', 'Liberation Serif', serif`;
+        } else if (fl.includes('calibri')) {
+          stack = `'${font}', 'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+        } else {
+          stack = `'${font}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+        }
+        opt.value = stack;
         opt.textContent = `${font} (Document)`;
         if (idx === 0) opt.selected = true;
         group.appendChild(opt);

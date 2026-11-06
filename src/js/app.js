@@ -481,10 +481,45 @@ class PersonalPDFApp {
       span._originalHeight = sRect.height;
     }
 
-    // Preserve native PDF font family and size
+    // Resolve native PDF font family and size with cross-platform fallback stack
     const compStyle = window.getComputedStyle(span);
-    if (!span.style.fontFamily) span.style.fontFamily = compStyle.fontFamily;
-    if (!span.style.fontSize) span.style.fontSize = compStyle.fontSize;
+    const existingFont = span.style.fontFamily || compStyle.fontFamily || '';
+    const isMonospace = /mono|courier|consolas|code/i.test(existingFont);
+    const isSerif = /serif|times|georgia|cambria/i.test(existingFont);
+
+    const docFonts = Array.from(this.viewer.documentFonts || []);
+    const matchingDocFont = docFonts.find(f => {
+      const fl = f.toLowerCase();
+      if (isMonospace) return fl.includes('consolas') || fl.includes('courier') || fl.includes('mono');
+      if (isSerif) return fl.includes('times') || fl.includes('cambria') || fl.includes('serif');
+      return fl.includes('calibri') || fl.includes('arial') || fl.includes('sans');
+    }) || docFonts[0];
+
+    let fontStack = '';
+    if (isMonospace || (matchingDocFont && /consolas|courier|mono/i.test(matchingDocFont))) {
+      fontStack = `'Consolas', 'Courier New', 'Liberation Mono', Menlo, Monaco, monospace`;
+    } else if (isSerif || (matchingDocFont && /times|cambria|serif/i.test(matchingDocFont))) {
+      fontStack = `'Cambria', 'Times New Roman', 'Liberation Serif', Georgia, serif`;
+    } else if (matchingDocFont && /calibri/i.test(matchingDocFont)) {
+      fontStack = `'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
+    } else if (matchingDocFont) {
+      fontStack = `'${matchingDocFont}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+    } else {
+      fontStack = `'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
+    }
+
+    span.style.fontFamily = fontStack;
+    span._customFontStack = fontStack;
+
+    // Use dynamic scale factor so zooming maintains exact font size proportion
+    const scaleFactor = (this.viewer && this.viewer.scale) || 1;
+    const computedFontSizePx = parseFloat(compStyle.fontSize) || 16;
+    const baseFontSize = span._baseFontSize || (computedFontSizePx / scaleFactor);
+    span._baseFontSize = baseFontSize;
+    span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
+    span.style.lineHeight = '1';
+    span.style.webkitTextSizeAdjust = 'none';
+    span.style.textSizeAdjust = 'none';
 
     // Set as active in-place span in annotator engine
     this.annotator.setActiveInPlaceSpan(span);
@@ -501,6 +536,19 @@ class PersonalPDFApp {
     span._pageNum = pageNum;
     span._pageWrapper = pageWrapper;
 
+    // Helper to sanitize child HTML injected by Android Gboard/IME (e.g. <font face="Roboto" size="3">)
+    const cleanSpanContent = () => {
+      if (span.children && span.children.length > 0) {
+        const text = (span.innerText || span.textContent || '').replace(/[\r\n]+/g, ' ');
+        span.textContent = text;
+      }
+      span.style.fontFamily = fontStack;
+      span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
+      span.style.lineHeight = '1';
+      span.style.webkitTextSizeAdjust = 'none';
+      span.style.textSizeAdjust = 'none';
+    };
+
     // Sync toolbar font, size, bold, italic, color to match native PDF styling
     if (this.ui) {
       this.ui.syncInPlaceSpan(span);
@@ -511,6 +559,7 @@ class PersonalPDFApp {
       span._hasDirectEditListeners = true;
 
       span.addEventListener('input', () => {
+        cleanSpanContent();
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
       });
 
@@ -527,20 +576,24 @@ class PersonalPDFApp {
       });
 
       span.addEventListener('blur', () => {
+        cleanSpanContent();
         span.contentEditable = 'false';
         span.classList.remove('inline-editing');
         const tLayer = span.closest('.textLayer');
         if (span.textContent !== span._originalText) {
           span.classList.add('in-place-modified');
           if (tLayer) tLayer.classList.add('has-modifications');
-          if (span._originalWidth > 0) {
-            span.style.minWidth = `${span._originalWidth}px`;
+          
+          if (span._normRect && pageWrapper) {
+            span.style.minWidth = `${Math.ceil(span._normRect.w * (pageWrapper.clientWidth || 1))}px`;
           }
 
           // Directly erase original text pixels from underlying PDF canvas using normalized coordinates
           const pageCanvas = pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
           if (pageCanvas && span._normRect) {
             const canvasCtx = pageCanvas.getContext('2d');
+            canvasCtx.save();
+            canvasCtx.setTransform(1, 0, 0, 1, 0, 0); // Pure canvas buffer pixels
             const normX = span._normRect.x;
             const normY = span._normRect.y;
             const normW = Math.max(span._normRect.w, (span.offsetWidth || 0) / (pageWrapper.clientWidth || 1));
@@ -552,6 +605,7 @@ class PersonalPDFApp {
               Math.ceil(normW * pageCanvas.width) + 4,
               Math.ceil(normH * pageCanvas.height) + 4
             );
+            canvasCtx.restore();
           }
 
           this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
@@ -588,39 +642,73 @@ class PersonalPDFApp {
     const pageWrapper = textLayer.closest('.page-wrapper');
     const pageCanvas = pageWrapper ? pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]') : null;
 
-    const spans = textLayer.querySelectorAll('span');
+    const spans = Array.from(textLayer.querySelectorAll('span'));
     for (const [origSpan, edit] of Array.from(pageEdits.entries())) {
-      for (const span of spans) {
-        if (span.textContent === edit.originalText || (edit.originalText && span.textContent.includes(edit.originalText))) {
-          span._originalText = edit.originalText;
-          span._originalWidth = origSpan._originalWidth || edit.originalWidth;
-          span._originalHeight = origSpan._originalHeight || edit.originalHeight;
-          span.textContent = edit.newText;
-          span.classList.add('in-place-modified');
-          if (span._originalWidth > 0) {
-            span.style.minWidth = `${span._originalWidth}px`;
-          }
+      let matchedSpan = null;
 
-          const normRect = edit.normRect || origSpan._normRect || span._normRect;
-          if (pageCanvas && pageWrapper && normRect) {
-            const canvasCtx = pageCanvas.getContext('2d');
-            const normX = normRect.x;
-            const normY = normRect.y;
-            const normW = Math.max(normRect.w, (span.offsetWidth || 0) / (pageWrapper.clientWidth || 1));
-            const normH = Math.max(normRect.h, (span.offsetHeight || 0) / (pageWrapper.clientHeight || 1));
-            canvasCtx.fillStyle = '#ffffff';
-            canvasCtx.fillRect(
-              Math.floor(normX * pageCanvas.width) - 2,
-              Math.floor(normY * pageCanvas.height) - 2,
-              Math.ceil(normW * pageCanvas.width) + 4,
-              Math.ceil(normH * pageCanvas.height) + 4
-            );
+      // 1. First try matching by normRect position proximity
+      if (edit.normRect && pageWrapper) {
+        const wrapW = pageWrapper.clientWidth || 1;
+        const wrapH = pageWrapper.clientHeight || 1;
+        for (const s of spans) {
+          const sLeft = s.offsetLeft / wrapW;
+          const sTop = s.offsetTop / wrapH;
+          const dist = Math.hypot(sLeft - edit.normRect.x, sTop - edit.normRect.y);
+          if (dist < 0.05 && (s.textContent === edit.originalText || (edit.originalText && s.textContent.includes(edit.originalText)))) {
+            matchedSpan = s;
+            break;
           }
-
-          pageEdits.delete(origSpan);
-          pageEdits.set(span, edit);
-          break;
         }
+      }
+
+      // 2. Fallback to text match
+      if (!matchedSpan) {
+        matchedSpan = spans.find(s => s.textContent === edit.originalText || (edit.originalText && s.textContent.includes(edit.originalText)));
+      }
+
+      if (matchedSpan) {
+        matchedSpan._originalText = edit.originalText;
+        matchedSpan._normRect = edit.normRect || origSpan._normRect || matchedSpan._normRect;
+        matchedSpan._baseFontSize = edit.baseFontSize || origSpan._baseFontSize;
+        matchedSpan._customFontStack = edit.fontFamily || origSpan._customFontStack;
+
+        matchedSpan.textContent = edit.newText;
+        matchedSpan.classList.add('in-place-modified');
+        matchedSpan.style.webkitTextSizeAdjust = 'none';
+        matchedSpan.style.textSizeAdjust = 'none';
+        matchedSpan.style.lineHeight = '1';
+
+        if (matchedSpan._customFontStack) {
+          matchedSpan.style.fontFamily = matchedSpan._customFontStack;
+        }
+        if (matchedSpan._baseFontSize) {
+          matchedSpan.style.fontSize = `calc(var(--scale-factor, 1) * ${matchedSpan._baseFontSize.toFixed(2)}px)`;
+        }
+        if (matchedSpan._normRect && pageWrapper) {
+          matchedSpan.style.minWidth = `${Math.ceil(matchedSpan._normRect.w * (pageWrapper.clientWidth || 1))}px`;
+        }
+
+        const normRect = matchedSpan._normRect;
+        if (pageCanvas && pageWrapper && normRect) {
+          const canvasCtx = pageCanvas.getContext('2d');
+          canvasCtx.save();
+          canvasCtx.setTransform(1, 0, 0, 1, 0, 0); // Pure canvas buffer pixels
+          const normX = normRect.x;
+          const normY = normRect.y;
+          const normW = Math.max(normRect.w, (matchedSpan.offsetWidth || 0) / (pageWrapper.clientWidth || 1));
+          const normH = Math.max(normRect.h, (matchedSpan.offsetHeight || 0) / (pageWrapper.clientHeight || 1));
+          canvasCtx.fillStyle = '#ffffff';
+          canvasCtx.fillRect(
+            Math.floor(normX * pageCanvas.width) - 2,
+            Math.floor(normY * pageCanvas.height) - 2,
+            Math.ceil(normW * pageCanvas.width) + 4,
+            Math.ceil(normH * pageCanvas.height) + 4
+          );
+          canvasCtx.restore();
+        }
+
+        pageEdits.delete(origSpan);
+        pageEdits.set(matchedSpan, edit);
       }
     }
   }

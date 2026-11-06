@@ -188,6 +188,10 @@
   padding: 0 !important;
   margin: 0 !important;
   box-sizing: border-box !important;
+  -webkit-text-size-adjust: none !important;
+  text-size-adjust: none !important;
+  -webkit-font-smoothing: antialiased !important;
+  line-height: 1 !important;
 }
 
 /* Modified text spans persist seamlessly across View & Edit modes */
@@ -204,6 +208,10 @@
   padding: 0 !important;
   margin: 0 !important;
   box-sizing: border-box !important;
+  -webkit-text-size-adjust: none !important;
+  text-size-adjust: none !important;
+  -webkit-font-smoothing: antialiased !important;
+  line-height: 1 !important;
 }
 
 body.mode-edit .textLayer span.in-place-modified {

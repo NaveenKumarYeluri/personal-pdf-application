@@ -569,6 +569,8 @@ export class PDFAnnotatorEngine {
       originalText: span._originalText,
       newText: span.textContent,
       normRect: span._normRect,
+      fontFamily: span._customFontStack || span.style.fontFamily,
+      baseFontSize: span._baseFontSize,
       pageNum
     });
     this.undoStack.push({
@@ -948,7 +950,7 @@ export class PDFAnnotatorEngine {
 
           // Render modified text using PDF's exact font, size, and styling
           const fSize = parseFloat(cs.fontSize) * scaleY;
-          const fontFamily = cs.fontFamily || 'Inter, sans-serif';
+          const fontFamily = edit.fontFamily || span._customFontStack || cs.fontFamily || 'Inter, sans-serif';
           const fontWeight = cs.fontWeight || 'normal';
           const fontStyle = cs.fontStyle || 'normal';
           const color = cs.color || '#111827';
