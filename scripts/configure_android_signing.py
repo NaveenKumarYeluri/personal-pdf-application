@@ -40,5 +40,26 @@ def configure_android_signing():
 
     print("Successfully injected persistent debug signing configuration into android/app/build.gradle")
 
+def configure_android_manifest():
+    manifest_path = os.path.join('android', 'app', 'src', 'main', 'AndroidManifest.xml')
+    if not os.path.exists(manifest_path):
+        print(f"Warning: {manifest_path} not found.")
+        return
+
+    with open(manifest_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    permissions = """
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.INTERNET" />
+"""
+    if 'android.permission.READ_EXTERNAL_STORAGE' not in content and '<application' in content:
+        content = content.replace('<application', permissions + '\n    <application', 1)
+        with open(manifest_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print("Configured AndroidManifest permissions for storage and export.")
+
 if __name__ == '__main__':
     configure_android_signing()
+    configure_android_manifest()

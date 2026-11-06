@@ -22,6 +22,8 @@
   "license": "MIT",
   "dependencies": {
     "@capacitor/app": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0",
+    "@capacitor/share": "^6.0.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2.0.0",
     "pdf-lib": "^1.17.1",

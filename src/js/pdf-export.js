@@ -90,28 +90,111 @@ export class PDFExportEngine {
     return fullText;
   }
 
-  async downloadFile(data, fileName, mimeType = 'application/pdf') {
-    const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
+  _blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result;
+        if (typeof dataUrl === 'string') {
+          const commaIdx = dataUrl.indexOf(',');
+          resolve(commaIdx >= 0 ? dataUrl.substring(commaIdx + 1) : dataUrl);
+        } else {
+          resolve('');
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
 
-    // 1. Android / Mobile Web Share API support
-    if (typeof navigator !== 'undefined' && navigator.canShare && typeof File !== 'undefined') {
+  async downloadFile(data, fileName, mimeType = 'application/pdf', { skipShare = false } = {}) {
+    let blob;
+    if (data instanceof Blob) {
+      blob = data;
+    } else if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
+      blob = new Blob([data], { type: mimeType });
+    } else if (typeof data === 'string') {
+      blob = new Blob([data], { type: mimeType });
+    } else {
+      blob = new Blob([data], { type: mimeType });
+    }
+
+    const isCapacitor = typeof window !== 'undefined' && 
+      (Boolean(window.Capacitor?.isNativePlatform?.()) || window.Capacitor?.platform === 'android');
+
+    // 1. Android Capacitor Native Filesystem & Share
+    if (isCapacitor) {
+      try {
+        const plugins = window.Capacitor?.Plugins;
+        let Filesystem = plugins?.Filesystem || (window.Capacitor?.registerPlugin && window.Capacitor.registerPlugin('Filesystem'));
+        let Share = plugins?.Share || (window.Capacitor?.registerPlugin && window.Capacitor.registerPlugin('Share'));
+        const base64Data = await this._blobToBase64(blob);
+
+        let fileUri = null;
+        if (Filesystem) {
+          try {
+            const res = await Filesystem.writeFile({
+              path: fileName,
+              data: base64Data,
+              directory: 'DOCUMENTS',
+              recursive: true
+            });
+            fileUri = res?.uri;
+          } catch (docErr) {
+            console.warn('Filesystem.writeFile to DOCUMENTS failed, falling back to CACHE directory:', docErr);
+            const res = await Filesystem.writeFile({
+              path: fileName,
+              data: base64Data,
+              directory: 'CACHE',
+              recursive: true
+            });
+            fileUri = res?.uri;
+          }
+        }
+
+        // Open Android Native Save / Share Picker so user can choose exact folder or app
+        if (Share && !skipShare && fileUri) {
+          await Share.share({
+            title: fileName,
+            text: `Save ${fileName}`,
+            url: fileUri,
+            dialogTitle: `Save ${fileName}`
+          });
+        }
+
+        return {
+          success: true,
+          destination: 'Documents folder & Android Save Sheet',
+          fileName,
+          uri: fileUri
+        };
+      } catch (capErr) {
+        if (capErr.name === 'AbortError' || capErr.message?.toLowerCase().includes('cancel') || capErr.message?.toLowerCase().includes('closed')) {
+          return { success: true, destination: 'Documents folder', fileName };
+        }
+        console.warn('Capacitor native download error:', capErr);
+      }
+    }
+
+    // 2. Mobile Web Share API fallback
+    if (typeof navigator !== 'undefined' && navigator.canShare && typeof File !== 'undefined' && !skipShare) {
       try {
         const file = new File([blob], fileName, { type: mimeType });
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
             title: fileName,
-            text: `Exported: ${fileName}`
+            text: `Save ${fileName}`
           });
-          return;
+          return { success: true, destination: 'Saved via Share dialog', fileName };
         }
       } catch (shareErr) {
-        if (shareErr.name === 'AbortError') return; // User closed share sheet intentionally
-        console.warn('Web Share failed, using standard download:', shareErr);
+        if (shareErr.name === 'AbortError') return { success: true, destination: 'Saved', fileName };
+        console.warn('Web Share API error:', shareErr);
       }
     }
 
-    // 2. Standard Blob Object URL Download
+    // 3. Standard Desktop / Browser download link
     try {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -121,23 +204,130 @@ export class PDFExportEngine {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-      return;
+      setTimeout(() => URL.revokeObjectURL(url), 15000);
+      return { success: true, destination: 'Downloads folder', fileName };
     } catch (urlErr) {
-      console.warn('Object URL download failed, trying data URI:', urlErr);
+      console.warn('Object URL download failed:', urlErr);
     }
 
-    // 3. Fallback Data URI reader
-    const reader = new FileReader();
-    reader.onloadend = () => {
+    // 4. Fallback Data URL
+    try {
+      const dataUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
       const a = document.createElement('a');
-      a.href = reader.result;
+      a.href = dataUrl;
       a.download = fileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      return { success: true, destination: 'Downloads folder', fileName };
+    } catch (dataErr) {
+      console.error('Data URL fallback failed:', dataErr);
+    }
+
+    return { success: false, destination: 'Unknown', fileName };
+  }
+
+  async downloadFiles(files = []) {
+    if (!files || files.length === 0) return { success: false, results: [] };
+
+    const isCapacitor = typeof window !== 'undefined' && 
+      (Boolean(window.Capacitor?.isNativePlatform?.()) || window.Capacitor?.platform === 'android');
+
+    if (isCapacitor) {
+      const plugins = window.Capacitor?.Plugins;
+      let Filesystem = plugins?.Filesystem || (window.Capacitor?.registerPlugin && window.Capacitor.registerPlugin('Filesystem'));
+      let Share = plugins?.Share || (window.Capacitor?.registerPlugin && window.Capacitor.registerPlugin('Share'));
+
+      const savedUris = [];
+      const results = [];
+
+      for (const item of files) {
+        let blob;
+        if (item.data instanceof Blob) {
+          blob = item.data;
+        } else {
+          blob = new Blob([item.data], { type: item.mimeType || 'application/pdf' });
+        }
+        const base64Data = await this._blobToBase64(blob);
+        let fileUri = null;
+        if (Filesystem) {
+          try {
+            const res = await Filesystem.writeFile({
+              path: item.fileName,
+              data: base64Data,
+              directory: 'DOCUMENTS',
+              recursive: true
+            });
+            fileUri = res?.uri;
+          } catch (e) {
+            console.warn('Write to DOCUMENTS failed, trying CACHE directory:', e);
+            const res = await Filesystem.writeFile({
+              path: item.fileName,
+              data: base64Data,
+              directory: 'CACHE',
+              recursive: true
+            });
+            fileUri = res?.uri;
+          }
+        }
+        if (fileUri) savedUris.push(fileUri);
+        results.push({
+          name: item.fileName,
+          size: blob.size,
+          uri: fileUri,
+          destination: 'Documents folder & Android Save Sheet'
+        });
+      }
+
+      // Pop native Android Share / Save Sheet for the files
+      if (Share && savedUris.length > 0) {
+        try {
+          if (savedUris.length === 1) {
+            await Share.share({
+              title: files[0].fileName,
+              text: `Save ${files[0].fileName}`,
+              url: savedUris[0],
+              dialogTitle: `Save ${files[0].fileName}`
+            });
+          } else {
+            await Share.share({
+              title: `${files.length} PDF Documents`,
+              text: `Save ${files.length} split PDF documents`,
+              files: savedUris,
+              dialogTitle: `Save ${files.length} PDF files`
+            });
+          }
+        } catch (shareErr) {
+          console.warn('Native share sheet dismissed or error:', shareErr);
+        }
+      }
+
+      return {
+        success: true,
+        destination: 'Documents folder & Android Save Sheet',
+        files: results
+      };
+    }
+
+    // Desktop fallback: download sequentially
+    const results = [];
+    for (const item of files) {
+      const res = await this.downloadFile(item.data, item.fileName, item.mimeType || 'application/pdf');
+      results.push({
+        name: item.fileName,
+        size: item.data?.length || item.data?.size || 0,
+        destination: res?.destination || 'Downloads folder'
+      });
+    }
+    return {
+      success: true,
+      destination: 'Downloads folder',
+      files: results
     };
-    reader.readAsDataURL(blob);
   }
 
   printDocument() {

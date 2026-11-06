@@ -438,10 +438,19 @@ export class UIController {
     document.getElementById('m3-tool-export-img')?.addEventListener('click', async () => {
       closeAllSheets();
       try {
-        const pageNum = this.app.viewer.currentPage || 1;
+        const pageNum = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
         const img = await this.app.exporter.exportPageAsImage(pageNum);
         if (img) {
-          await this.app.exporter.downloadFile(this._dataURLtoBlob(img), `page-${pageNum}.png`, 'image/png');
+          const fileName = `page-${pageNum}.png`;
+          const blob = this._dataURLtoBlob(img);
+          const dlRes = await this.app.exporter.downloadFile(blob, fileName, 'image/png');
+          const dest = dlRes?.destination || 'Documents / Downloads folder';
+          this.showExportResultModal({
+            title: 'Page Exported as PNG',
+            message: `Page ${pageNum} has been exported and saved.`,
+            destination: dest,
+            files: [{ name: fileName, size: blob.size }]
+          });
           this.showToast(`Export Complete: Page ${pageNum} saved as PNG`, 'success');
         } else {
           this.showToast('No PDF document loaded to export', 'error');
@@ -1458,16 +1467,24 @@ export class UIController {
 
     document.getElementById('btn-export-page-img').onclick = async () => {
       try {
-        const pageNum = this.app.viewer.currentPage || 1;
+        const pageNum = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
         this.setStatus(`Exporting page ${pageNum} as PNG...`);
         const img = await this.app.exporter.exportPageAsImage(pageNum);
         if (img) {
           const fileName = `page-${pageNum}.png`;
-          await this.app.exporter.downloadFile(
-            this._dataURLtoBlob(img),
+          const blob = this._dataURLtoBlob(img);
+          const dlRes = await this.app.exporter.downloadFile(
+            blob,
             fileName,
             'image/png'
           );
+          const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
+          this.showExportResultModal({
+            title: 'Page Exported as PNG',
+            message: `Page ${pageNum} has been exported and saved.`,
+            destination: dest,
+            files: [{ name: fileName, size: blob.size }]
+          });
           this.showToast(`Export Complete: Page ${pageNum} saved as ${fileName}`, 'success');
           this.setStatus(`Exported Page ${pageNum} successfully as PNG`);
         } else {
@@ -1481,13 +1498,105 @@ export class UIController {
     };
 
     document.getElementById('btn-export-text').onclick = async () => {
-      this.setStatus('Extracting document text...');
-      const text = await this.app.exporter.extractAllText();
-      const fileName = `${(this.app.currentDocName || 'document').replace(/\.pdf$/i, '')}-text.txt`;
-      this.app.exporter.downloadFile(text, fileName, 'text/plain');
-      this.showToast(`Export Complete: All text saved to ${fileName}`, 'success');
-      this.setStatus(`Exported text (${text.length} characters) successfully`);
+      try {
+        this.setStatus('Extracting document text...');
+        const text = await this.app.exporter.extractAllText();
+        const baseName = (this.app.currentDocName || 'document').replace(/\.pdf$/i, '');
+        const fileName = `${baseName}-text.txt`;
+        const blob = new Blob([text], { type: 'text/plain' });
+        const dlRes = await this.app.exporter.downloadFile(blob, fileName, 'text/plain');
+        const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
+        this.showExportResultModal({
+          title: 'Text Export Complete',
+          message: `Document text successfully extracted (${text.length} characters).`,
+          destination: dest,
+          files: [{ name: fileName, size: blob.size }]
+        });
+        this.showToast(`Export Complete: All text saved to ${fileName}`, 'success');
+        this.setStatus(`Exported text (${text.length} characters) successfully`);
+      } catch (err) {
+        console.error('Export text failed:', err);
+        this.showToast(`Export text failed: ${err.message}`, 'error');
+        this.setStatus(`Export text error: ${err.message}`);
+      }
     };
+  }
+
+  showExportResultModal({ title = 'Export Complete', message = 'File(s) processed successfully.', destination = 'Documents folder', files = [] } = {}) {
+    let modal = document.getElementById('modal-export-result');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'modal-export-result';
+      modal.className = 'modal-backdrop';
+      modal.innerHTML = `
+        <div class="modal-box">
+          <div class="modal-header">
+            <h3 id="export-result-title">${title}</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
+              <div style="width:42px; height:42px; border-radius:50%; background:rgba(34,197,94,0.15); color:#16a34a; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:bold; flex-shrink:0;">✔</div>
+              <div>
+                <p id="export-result-message" style="margin:0; font-weight:500; font-size:14px; color:var(--text-primary);">${message}</p>
+                <p style="margin:4px 0 0 0; font-size:12px; color:var(--text-secondary);">Saved location:</p>
+                <div id="export-result-destination" style="display:inline-block; margin-top:2px; padding:4px 10px; border-radius:4px; background:var(--bg-main); border:1px solid var(--border-color); font-family:monospace; font-size:12px; color:var(--accent-color); word-break:break-all;">${destination}</div>
+              </div>
+            </div>
+            <div style="margin-top:12px;">
+              <label style="font-size:12px; font-weight:600; text-transform:uppercase; color:var(--text-secondary);">Saved Files (<span id="export-result-count">${files.length}</span>):</label>
+              <ul id="export-result-list" style="list-style:none; padding:0; margin:6px 0 0 0; max-height:160px; overflow-y:auto; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-main);">
+              </ul>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-primary modal-close" style="min-width:90px;">Done</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      modal.querySelectorAll('.modal-close').forEach(btn => {
+        btn.addEventListener('click', () => modal.classList.remove('open'));
+      });
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.classList.remove('open');
+      });
+    }
+
+    const titleEl = document.getElementById('export-result-title');
+    const msgEl = document.getElementById('export-result-message');
+    const destEl = document.getElementById('export-result-destination');
+    const countEl = document.getElementById('export-result-count');
+    const listEl = document.getElementById('export-result-list');
+
+    if (titleEl) titleEl.textContent = title;
+    if (msgEl) msgEl.textContent = message;
+    if (destEl) destEl.textContent = destination;
+    if (countEl) countEl.textContent = files.length;
+
+    if (listEl) {
+      listEl.innerHTML = '';
+      if (files.length === 0) {
+        listEl.innerHTML = '<li style="padding:8px 12px; font-size:12px; color:var(--text-secondary);">No files</li>';
+      } else {
+        files.forEach(f => {
+          const li = document.createElement('li');
+          li.style.cssText = 'padding:6px 12px; border-bottom:1px solid var(--border-color); font-size:12px; display:flex; justify-content:space-between; align-items:center;';
+          const sizeKb = f.size ? (f.size > 1024 * 1024 ? `${(f.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`) : '';
+          const nameSpan = document.createElement('span');
+          nameSpan.style.cssText = 'font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%;';
+          nameSpan.textContent = f.name || 'document.pdf';
+          const sizeSpan = document.createElement('span');
+          sizeSpan.style.cssText = 'color:var(--text-secondary); font-family:monospace; font-size:11px;';
+          sizeSpan.textContent = sizeKb;
+          li.appendChild(nameSpan);
+          li.appendChild(sizeSpan);
+          listEl.appendChild(li);
+        });
+      }
+    }
+
+    modal.classList.add('open');
   }
 
   showToast(msg, type = 'info') {

@@ -302,12 +302,33 @@ class PersonalPDFApp {
           return;
         }
         this.ui.setStatus('Splitting document...');
-        const parts = await this.organizer.splitByRanges(this.currentPdfBytes, rangeStr, this.currentDocName.replace('.pdf', ''));
-        parts.forEach(p => {
-          this.exporter.downloadFile(p.bytes, p.name, 'application/pdf');
-        });
-        document.getElementById('modal-split').classList.remove('open');
-        this.ui.setStatus(`Document split into ${parts.length} files`);
+        try {
+          const baseName = (this.currentDocName || 'document').replace(/\.pdf$/i, '');
+          const parts = await this.organizer.splitByRanges(this.currentPdfBytes, rangeStr, baseName);
+          document.getElementById('modal-split').classList.remove('open');
+
+          const filesToDownload = parts.map(p => ({
+            data: p.bytes,
+            fileName: p.name,
+            mimeType: 'application/pdf'
+          }));
+
+          const res = await this.exporter.downloadFiles(filesToDownload);
+          const dest = res?.destination || 'Documents folder & Android Save Sheet';
+
+          this.ui.showExportResultModal({
+            title: 'Split PDF Complete',
+            message: `Document successfully split into ${parts.length} files.`,
+            destination: dest,
+            files: res?.files || parts.map(p => ({ name: p.name, size: p.bytes.length }))
+          });
+          this.ui.showToast(`Split complete: ${parts.length} files generated`, 'success');
+          this.ui.setStatus(`Document split into ${parts.length} files`);
+        } catch (err) {
+          console.error('Split PDF failed:', err);
+          this.ui.showToast(`Split PDF failed: ${err.message}`, 'error');
+          this.ui.setStatus('Split PDF failed');
+        }
       };
     }
 
@@ -938,7 +959,14 @@ class PersonalPDFApp {
     try {
       let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
       const saveName = this.currentDocName;
-      await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
+      const dlRes = await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
+      const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
+      this.ui.showExportResultModal({
+        title: 'Document Saved',
+        message: `Changes saved to ${saveName}.`,
+        destination: dest,
+        files: [{ name: saveName, size: outputBytes.length }]
+      });
       this.ui.showToast(`Saved: ${saveName}`, 'success');
       this.ui.setStatus(`Saved: ${saveName}`);
     } catch (err) {
@@ -971,7 +999,14 @@ class PersonalPDFApp {
     this.ui.setStatus('Compositing annotations and saving new PDF copy...');
     try {
       let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
-      await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
+      const dlRes = await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
+      const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
+      this.ui.showExportResultModal({
+        title: 'Save As Complete',
+        message: `New PDF copy saved successfully.`,
+        destination: dest,
+        files: [{ name: saveName, size: outputBytes.length }]
+      });
       this.ui.showToast(`Saved As: ${saveName}`, 'success');
       this.ui.setStatus(`Saved new copy: ${saveName}`);
     } catch (err) {
@@ -1666,9 +1701,26 @@ class PersonalPDFApp {
         }
 
         this.ui.setStatus('Extracting pages...');
-        const extracted = await this.organizer.extractPages(this.currentPdfBytes, indices);
-        this.exporter.downloadFile(extracted, `${this.currentDocName.replace('.pdf', '')}_extracted.pdf`, 'application/pdf');
-        this.ui.setStatus('Extracted pages downloaded');
+        try {
+          const extracted = await this.organizer.extractPages(this.currentPdfBytes, indices);
+          const baseName = (this.currentDocName || 'document').replace(/\.pdf$/i, '');
+          const fileName = `${baseName}_extracted.pdf`;
+          const dlRes = await this.exporter.downloadFile(extracted, fileName, 'application/pdf');
+          const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
+
+          this.ui.showExportResultModal({
+            title: 'Extract Pages Complete',
+            message: `${indices.length} pages extracted to a new PDF document.`,
+            destination: dest,
+            files: [{ name: fileName, size: extracted.length }]
+          });
+          this.ui.showToast(`Extracted ${indices.length} pages saved`, 'success');
+          this.ui.setStatus('Extracted pages downloaded');
+        } catch (err) {
+          console.error('Extract pages failed:', err);
+          this.ui.showToast(`Extract pages failed: ${err.message}`, 'error');
+          this.ui.setStatus('Extract pages failed');
+        }
       };
     }
 
