@@ -743,7 +743,8 @@ class PersonalPDFApp {
 
   addCustomBookmark(title, pageNum) {
     if (!this.customBookmarks) this.customBookmarks = [];
-    this.customBookmarks.push({ title, pageNum });
+    const validPage = Math.max(1, Math.min(parseInt(pageNum, 10) || 1, this.viewer?.totalPages || 1));
+    this.customBookmarks.push({ title: title || `Page ${validPage} Bookmark`, pageNum: validPage });
   }
 
   _setupElectronBridge() {

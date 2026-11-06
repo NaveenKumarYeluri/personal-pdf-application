@@ -542,9 +542,9 @@ export class UIController {
     const btnAddBm = document.getElementById('btn-add-bookmark');
     if (btnAddBm) {
       btnAddBm.onclick = () => {
-        const pageNum = this.app.viewer.currentPage || 1;
+        const pageNum = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
         const defaultTitle = `Page ${pageNum} Bookmark`;
-        const title = prompt('Enter bookmark title:', defaultTitle);
+        const title = prompt(`Enter bookmark title for Page ${pageNum}:`, defaultTitle);
         if (title && title.trim()) {
           this.app.addCustomBookmark(title.trim(), pageNum);
           this.syncBookmarks();
@@ -1514,26 +1514,27 @@ export class UIController {
     const container = document.getElementById('outline-container');
     if (!container) return;
     const customBms = this.app.customBookmarks || [];
-    const hasOutlineItems = container.querySelectorAll('.outline-item').length > 0;
-    
-    if (customBms.length === 0 && !hasOutlineItems) {
-      container.innerHTML = '<div class="empty-state">No bookmarks found. Click "+ Add" above to bookmark the current page.</div>';
-      return;
-    }
+    const docOutline = this.app.viewer?.documentOutline;
 
+    container.innerHTML = '';
+
+    // Section 1: User's Custom Bookmarks
     if (customBms.length > 0) {
-      // If there are custom bookmarks, render them
-      container.innerHTML = '';
+      const customHeader = document.createElement('div');
+      customHeader.className = 'bookmark-section-header';
+      customHeader.innerHTML = `<span>My Bookmarks</span> <span style="font-weight:normal; opacity:0.8;">(${customBms.length})</span>`;
+      container.appendChild(customHeader);
+
       customBms.forEach((bm, idx) => {
         const item = document.createElement('div');
         item.className = 'bookmark-list-item';
         item.innerHTML = `
           <div class="bookmark-list-left">
             <span>🔖</span>
-            <span class="bookmark-title">${bm.title}</span>
+            <span class="bookmark-title" title="${bm.title}">${bm.title}</span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
-            <span class="annot-page-badge">Page ${bm.pageNum}</span>
+            <span class="annot-page-badge" style="cursor:pointer;">Page ${bm.pageNum}</span>
             <button class="bookmark-delete-btn" title="Delete Bookmark">&times;</button>
           </div>
         `;
@@ -1549,6 +1550,50 @@ export class UIController {
         };
         container.appendChild(item);
       });
+    }
+
+    // Section 2: Original PDF Document Outline
+    if (docOutline && docOutline.length > 0) {
+      const docHeader = document.createElement('div');
+      docHeader.className = 'bookmark-section-header';
+      docHeader.textContent = 'Document Outline';
+      container.appendChild(docHeader);
+
+      const list = document.createElement('div');
+      list.className = 'outline-list';
+      
+      const renderItem = async (item, depth = 0) => {
+        const div = document.createElement('div');
+        div.className = 'outline-item';
+        div.style.paddingLeft = `${8 + depth * 12}px`;
+        div.textContent = item.title;
+        div.onclick = async () => {
+          if (typeof item.dest === 'string') {
+            const dest = await this.app.viewer.pdfDoc.getDestination(item.dest);
+            const pageIndex = await this.app.viewer.pdfDoc.getPageIndex(dest[0]);
+            this.app.viewer.goToPage(pageIndex + 1);
+          } else if (Array.isArray(item.dest)) {
+            const pageIndex = await this.app.viewer.pdfDoc.getPageIndex(item.dest[0]);
+            this.app.viewer.goToPage(pageIndex + 1);
+          }
+        };
+        list.appendChild(div);
+
+        if (item.items && item.items.length > 0) {
+          for (const sub of item.items) {
+            await renderItem(sub, depth + 1);
+          }
+        }
+      };
+
+      for (const item of docOutline) {
+        renderItem(item);
+      }
+      container.appendChild(list);
+    }
+
+    if (customBms.length === 0 && (!docOutline || docOutline.length === 0)) {
+      container.innerHTML = '<div class="empty-state">No bookmarks found.<br>Click "+ Add" above to bookmark the current page.</div>';
     }
   }
 

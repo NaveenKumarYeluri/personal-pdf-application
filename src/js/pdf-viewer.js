@@ -127,19 +127,71 @@ export class PDFViewerEngine {
     }, { passive: true });
   }
 
+  getCurrentVisiblePage() {
+    if (!this.container || !this.pagesContainer) return this.currentPage || 1;
+    const cRect = this.container.getBoundingClientRect();
+    const wrappers = this.pagesContainer.querySelectorAll('.page-wrapper');
+    if (!wrappers || wrappers.length === 0) return this.currentPage || 1;
+
+    let bestPage = this.currentPage || 1;
+    let maxVisibleHeight = -1;
+
+    for (const w of wrappers) {
+      const pageNum = parseInt(w.dataset.pageNumber, 10);
+      if (!pageNum) continue;
+      const rect = w.getBoundingClientRect();
+
+      // Calculate how many vertical pixels of this page are inside the viewport
+      const visibleTop = Math.max(cRect.top, rect.top);
+      const visibleBottom = Math.min(cRect.bottom, rect.bottom);
+      const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+
+      if (visibleHeight > maxVisibleHeight) {
+        maxVisibleHeight = visibleHeight;
+        bestPage = pageNum;
+      }
+    }
+
+    return bestPage;
+  }
+
   _setupIntersectionObserver() {
+    // 1. Dual strategy: Continuous scroll listener with requestAnimationFrame for instant, accurate page tracking
+    let ticking = false;
+    this.container.addEventListener('scroll', () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          const visiblePage = this.getCurrentVisiblePage();
+          if (visiblePage && visiblePage !== this.currentPage) {
+            this.currentPage = visiblePage;
+            this.onPageChange(visiblePage, this.totalPages);
+            this._highlightThumbnail(visiblePage);
+          }
+          ticking = false;
+        });
+        ticking = true;
+      }
+    }, { passive: true });
+
+    // 2. Multi-threshold IntersectionObserver for fallback
     this.observer = new IntersectionObserver((entries) => {
+      let mostVisibleEntry = null;
       entries.forEach(entry => {
         if (entry.isIntersecting) {
-          const pageNum = parseInt(entry.target.dataset.pageNumber, 10);
-          if (pageNum && pageNum !== this.currentPage) {
-            this.currentPage = pageNum;
-            this.onPageChange(pageNum, this.totalPages);
-            this._highlightThumbnail(pageNum);
+          if (!mostVisibleEntry || entry.intersectionRatio > mostVisibleEntry.intersectionRatio) {
+            mostVisibleEntry = entry;
           }
         }
       });
-    }, { root: this.container, threshold: 0.5 });
+      if (mostVisibleEntry) {
+        const pageNum = parseInt(mostVisibleEntry.target.dataset.pageNumber, 10);
+        if (pageNum && pageNum !== this.currentPage) {
+          this.currentPage = pageNum;
+          this.onPageChange(pageNum, this.totalPages);
+          this._highlightThumbnail(pageNum);
+        }
+      }
+    }, { root: this.container, threshold: [0.1, 0.3, 0.5, 0.7, 0.9] });
   }
 
   async _extractDocumentFonts(pdfBytes) {
@@ -425,44 +477,13 @@ export class PDFViewerEngine {
     if (!this.outlineContainer || !this.pdfDoc) return;
     try {
       const outline = await this.pdfDoc.getOutline();
-      this.outlineContainer.innerHTML = '';
-      if (!outline || outline.length === 0) {
-        this.outlineContainer.innerHTML = '<div class="empty-state">No bookmarks found</div>';
-        return;
+      this.documentOutline = outline || [];
+      if (window.app && window.app.ui) {
+        window.app.ui.syncBookmarks();
       }
-
-      const list = document.createElement('div');
-      list.className = 'outline-list';
-      
-      const renderItem = async (item) => {
-        const div = document.createElement('div');
-        div.className = 'outline-item';
-        div.textContent = item.title;
-        div.onclick = async () => {
-          if (typeof item.dest === 'string') {
-            const dest = await this.pdfDoc.getDestination(item.dest);
-            const pageIndex = await this.pdfDoc.getPageIndex(dest[0]);
-            this.goToPage(pageIndex + 1);
-          } else if (Array.isArray(item.dest)) {
-            const pageIndex = await this.pdfDoc.getPageIndex(item.dest[0]);
-            this.goToPage(pageIndex + 1);
-          }
-        };
-        list.appendChild(div);
-
-        if (item.items && item.items.length > 0) {
-          for (const sub of item.items) {
-            await renderItem(sub);
-          }
-        }
-      };
-
-      for (const item of outline) {
-        await renderItem(item);
-      }
-      this.outlineContainer.appendChild(list);
     } catch (e) {
-      this.outlineContainer.innerHTML = '<div class="empty-state">Bookmarks not available</div>';
+      console.warn('Bookmarks load error:', e);
+      this.documentOutline = [];
     }
   }
 
