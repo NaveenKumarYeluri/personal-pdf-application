@@ -46,17 +46,21 @@ export class PDFOrganizerEngine {
       } else if (typeof op.originalIndex === 'number' && op.originalIndex >= 0 && op.originalIndex < srcDoc.getPageCount()) {
         try {
           const [copiedPage] = await newDoc.copyPages(srcDoc, [op.originalIndex]);
-          if (op.rotationDelta) {
-            const rot = copiedPage.getRotation();
-            const currentRot = (rot && typeof rot.angle === 'number') ? rot.angle : 0;
-            const finalAngle = (((currentRot + op.rotationDelta) % 360) + 360) % 360;
-            copiedPage.setRotation(deg(finalAngle));
-          }
-          newDoc.addPage(copiedPage);
+          const srcPage = srcDoc.getPage(op.originalIndex);
+          const rot = srcPage.getRotation();
+          const currentRot = (rot && typeof rot.angle === 'number') ? rot.angle : (typeof rot === 'number' ? rot : 0);
+          const finalAngle = (((currentRot + (op.rotationDelta || 0)) % 360) + 360) % 360;
+          copiedPage.setRotation(deg(finalAngle));
+          const addedPage = newDoc.addPage(copiedPage);
+          addedPage.setRotation(deg(finalAngle));
         } catch (copyErr) {
           console.warn(`Could not copy page ${op.originalIndex} with full references, falling back:`, copyErr);
           const [copiedPage] = await newDoc.copyPages(srcDoc, [op.originalIndex]);
-          newDoc.addPage(copiedPage);
+          const addedPage = newDoc.addPage(copiedPage);
+          if (op.rotationDelta) {
+            const finalAngle = ((op.rotationDelta % 360) + 360) % 360;
+            addedPage.setRotation(deg(finalAngle));
+          }
         }
       }
     }

@@ -54,7 +54,8 @@ export class PDFExportEngine {
     // Strategy 2: Render directly from PDF.js if not present in DOM
     if (!this.viewer.pdfDoc) return null;
     const page = await this.viewer.pdfDoc.getPage(targetPage);
-    const viewport = page.getViewport({ scale: 2.0 }); // 2x sharp print quality
+    const effectiveRot = ((page.rotate || 0) + (this.viewer?.rotation || 0)) % 360;
+    const viewport = page.getViewport({ scale: 2.0, rotation: effectiveRot }); // 2x sharp print quality
 
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;

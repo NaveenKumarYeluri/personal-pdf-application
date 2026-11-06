@@ -305,7 +305,8 @@ export class PDFViewerEngine {
   }
 
   _calculateScale(page) {
-    const viewport = page.getViewport({ scale: 1.0, rotation: this.rotation });
+    const effectiveRot = ((page.rotate || 0) + (this.rotation || 0)) % 360;
+    const viewport = page.getViewport({ scale: 1.0, rotation: effectiveRot });
     const cWidth = this.container.clientWidth;
     const cHeight = this.container.clientHeight;
 
@@ -332,7 +333,8 @@ export class PDFViewerEngine {
 
   async _renderSinglePage(pageNum, pageWrapper, canvas, textLayer, annotCanvas) {
     const page = await this.pdfDoc.getPage(pageNum);
-    const viewport = page.getViewport({ scale: this.scale, rotation: this.rotation });
+    const effectiveRot = ((page.rotate || 0) + (this.rotation || 0)) % 360;
+    const viewport = page.getViewport({ scale: this.scale, rotation: effectiveRot });
     const outputScale = window.devicePixelRatio || 1;
 
     pageWrapper.style.width = `${Math.floor(viewport.width)}px`;
@@ -583,7 +585,8 @@ export class PDFViewerEngine {
   async _renderThumbnailCanvas(pageNum, canvas) {
     try {
       const page = await this.pdfDoc.getPage(pageNum);
-      const thumbViewport = page.getViewport({ scale: 0.25, rotation: this.rotation });
+      const effectiveRot = ((page.rotate || 0) + (this.rotation || 0)) % 360;
+      const thumbViewport = page.getViewport({ scale: 0.25, rotation: effectiveRot });
       canvas.width = thumbViewport.width;
       canvas.height = thumbViewport.height;
       const ctx = canvas.getContext('2d');

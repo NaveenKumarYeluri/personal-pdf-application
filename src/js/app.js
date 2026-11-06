@@ -1366,12 +1366,22 @@ class PersonalPDFApp {
       grid.appendChild(card);
       this.organizerCards.push(card);
 
-      // Render thumbnail
+      // Render thumbnail with correct page rotation
       const page = await this.viewer.pdfDoc.getPage(i);
-      const vp = page.getViewport({ scale: 0.25 });
+      const effectiveRot = ((page.rotate || 0) + (this.viewer.rotation || 0)) % 360;
+      const vp = page.getViewport({ scale: 0.25, rotation: effectiveRot });
       canvas.width = vp.width;
       canvas.height = vp.height;
-      page.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+      // Also render user's annotations/drawings onto thumbnail if present on this page
+      const pageWrapper = document.getElementById(`page-wrapper-${i}`);
+      if (pageWrapper) {
+        const annotCanvas = document.getElementById(`annot-canvas-${i}`);
+        if (annotCanvas) {
+          canvas.getContext('2d').drawImage(annotCanvas, 0, 0, canvas.width, canvas.height);
+        }
+      }
 
       // Move Left/Right actions (Instant touch & click page switching)
       footer.querySelector('.btn-move-left').onclick = (e) => {
@@ -1580,6 +1590,17 @@ class PersonalPDFApp {
         selected.forEach(orig => {
           const clone = orig.cloneNode(true);
           clone.classList.remove('selected', 'dragging', 'drag-over');
+
+          // Copy canvas pixels from original thumbnail to clone so duplicate is never blank
+          const origCanvas = orig.querySelector('canvas');
+          const cloneCanvas = clone.querySelector('canvas');
+          if (origCanvas && cloneCanvas) {
+            cloneCanvas.width = origCanvas.width;
+            cloneCanvas.height = origCanvas.height;
+            const cloneCtx = cloneCanvas.getContext('2d');
+            cloneCtx.drawImage(origCanvas, 0, 0);
+          }
+
           // Re-bind actions on clone
           const footer = clone.querySelector('.organizer-footer');
           const thumbBox = clone.querySelector('.organizer-thumb');
@@ -1614,6 +1635,16 @@ class PersonalPDFApp {
             thumbBox.style.transform = `rotate(${clone.dataset.rotationDelta}deg)`;
           };
 
+          const btnView = footer.querySelector('.btn-view-card');
+          if (btnView) {
+            btnView.onclick = (e) => {
+              e.stopPropagation();
+              const pNum = parseInt(clone.querySelector('.organizer-page-num')?.textContent, 10) || 1;
+              this.viewer.goToPage(pNum);
+              modal.classList.remove('open');
+            };
+          }
+
           footer.querySelector('.btn-del-card').onclick = (e) => {
             e.stopPropagation();
             clone.remove();
@@ -1622,6 +1653,12 @@ class PersonalPDFApp {
 
           clone.onclick = () => {
             clone.classList.toggle('selected');
+          };
+
+          clone.ondblclick = () => {
+            const targetPage = parseInt(clone.querySelector('.organizer-page-num')?.textContent, 10) || 1;
+            this.viewer.goToPage(targetPage);
+            modal.classList.remove('open');
           };
 
           orig.after(clone);
@@ -1793,13 +1830,20 @@ class PersonalPDFApp {
             return;
           }
 
-          this.ui.setStatus('Applying page changes...');
-          const updatedBytes = await this.organizer.reorderAndModifyPages(this.currentPdfBytes, operations);
+          this.ui.setStatus('Compositing annotations and applying page changes...');
 
-          // Clear annotations and in-place edits cleanly since page indices have changed
+          // 1. First bake any active annotations and markup into PDF bytes so reordering/rotating never loses them
+          let basePdfBytes = this.currentPdfBytes;
           if (this.annotator) {
-            this.annotator.clearAllEdits();
+            try {
+              basePdfBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
+            } catch (burnErr) {
+              console.warn('Could not composite annotations before reordering:', burnErr);
+            }
           }
+
+          // 2. Perform page operations (reordering, rotation, blank pages, duplication, deletion)
+          const updatedBytes = await this.organizer.reorderAndModifyPages(basePdfBytes, operations);
 
           document.getElementById('modal-organizer')?.classList.remove('open');
           await this.loadArrayBuffer(updatedBytes, this.currentDocName);
