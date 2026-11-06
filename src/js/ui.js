@@ -357,6 +357,16 @@ export class UIController {
       closeAllSheets();
       document.getElementById('file-input')?.click();
     });
+    document.getElementById('m3-drawer-annotate')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.setMode('annotate');
+      const sheetMarkup = document.getElementById('m3-sheet-markup');
+      const scrim = document.getElementById('m3-scrim');
+      sheetMarkup?.classList.add('open');
+      scrim?.classList.add('open');
+      document.querySelectorAll('.m3-nav-item').forEach(i => i.classList.remove('active'));
+      document.querySelector('.m3-nav-item[data-m3-tab="annotate"]')?.classList.add('active');
+    });
     document.getElementById('m3-drawer-sample')?.addEventListener('click', () => {
       closeAllSheets();
       this.app.loadSamplePDF();
@@ -444,14 +454,22 @@ export class UIController {
           const fileName = `page-${pageNum}.png`;
           const blob = this._dataURLtoBlob(img);
           const dlRes = await this.app.exporter.downloadFile(blob, fileName, 'image/png');
-          const dest = dlRes?.destination || 'Documents / Downloads folder';
-          this.showExportResultModal({
-            title: 'Page Exported as PNG',
-            message: `Page ${pageNum} has been exported and saved.`,
-            destination: dest,
-            files: [{ name: fileName, size: blob.size }]
-          });
-          this.showToast(`Export Complete: Page ${pageNum} saved as PNG`, 'success');
+          if (dlRes?.cancelled) {
+            this.setStatus('Export cancelled');
+            return;
+          }
+          if (dlRes && dlRes.success) {
+            const dest = dlRes.destination || 'Documents / Downloads folder';
+            this.showExportResultModal({
+              title: 'Page Exported as PNG',
+              message: `Page ${pageNum} has been exported and saved.`,
+              destination: dest,
+              files: [{ name: fileName, size: blob.size }]
+            });
+            this.showToast(`Export Complete: Page ${pageNum} saved as PNG`, 'success');
+          } else {
+            this.showToast('Could not complete export', 'error');
+          }
         } else {
           this.showToast('No PDF document loaded to export', 'error');
         }
@@ -569,6 +587,19 @@ export class UIController {
         this.showToast('Annotations list updated', 'info');
       };
     }
+
+    const btnAddAnnotSidebar = document.getElementById('btn-add-annotation-sidebar');
+    if (btnAddAnnotSidebar) {
+      btnAddAnnotSidebar.onclick = () => {
+        this.setMode('annotate');
+        this.showToast('Annotate Mode active: Select Pen ✏️, Highlighter 🖍️, Text T, or Note 💬 from the ribbon', 'info');
+      };
+    }
+
+    document.getElementById('btn-start-annotating')?.addEventListener('click', () => {
+      this.setMode('annotate');
+      this.showToast('Annotate Mode active: Select Pen ✏️, Highlighter 🖍️, Text T, or Note 💬 from the ribbon', 'info');
+    });
   }
 
   _initModals() {
@@ -728,6 +759,16 @@ export class UIController {
   setMode(mode) {
     this.currentMode = mode;
     this.dynamicToolsContainer.innerHTML = '';
+
+    // Update active tab in mode ribbon and right tools panel
+    document.querySelectorAll('.mode-tab').forEach(t => {
+      if (t.dataset.mode === mode) t.classList.add('active');
+      else t.classList.remove('active');
+    });
+    document.querySelectorAll('.acrobat-tool-item[data-acrobat-mode]').forEach(i => {
+      if (i.dataset.acrobatMode === mode) i.classList.add('active');
+      else i.classList.remove('active');
+    });
 
     // Update body mode classes for CSS scoping (e.g. body.mode-view hides all delete buttons & editing borders)
     const modeClasses = ['mode-view', 'mode-annotate', 'mode-organize', 'mode-edit', 'mode-forms', 'mode-protect', 'mode-export'];
@@ -1478,15 +1519,23 @@ export class UIController {
             fileName,
             'image/png'
           );
-          const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
-          this.showExportResultModal({
-            title: 'Page Exported as PNG',
-            message: `Page ${pageNum} has been exported and saved.`,
-            destination: dest,
-            files: [{ name: fileName, size: blob.size }]
-          });
-          this.showToast(`Export Complete: Page ${pageNum} saved as ${fileName}`, 'success');
-          this.setStatus(`Exported Page ${pageNum} successfully as PNG`);
+          if (dlRes?.cancelled) {
+            this.setStatus('Export cancelled');
+            return;
+          }
+          if (dlRes && dlRes.success) {
+            const dest = dlRes.destination || 'Downloads folder';
+            this.showExportResultModal({
+              title: 'Page Exported as PNG',
+              message: `Page ${pageNum} has been exported and saved.`,
+              destination: dest,
+              files: [{ name: fileName, size: blob.size }]
+            });
+            this.showToast(`Export Complete: Page ${pageNum} saved as ${fileName}`, 'success');
+            this.setStatus(`Exported Page ${pageNum} successfully as PNG`);
+          } else {
+            this.showToast('Could not complete export', 'error');
+          }
         } else {
           this.showToast('No PDF document loaded to export', 'error');
         }
@@ -1505,15 +1554,23 @@ export class UIController {
         const fileName = `${baseName}-text.txt`;
         const blob = new Blob([text], { type: 'text/plain' });
         const dlRes = await this.app.exporter.downloadFile(blob, fileName, 'text/plain');
-        const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
-        this.showExportResultModal({
-          title: 'Text Export Complete',
-          message: `Document text successfully extracted (${text.length} characters).`,
-          destination: dest,
-          files: [{ name: fileName, size: blob.size }]
-        });
-        this.showToast(`Export Complete: All text saved to ${fileName}`, 'success');
-        this.setStatus(`Exported text (${text.length} characters) successfully`);
+        if (dlRes?.cancelled) {
+          this.setStatus('Text extraction cancelled');
+          return;
+        }
+        if (dlRes && dlRes.success) {
+          const dest = dlRes.destination || 'Downloads folder';
+          this.showExportResultModal({
+            title: 'Text Export Complete',
+            message: `Document text successfully extracted (${text.length} characters).`,
+            destination: dest,
+            files: [{ name: fileName, size: blob.size }]
+          });
+          this.showToast(`Export Complete: All text saved to ${fileName}`, 'success');
+          this.setStatus(`Exported text (${text.length} characters) successfully`);
+        } else {
+          this.showToast('Could not save extracted text', 'error');
+        }
       } catch (err) {
         console.error('Export text failed:', err);
         this.showToast(`Export text failed: ${err.message}`, 'error');
@@ -1781,7 +1838,16 @@ export class UIController {
     }
 
     if (items.length === 0) {
-      list.innerHTML = '<div class="empty-state">No annotations added yet. Use Annotate & Markup tools above to add notes, drawings, or text.</div>';
+      list.innerHTML = `
+        <div class="empty-state">
+          No annotations added yet.<br>
+          <button id="btn-start-annotating" class="btn btn-primary btn-sm" style="margin-top:10px; cursor:pointer;">✏️ Start Annotating</button>
+        </div>
+      `;
+      document.getElementById('btn-start-annotating')?.addEventListener('click', () => {
+        this.setMode('annotate');
+        this.showToast('Annotate Mode active: Select Pen ✏️, Highlighter 🖍️, Text T, or Note 💬 from the ribbon', 'info');
+      });
       return;
     }
 

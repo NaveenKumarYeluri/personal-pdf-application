@@ -286,10 +286,16 @@
           <div id="tab-annotations" class="tab-pane">
             <div class="sidebar-pane-header">
               <span>Annotations & Markup</span>
-              <button id="btn-refresh-annotations" title="Refresh Annotations List">⟳ Refresh</button>
+              <div style="display:flex; gap:6px;">
+                <button id="btn-add-annotation-sidebar" title="Start Annotating and Markup">+ Annotate</button>
+                <button id="btn-refresh-annotations" title="Refresh Annotations List">⟳ Refresh</button>
+              </div>
             </div>
             <div id="annotations-list" class="annotations-list">
-              <div class="empty-state">No annotations added yet</div>
+              <div class="empty-state">
+                No annotations added yet.<br>
+                <button id="btn-start-annotating" class="btn btn-primary btn-sm" style="margin-top:10px; cursor:pointer;">✏️ Start Annotating</button>
+              </div>
             </div>
           </div>
         </div>
@@ -774,6 +780,10 @@
           <button class="m3-list-tile" id="m3-drawer-open">
             <span class="m3-list-icon">📂</span>
             <span class="m3-list-title">Open Document</span>
+          </button>
+          <button class="m3-list-tile" id="m3-drawer-annotate">
+            <span class="m3-list-icon">✏️</span>
+            <span class="m3-list-title">Annotate &amp; Markup</span>
           </button>
           <button class="m3-list-tile" id="m3-drawer-sample">
             <span class="m3-list-icon">📄</span>

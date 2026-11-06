@@ -121,6 +121,8 @@ export class PDFExportEngine {
 
     const isCapacitor = typeof window !== 'undefined' && 
       (Boolean(window.Capacitor?.isNativePlatform?.()) || window.Capacitor?.platform === 'android');
+    const isMobileDevice = typeof navigator !== 'undefined' && 
+      /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
 
     // 1. Android Capacitor Native Filesystem & Share
     if (isCapacitor) {
@@ -170,14 +172,15 @@ export class PDFExportEngine {
         };
       } catch (capErr) {
         if (capErr.name === 'AbortError' || capErr.message?.toLowerCase().includes('cancel') || capErr.message?.toLowerCase().includes('closed')) {
+          // File was still written to Documents directory
           return { success: true, destination: 'Documents folder', fileName };
         }
         console.warn('Capacitor native download error:', capErr);
       }
     }
 
-    // 2. Mobile Web Share API fallback
-    if (typeof navigator !== 'undefined' && navigator.canShare && typeof File !== 'undefined' && !skipShare) {
+    // 2. Mobile Browser Web Share API (Mobile Devices ONLY - NEVER run on Windows/Linux desktop)
+    if (isMobileDevice && typeof navigator !== 'undefined' && navigator.canShare && typeof File !== 'undefined' && !skipShare) {
       try {
         const file = new File([blob], fileName, { type: mimeType });
         if (navigator.canShare({ files: [file] })) {
@@ -189,12 +192,14 @@ export class PDFExportEngine {
           return { success: true, destination: 'Saved via Share dialog', fileName };
         }
       } catch (shareErr) {
-        if (shareErr.name === 'AbortError') return { success: true, destination: 'Saved', fileName };
+        if (shareErr.name === 'AbortError') {
+          return { success: false, cancelled: true, destination: 'Cancelled', fileName };
+        }
         console.warn('Web Share API error:', shareErr);
       }
     }
 
-    // 3. Standard Desktop / Browser download link
+    // 3. Desktop (Windows, Linux, macOS): Direct File Download to Downloads folder
     try {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -204,13 +209,13 @@ export class PDFExportEngine {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 15000);
+      setTimeout(() => URL.revokeObjectURL(url), 20000);
       return { success: true, destination: 'Downloads folder', fileName };
     } catch (urlErr) {
       console.warn('Object URL download failed:', urlErr);
     }
 
-    // 4. Fallback Data URL
+    // 4. Fallback Data URL for Desktop
     try {
       const dataUrl = await new Promise((resolve) => {
         const reader = new FileReader();

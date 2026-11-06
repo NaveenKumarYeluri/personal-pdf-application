@@ -960,15 +960,23 @@ class PersonalPDFApp {
       let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
       const saveName = this.currentDocName;
       const dlRes = await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
-      const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
-      this.ui.showExportResultModal({
-        title: 'Document Saved',
-        message: `Changes saved to ${saveName}.`,
-        destination: dest,
-        files: [{ name: saveName, size: outputBytes.length }]
-      });
-      this.ui.showToast(`Saved: ${saveName}`, 'success');
-      this.ui.setStatus(`Saved: ${saveName}`);
+      if (dlRes?.cancelled) {
+        this.ui.setStatus('Save cancelled');
+        return;
+      }
+      if (dlRes && dlRes.success) {
+        const dest = dlRes.destination || 'Downloads folder';
+        this.ui.showExportResultModal({
+          title: 'Document Saved',
+          message: `Changes saved to ${saveName}.`,
+          destination: dest,
+          files: [{ name: saveName, size: outputBytes.length }]
+        });
+        this.ui.showToast(`Saved: ${saveName}`, 'success');
+        this.ui.setStatus(`Saved: ${saveName}`);
+      } else {
+        this.ui.showToast('Could not save document', 'error');
+      }
     } catch (err) {
       console.error(err);
       this.ui.showToast(`Save error: ${err.message}`, 'error');
@@ -1000,15 +1008,23 @@ class PersonalPDFApp {
     try {
       let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
       const dlRes = await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
-      const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
-      this.ui.showExportResultModal({
-        title: 'Save As Complete',
-        message: `New PDF copy saved successfully.`,
-        destination: dest,
-        files: [{ name: saveName, size: outputBytes.length }]
-      });
-      this.ui.showToast(`Saved As: ${saveName}`, 'success');
-      this.ui.setStatus(`Saved new copy: ${saveName}`);
+      if (dlRes?.cancelled) {
+        this.ui.setStatus('Save As cancelled');
+        return;
+      }
+      if (dlRes && dlRes.success) {
+        const dest = dlRes.destination || 'Downloads folder';
+        this.ui.showExportResultModal({
+          title: 'Save As Complete',
+          message: `New PDF copy saved successfully.`,
+          destination: dest,
+          files: [{ name: saveName, size: outputBytes.length }]
+        });
+        this.ui.showToast(`Saved As: ${saveName}`, 'success');
+        this.ui.setStatus(`Saved new copy: ${saveName}`);
+      } else {
+        this.ui.showToast('Could not save document copy', 'error');
+      }
     } catch (err) {
       console.error(err);
       this.ui.showToast(`Save As error: ${err.message}`, 'error');
@@ -1706,16 +1722,23 @@ class PersonalPDFApp {
           const baseName = (this.currentDocName || 'document').replace(/\.pdf$/i, '');
           const fileName = `${baseName}_extracted.pdf`;
           const dlRes = await this.exporter.downloadFile(extracted, fileName, 'application/pdf');
-          const dest = dlRes?.destination || 'Documents folder & Android Save Sheet';
-
-          this.ui.showExportResultModal({
-            title: 'Extract Pages Complete',
-            message: `${indices.length} pages extracted to a new PDF document.`,
-            destination: dest,
-            files: [{ name: fileName, size: extracted.length }]
-          });
-          this.ui.showToast(`Extracted ${indices.length} pages saved`, 'success');
-          this.ui.setStatus('Extracted pages downloaded');
+          if (dlRes?.cancelled) {
+            this.ui.setStatus('Extract cancelled');
+            return;
+          }
+          if (dlRes && dlRes.success) {
+            const dest = dlRes.destination || 'Downloads folder';
+            this.ui.showExportResultModal({
+              title: 'Extract Pages Complete',
+              message: `${indices.length} pages extracted to a new PDF document.`,
+              destination: dest,
+              files: [{ name: fileName, size: extracted.length }]
+            });
+            this.ui.showToast(`Extracted ${indices.length} pages saved`, 'success');
+            this.ui.setStatus('Extracted pages downloaded');
+          } else {
+            this.ui.showToast('Could not save extracted pages', 'error');
+          }
         } catch (err) {
           console.error('Extract pages failed:', err);
           this.ui.showToast(`Extract pages failed: ${err.message}`, 'error');

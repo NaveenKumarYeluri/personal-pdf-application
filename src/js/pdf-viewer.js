@@ -568,9 +568,24 @@ export class PDFViewerEngine {
     this.searchResults = [];
     this.currentSearchIndex = -1;
     const target = this.pagesContainer || this.container || document;
-    target.querySelectorAll('.search-highlight, .active-match').forEach(el => {
-      el.classList.remove('search-highlight', 'active-match', 'highlight', 'selected');
+
+    // Restore original text in all spans that were wrapped with marks
+    target.querySelectorAll('.textLayer span').forEach(span => {
+      if (span.dataset.rawText !== undefined) {
+        span.textContent = span.dataset.rawText;
+        delete span.dataset.rawText;
+      }
+      span.classList.remove('search-highlight', 'active-match', 'highlight', 'selected');
     });
+
+    // Cleanup any lingering marks
+    target.querySelectorAll('mark.search-highlight').forEach(mark => {
+      const parent = mark.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      }
+    });
+
     target.querySelectorAll('.has-search-matches').forEach(tl => {
       tl.classList.remove('has-search-matches');
     });
@@ -590,37 +605,88 @@ export class PDFViewerEngine {
       .replace(/fi/gi, '(?:fi|[\\uFFFD?])')
       .replace(/fl/gi, '(?:fl|[\\uFFFD?])')
       .replace(/ff/gi, '(?:ff|[\\uFFFD?])');
-    return new RegExp(withLigatures, 'i');
+    return new RegExp(withLigatures, 'gi');
+  }
+
+  _wrapMatchesInSpan(span, query, pageNum) {
+    if (!span || !query) return [];
+    const rawText = span.dataset.rawText || span.textContent || '';
+    if (!rawText.trim()) return [];
+
+    if (!span.dataset.rawText) {
+      span.dataset.rawText = rawText;
+    }
+
+    const searchRegex = this._buildSearchRegex(query);
+    if (!searchRegex) return [];
+
+    searchRegex.lastIndex = 0;
+    if (!searchRegex.test(rawText)) {
+      if (span.innerHTML !== rawText) {
+        span.textContent = rawText;
+      }
+      return [];
+    }
+
+    searchRegex.lastIndex = 0;
+    const matches = [];
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    let match;
+
+    while ((match = searchRegex.exec(rawText)) !== null) {
+      const matchStart = match.index;
+      const matchStr = match[0];
+      const matchEnd = matchStart + matchStr.length;
+
+      if (matchStart > lastIndex) {
+        fragment.appendChild(document.createTextNode(rawText.slice(lastIndex, matchStart)));
+      }
+
+      const mark = document.createElement('mark');
+      mark.className = 'search-highlight';
+      mark.textContent = matchStr;
+      fragment.appendChild(mark);
+
+      matches.push({
+        pageNum,
+        element: mark,
+        text: matchStr,
+        span
+      });
+
+      lastIndex = matchEnd;
+      if (searchRegex.lastIndex <= matchStart) {
+        searchRegex.lastIndex = matchStart + 1;
+      }
+    }
+
+    if (lastIndex < rawText.length) {
+      fragment.appendChild(document.createTextNode(rawText.slice(lastIndex)));
+    }
+
+    span.innerHTML = '';
+    span.appendChild(fragment);
+    return matches;
   }
 
   _applySearchHighlightToPage(pageNum, textLayer) {
     if (!this.currentSearchQuery || !textLayer) return;
-    const searchRegex = this._buildSearchRegex(this.currentSearchQuery);
-    if (!searchRegex) return;
 
     const spans = textLayer.querySelectorAll('span');
     let hasMatches = false;
 
-    spans.forEach((span, spanIdx) => {
-      const text = span.textContent || '';
-      if (searchRegex.test(text)) {
-        span.classList.add('search-highlight');
+    spans.forEach(span => {
+      const matches = this._wrapMatchesInSpan(span, this.currentSearchQuery, pageNum);
+      if (matches.length > 0) {
         hasMatches = true;
-
-        // If this page was re-rendered (e.g. after zoom), restore element pointer
-        const existing = this.searchResults.find(r => r.pageNum === pageNum && (r.spanIndex === spanIdx || r.text === text));
-        if (existing) {
-          existing.element = span;
-        }
-
-        // If this is the active match, restore the active highlight class
-        if (this.currentSearchIndex >= 0 && this.searchResults[this.currentSearchIndex]?.pageNum === pageNum) {
-          const activeMatch = this.searchResults[this.currentSearchIndex];
-          if (activeMatch.spanIndex === spanIdx || activeMatch.text === text) {
-            span.classList.add('active-match');
-            activeMatch.element = span;
+        // Re-link element pointers if page was re-rendered (e.g. after zoom)
+        matches.forEach(m => {
+          const existing = this.searchResults.find(r => r.pageNum === pageNum && r.text.toLowerCase() === m.text.toLowerCase() && !r.element?.isConnected);
+          if (existing) {
+            existing.element = m.element;
           }
-        }
+        });
       }
     });
 
@@ -628,6 +694,14 @@ export class PDFViewerEngine {
       textLayer.classList.add('has-search-matches');
       const pw = textLayer.closest('.page-wrapper');
       if (pw) pw.classList.add('has-search-matches');
+    }
+
+    // Restore active match if on this page
+    if (this.currentSearchIndex >= 0 && this.searchResults[this.currentSearchIndex]?.pageNum === pageNum) {
+      const activeMatch = this.searchResults[this.currentSearchIndex];
+      if (activeMatch.element && activeMatch.element.isConnected) {
+        activeMatch.element.classList.add('active-match');
+      }
     }
   }
 
@@ -639,12 +713,7 @@ export class PDFViewerEngine {
 
     const q = query.trim();
     this.currentSearchQuery = q;
-    const searchRegex = this._buildSearchRegex(q);
-    if (!searchRegex) return { total: 0, current: 0 };
 
-    const target = this.pagesContainer || this.container || document;
-
-    // Search across rendered textLayers for precise DOM highlighting & instant centering
     for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
       const pageWrapper = document.getElementById(`page-wrapper-${pageNum}`);
       if (!pageWrapper) continue;
@@ -654,40 +723,13 @@ export class PDFViewerEngine {
       const spans = Array.from(textLayer.querySelectorAll('span'));
       let pageHasMatches = false;
 
-      // 1. Single span match
-      spans.forEach((span, spanIdx) => {
-        const text = span.textContent || '';
-        if (searchRegex.test(text)) {
-          span.classList.add('search-highlight');
+      spans.forEach(span => {
+        const matches = this._wrapMatchesInSpan(span, q, pageNum);
+        if (matches.length > 0) {
           pageHasMatches = true;
-          this.searchResults.push({
-            pageNum,
-            spanIndex: spanIdx,
-            element: span,
-            text
-          });
+          this.searchResults.push(...matches);
         }
       });
-
-      // 2. Adjacent multi-span matching (e.g. phrases split across adjacent text chunks on same line)
-      for (let i = 0; i < spans.length - 1; i++) {
-        const s1 = spans[i];
-        const s2 = spans[i + 1];
-        if (Math.abs(s1.offsetTop - s2.offsetTop) < 6) {
-          const combined = (s1.textContent || '') + ' ' + (s2.textContent || '');
-          if (searchRegex.test(combined) && !s1.classList.contains('search-highlight') && !s2.classList.contains('search-highlight')) {
-            s1.classList.add('search-highlight');
-            s2.classList.add('search-highlight');
-            pageHasMatches = true;
-            this.searchResults.push({
-              pageNum,
-              spanIndex: i,
-              element: s1,
-              text: combined
-            });
-          }
-        }
-      }
 
       if (pageHasMatches) {
         textLayer.classList.add('has-search-matches');
@@ -711,7 +753,7 @@ export class PDFViewerEngine {
     const match = this.searchResults[index];
 
     // Remove active state from all highlights
-    const target = this.pagesContainer || this.container;
+    const target = this.pagesContainer || this.container || document;
     target.querySelectorAll('.active-match').forEach(el => el.classList.remove('active-match'));
 
     // Highlight active element
@@ -720,11 +762,11 @@ export class PDFViewerEngine {
     } else {
       const pw = target.querySelector(`#page-wrapper-${match.pageNum}`);
       if (pw) {
-        const spans = pw.querySelectorAll('.textLayer span');
-        const targetSpan = spans[match.spanIndex] || Array.from(spans).find(s => (s.textContent || '').toLowerCase().includes(this.currentSearchQuery));
-        if (targetSpan) {
-          targetSpan.classList.add('search-highlight', 'active-match');
-          match.element = targetSpan;
+        const marks = pw.querySelectorAll('mark.search-highlight');
+        const targetMark = Array.from(marks).find(m => (m.textContent || '').toLowerCase().includes(this.currentSearchQuery.toLowerCase()));
+        if (targetMark) {
+          targetMark.classList.add('active-match');
+          match.element = targetMark;
         }
       }
     }
