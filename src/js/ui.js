@@ -760,6 +760,11 @@ export class UIController {
     this.currentMode = mode;
     this.dynamicToolsContainer.innerHTML = '';
 
+    // Clear any active text selection highlight when switching modes
+    if (window.getSelection) {
+      window.getSelection().removeAllRanges();
+    }
+
     // Update active tab in mode ribbon and right tools panel
     document.querySelectorAll('.mode-tab').forEach(t => {
       if (t.dataset.mode === mode) t.classList.add('active');
@@ -850,6 +855,9 @@ export class UIController {
 
     const onPanMouseDown = (e) => {
       if (e.target.closest('button, input, select, textarea, .annotation-textbox, .sticky-note-popup')) return;
+      if (window.getSelection) {
+        window.getSelection().removeAllRanges();
+      }
       isPanning = true;
       startX = e.clientX;
       startY = e.clientY;
@@ -879,6 +887,12 @@ export class UIController {
       btnSelect.classList.remove('active');
       container.classList.add('hand-tool');
       container.style.cursor = 'grab';
+
+      // Immediately clear any active text selection and highlight
+      if (window.getSelection) {
+        window.getSelection().removeAllRanges();
+      }
+
       document.querySelectorAll('.textLayer').forEach(tl => {
         tl.style.pointerEvents = 'none';
         tl.style.userSelect = 'none';
@@ -910,12 +924,21 @@ export class UIController {
     };
 
     btnCopy.onclick = async () => {
+      if (btnHand.classList.contains('active')) {
+        this.showToast('Switch to "Select Text" tool to select text for copying', 'info');
+        return;
+      }
       let selectedText = window.getSelection().toString();
       if (!selectedText) {
         const activeEl = document.activeElement;
         if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
           selectedText = activeEl.value || activeEl.innerText;
         }
+      }
+
+      if (!selectedText || !selectedText.trim()) {
+        this.showToast('Please select some text first to copy', 'warning');
+        return;
       }
 
       if (selectedText && selectedText.trim()) {

@@ -398,6 +398,7 @@ export class PDFViewerEngine {
         }
       }
 
+      this._setupTextLayerSelection(textLayer, pageWrapper);
       this._setupContentEditingHandlers(textLayer, pageNum, pageWrapper);
       if (this.currentSearchQuery) {
         this._applySearchHighlightToPage(pageNum, textLayer);
@@ -422,6 +423,70 @@ export class PDFViewerEngine {
         w.classList.remove('editing-content');
       }
     });
+  }
+
+  _setupTextLayerSelection(textLayer, pageWrapper) {
+    let endOfContent = textLayer.querySelector('.endOfContent');
+    if (!endOfContent) {
+      endOfContent = document.createElement('div');
+      endOfContent.className = 'endOfContent';
+      textLayer.appendChild(endOfContent);
+    }
+
+    textLayer.addEventListener('mousedown', (e) => {
+      // If user clicked directly on the textLayer background or endOfContent spacer (e.g. whitespace or margins)
+      if (e.target === textLayer || e.target === endOfContent) {
+        const clickX = e.clientX;
+        const clickY = e.clientY;
+
+        // Find all text spans on this page
+        const spans = Array.from(textLayer.querySelectorAll('span'));
+        if (spans.length === 0) return;
+
+        // Find the span closest to the click coordinates
+        let bestSpan = null;
+        let minDistance = Infinity;
+        let isPastEnd = false;
+
+        for (const span of spans) {
+          const sRect = span.getBoundingClientRect();
+          if (sRect.width === 0 || sRect.height === 0) continue;
+
+          // Check vertical distance
+          const verticalDist = (clickY < sRect.top) ? (sRect.top - clickY) : (clickY > sRect.bottom ? (clickY - sRect.bottom) : 0);
+          // Check horizontal distance
+          const horizontalDist = (clickX < sRect.left) ? (sRect.left - clickX) : (clickX > sRect.right ? (clickX - sRect.right) : 0);
+
+          // Weight vertical distance much higher (x12) so we snap to spans on the same horizontal line
+          const distance = verticalDist * 12 + horizontalDist;
+          if (distance < minDistance) {
+            minDistance = distance;
+            bestSpan = span;
+            isPastEnd = (clickX >= sRect.right);
+          }
+        }
+
+        if (bestSpan) {
+          const targetNode = bestSpan.lastChild || bestSpan.firstChild || bestSpan;
+          const offset = isPastEnd ? (targetNode.textContent?.length || 0) : 0;
+          try {
+            const sel = window.getSelection();
+            if (sel) {
+              sel.collapse(targetNode, offset);
+            }
+          } catch (err) {
+            // Ignore if collapse is not supported
+          }
+        }
+      }
+
+      endOfContent.classList.add('active');
+    });
+
+    const onMouseUp = () => {
+      endOfContent.classList.remove('active');
+    };
+    window.addEventListener('mouseup', onMouseUp);
   }
 
   _setupContentEditingHandlers(textLayer, pageNum, pageWrapper) {
