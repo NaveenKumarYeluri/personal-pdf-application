@@ -3,6 +3,8 @@
  * Convert PDF to PNG images, extract clean text, and native high-res printing.
  */
 
+import { healPdfTextLigatures } from './pdf-viewer.js';
+
 export class PDFExportEngine {
   constructor(viewer) {
     this.viewer = viewer;
@@ -82,7 +84,7 @@ export class PDFExportEngine {
     for (let i = 1; i <= this.viewer.totalPages; i++) {
       const page = await this.viewer.pdfDoc.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map(item => item.str).join(' ');
+      const pageText = content.items.map(item => healPdfTextLigatures(item.str)).join(' ');
       fullText += `--- Page ${i} ---\n${pageText}\n\n`;
     }
     return fullText;

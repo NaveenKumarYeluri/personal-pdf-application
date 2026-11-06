@@ -3,6 +3,59 @@
  * High-DPI canvas rendering, continuous scroll, text layer, bookmarks, search.
  */
 
+/**
+ * Clean & restore ligatures and replacement characters (\uFFFD / ?) from buggy PDF ToUnicode CMaps.
+ * Corrects common ligatures like 'ti', 'fi', 'fl', 'tion', 'partition', 'multiple', 'allocation'.
+ */
+export function healPdfTextLigatures(text) {
+  if (!text || typeof text !== 'string') return text;
+  if (!text.includes('\ufffd') && !text.includes('\u0000') && !text.includes('\u001f') && !text.includes('')) {
+    return text;
+  }
+
+  let cleaned = text;
+
+  // 1. Common database/technical words: partition / partitioned / partitioning
+  cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}on\b/gi, 'partition');
+  cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}ons\b/gi, 'partitions');
+  cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}oned\b/gi, 'partitioned');
+  cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}oning\b/gi, 'partitioning');
+
+  // 2. Words ending in -tion: allocation, implementation, connection, operation, etc.
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}on\b/g, '$1tion');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}ons\b/g, '$1tions');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}onal\b/g, '$1tional');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}oned\b/g, '$1tioned');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}oning\b/g, '$1tioning');
+
+  // 3. Words with -tive: creative, active, informative, objective, etc.
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}ve\b/g, '$1tive');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}ves\b/g, '$1tives');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}vely\b/g, '$1tively');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}vity\b/g, '$1tivity');
+
+  // 4. Words with -ting: testing, sorting, existing, creating, writing, depicting
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}ng\b/g, '$1ting');
+
+  // 5. Words with -tial / -tian / -tious: essential, potential, initial
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}al\b/g, '$1tial');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}ally\b/g, '$1tially');
+
+  // 6. multiple / multi / multiply
+  cleaned = cleaned.replace(/mul[\ufffd\u0000\u001f\u007f\?]ple\b/gi, 'multiple');
+  cleaned = cleaned.replace(/mul[\ufffd\u0000\u001f\u007f\?]ply\b/gi, 'multiply');
+  cleaned = cleaned.replace(/mul[\ufffd\u0000\u001f\u007f\?]/gi, 'multi');
+
+  // 7. Contextual ligature repair:
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}([aeiou])/g, '$1ti$2');
+  cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]([a-zA-Z])/g, '$1t$2');
+
+  // Strip any leftover replacement characters
+  cleaned = cleaned.replace(/[\ufffd\u0000\u001f\u007f]/g, '');
+
+  return cleaned;
+}
+
 export class PDFViewerEngine {
   constructor(options = {}) {
     this.container = options.container;
@@ -257,6 +310,13 @@ export class PDFViewerEngine {
     // Render Text Layer
     try {
       const textContent = await page.getTextContent();
+      if (textContent && textContent.items) {
+        textContent.items.forEach(item => {
+          if (item && item.str) {
+            item.str = healPdfTextLigatures(item.str);
+          }
+        });
+      }
       if (textContent && textContent.styles) {
         Object.values(textContent.styles).forEach(s => {
           if (s.fontFamily) {
@@ -322,7 +382,9 @@ export class PDFViewerEngine {
       this.onContentEdited({
         span,
         pageNum,
-        pageWrapper
+        pageWrapper,
+        clientX: e.clientX,
+        clientY: e.clientY
       });
     });
 
@@ -349,7 +411,9 @@ export class PDFViewerEngine {
             this.onContentEdited({
               span,
               pageNum,
-              pageWrapper
+              pageWrapper,
+              clientX: e.changedTouches[0].clientX,
+              clientY: e.changedTouches[0].clientY
             });
           }
         }

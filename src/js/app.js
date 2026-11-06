@@ -3,7 +3,7 @@
  * Adobe Acrobat-grade functionality for Windows, Arch Linux, and Android.
  */
 
-import { PDFViewerEngine } from './pdf-viewer.js';
+import { PDFViewerEngine, healPdfTextLigatures } from './pdf-viewer.js';
 import { PDFOrganizerEngine } from './pdf-organizer.js';
 import { PDFAnnotatorEngine } from './pdf-annotator.js';
 import { PDFSignatureEngine } from './pdf-signature.js';
@@ -466,6 +466,9 @@ class PersonalPDFApp {
 
     // Save initial text once
     if (span._originalText === undefined) {
+      if (typeof healPdfTextLigatures === 'function') {
+        span.textContent = healPdfTextLigatures(span.textContent);
+      }
       span._originalText = span.textContent;
       const wrapRect = pageWrapper.getBoundingClientRect();
       const sRect = span.getBoundingClientRect();
@@ -620,14 +623,39 @@ class PersonalPDFApp {
       });
     }
 
-    // Focus and select contents
+    // Focus and position cursor cleanly without selecting all text (avoids solid blue highlight box)
     span.focus();
     try {
-      const range = document.createRange();
-      range.selectNodeContents(span);
       const sel = window.getSelection();
       sel.removeAllRanges();
-      sel.addRange(range);
+      let positioned = false;
+
+      if (editData.clientX !== undefined && editData.clientY !== undefined) {
+        if (document.caretPositionFromPoint) {
+          const pos = document.caretPositionFromPoint(editData.clientX, editData.clientY);
+          if (pos && pos.offsetNode) {
+            const range = document.createRange();
+            range.setStart(pos.offsetNode, pos.offset);
+            range.collapse(true);
+            sel.addRange(range);
+            positioned = true;
+          }
+        } else if (document.caretRangeFromPoint) {
+          const range = document.caretRangeFromPoint(editData.clientX, editData.clientY);
+          if (range) {
+            range.collapse(true);
+            sel.addRange(range);
+            positioned = true;
+          }
+        }
+      }
+
+      if (!positioned) {
+        const range = document.createRange();
+        range.selectNodeContents(span);
+        range.collapse(false); // Place cursor at end of text
+        sel.addRange(range);
+      }
     } catch (_) {}
 
     this.ui.setStatus(`In-place edit active: editing with PDF's embedded font`);

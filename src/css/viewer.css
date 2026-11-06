@@ -154,22 +154,24 @@
 }
 
 .page-wrapper.editing-content .textLayer span {
-  color: #111827 !important;
-  background-color: rgba(255, 255, 255, 0.95);
-  outline: 1.5px dashed rgba(59, 130, 246, 0.5) !important;
-  outline-offset: 1px !important;
-  border: none !important;
-  border-radius: 2px;
-  cursor: text;
+  color: transparent !important;
+  background-color: transparent !important;
+  outline: none !important;
+  cursor: text !important;
   box-sizing: border-box !important;
   padding: 0 !important;
   margin: 0 !important;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .page-wrapper.editing-content .textLayer span:hover {
-  outline-color: #2563eb !important;
-  background-color: #ffffff !important;
-  box-shadow: 0 0 6px rgba(59, 130, 246, 0.35);
+  outline: 1.5px dashed #2563eb !important;
+  outline-offset: 1px !important;
+  background-color: rgba(37, 99, 235, 0.08) !important;
+  border-radius: 2px;
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.2);
+  cursor: text !important;
 }
 
 .page-wrapper.editing-content .textLayer span.inline-editing,
@@ -178,7 +180,7 @@
   outline: 2px solid #2563eb !important;
   outline-offset: 1px !important;
   background-color: #ffffff !important;
-  box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+  box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgba(37, 99, 235, 0.25) !important;
   z-index: 100 !important;
   white-space: pre !important;
   user-select: text !important;
@@ -192,6 +194,12 @@
   text-size-adjust: none !important;
   -webkit-font-smoothing: antialiased !important;
   line-height: 1 !important;
+  caret-color: #2563eb !important;
+}
+
+.textLayer span.inline-editing::selection {
+  background-color: rgba(59, 130, 246, 0.35) !important;
+  color: inherit !important;
 }
 
 /* Modified text spans persist seamlessly across View & Edit modes */
