@@ -96,6 +96,12 @@
   -webkit-user-select: text !important;
 }
 
+.annotation-textbox .textbox-content:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
 .annotation-textbox:hover,
 .annotation-textbox:focus,
 .annotation-textbox.active {
@@ -150,22 +156,12 @@
   -webkit-user-select: none !important;
   transition: transform 0.1s ease, background-color 0.1s ease;
 }
-  line-height: 1;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border: 1.5px solid #ffffff;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
-  z-index: 60;
-  padding: 0;
-  transition: transform 0.1s ease, background-color 0.1s ease;
-}
 
 .annotation-textbox:hover .textbox-delete-btn,
 .annotation-textbox.active .textbox-delete-btn,
 .annotation-textbox:focus .textbox-delete-btn,
 .placed-stamp:hover .textbox-delete-btn,
+.placed-stamp.selected .textbox-delete-btn,
 .placed-image-box:hover .textbox-delete-btn,
 .placed-signature-box:hover .textbox-delete-btn {
   display: flex !important;
@@ -183,6 +179,7 @@ body.mode-view .textbox-delete-btn,
 body.mode-view .annotation-textbox:hover .textbox-delete-btn,
 body.mode-view .annotation-textbox.active .textbox-delete-btn,
 body.mode-view .placed-stamp:hover .textbox-delete-btn,
+body.mode-view .placed-stamp.selected .textbox-delete-btn,
 body.mode-view .placed-image-box:hover .textbox-delete-btn,
 body.mode-view .placed-signature-box:hover .textbox-delete-btn {
   display: none !important;
@@ -210,12 +207,16 @@ body.mode-view .in-place-editor {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px dashed rgba(239, 68, 68, 0.4);
+  border: 1.5px dashed transparent;
   box-sizing: border-box;
+  border-radius: 4px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.placed-stamp:hover {
-  border-color: var(--accent-red);
+.placed-stamp:hover,
+.placed-stamp.selected {
+  border-color: var(--accent-red) !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25);
 }
 
 .placed-stamp img {
@@ -241,6 +242,12 @@ body.mode-view .in-place-editor {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   touch-action: none;
   transition: transform 0.1s ease, background-color 0.1s ease;
+  display: none;
+}
+
+.placed-stamp:hover .stamp-resize-handle,
+.placed-stamp.selected .stamp-resize-handle {
+  display: block !important;
 }
 
 .stamp-resize-handle:hover {
@@ -253,8 +260,9 @@ body.mode-view .stamp-resize-handle {
 }
 
 body.mode-view .placed-stamp {
-  border-color: transparent !important;
+  border: none !important;
   cursor: default !important;
+  pointer-events: none !important;
 }
 
 body.mode-view .placed-stamp .textbox-delete-btn {
@@ -383,5 +391,34 @@ body.mode-view .placed-stamp .textbox-delete-btn {
   border: 1px solid var(--border-color);
   margin-top: 14px;
   min-height: 90px;
+}
+
+/* Annotation Color Palette Swatches */
+.annot-palette-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.annot-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.annot-swatch:hover {
+  transform: scale(1.25);
+}
+
+.annot-swatch.active {
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 1.5px var(--accent-blue), 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  transform: scale(1.2);
 }
 

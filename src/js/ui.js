@@ -997,21 +997,40 @@ export class UIController {
   _renderAnnotateTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="tool-select" class="tool-btn" title="Text Selection Tool">✋</button>
-        <button id="tool-pen" class="tool-btn active" title="Freehand Pen">✏️</button>
-        <button id="tool-highlighter" class="tool-btn" title="Highlighter Brush">🖍️</button>
-        <button id="tool-eraser" class="tool-btn" title="Eraser Tool (Click/drag to erase ink, textboxes, stamps)">🧼</button>
-        <button id="tool-note" class="tool-btn" title="Sticky Note">💬</button>
-        <button id="tool-text" class="tool-btn" title="Typewriter Text Block">T</button>
+        <button id="tool-select" class="tool-btn" title="Text Selection Tool (Select & copy text)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+          <span>Select</span>
+        </button>
+        <button id="tool-pen" class="tool-btn active" title="Freehand Pen">✏️ Pen</button>
+        <button id="tool-highlighter" class="tool-btn" title="Highlighter Brush">🖍️ Highl.</button>
+        <button id="tool-eraser" class="tool-btn" title="Eraser Tool (Click/drag to erase ink, textboxes, stamps)">🧼 Eraser</button>
+        <button id="tool-note" class="tool-btn" title="Sticky Note">💬 Note</button>
+        <button id="tool-text" class="tool-btn" title="Typewriter Text Block">T Text</button>
         <button id="tool-rect" class="tool-btn" title="Draw Rectangle">▢</button>
         <button id="tool-circle" class="tool-btn" title="Draw Circle">◯</button>
         <button id="tool-line" class="tool-btn" title="Draw Line">╱</button>
       </div>
+
       <div class="divider"></div>
+
+      <!-- Quick Color Palette Swatches & Custom Color Picker -->
+      <div class="tool-group annot-palette-group" title="Annotation Colors">
+        <span class="annot-swatch active" data-color="#ef4444" style="background:#ef4444;" title="Red"></span>
+        <span class="annot-swatch" data-color="#2563eb" style="background:#2563eb;" title="Blue"></span>
+        <span class="annot-swatch" data-color="#16a34a" style="background:#16a34a;" title="Green"></span>
+        <span class="annot-swatch" data-color="#eab308" style="background:#eab308;" title="Yellow"></span>
+        <span class="annot-swatch" data-color="#f97316" style="background:#f97316;" title="Orange"></span>
+        <span class="annot-swatch" data-color="#9333ea" style="background:#9333ea;" title="Purple"></span>
+        <span class="annot-swatch" data-color="#000000" style="background:#000000;" title="Black"></span>
+        <input type="color" id="annot-color" value="#ef4444" class="tool-select" style="padding:1px; width:22px; height:22px; cursor:pointer;" title="Custom Color Picker">
+        <input type="number" id="annot-size" value="4" min="1" max="50" class="tool-select" style="width:40px;" title="Stroke Thickness (px)">
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Textbox Formatting -->
       <div class="tool-group">
-        <input type="color" id="annot-color" value="#ef4444" class="tool-select" style="padding:1px; width:26px; height:26px;" title="Stroke / Text Color">
-        <input type="number" id="annot-size" value="4" min="1" max="50" class="tool-select" style="width:46px;" title="Stroke Thickness (px)">
-        <select id="annot-font-family" class="tool-select" style="max-width:130px;" title="Text Font Family">
+        <select id="annot-font-family" class="tool-select" style="max-width:115px;" title="Text Font Family">
           <option value="Inter, sans-serif" selected>Inter / Arial (Sans)</option>
           <option value="'Roboto', sans-serif">Roboto</option>
           <option value="'Segoe UI', sans-serif">Segoe UI</option>
@@ -1022,14 +1041,9 @@ export class UIController {
           <option value="'Garamond', serif">Garamond</option>
           <option value="'Courier New', monospace">Courier New</option>
           <option value="'Consolas', monospace">Consolas</option>
-          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-          <option value="'Verdana', sans-serif">Verdana</option>
-          <option value="'Tahoma', sans-serif">Tahoma</option>
-          <option value="'Comic Sans MS', cursive">Comic Sans</option>
-          <option value="'Dancing Script', cursive">Dancing Script</option>
           <option value="'Impact', sans-serif">Impact</option>
         </select>
-        <input type="number" id="annot-font-size" value="16" min="6" max="144" class="tool-select" style="width:48px;" title="Font Size (pt)">
+        <input type="number" id="annot-font-size" value="16" min="6" max="144" class="tool-select" style="width:42px;" title="Font Size (pt)">
         <button id="btn-text-bold" class="tool-btn" title="Bold Text"><b>B</b></button>
         <button id="btn-text-italic" class="tool-btn" title="Italic Text"><i>I</i></button>
         <button id="btn-text-underline" class="tool-btn" title="Underline Text"><u>U</u></button>
@@ -1038,26 +1052,59 @@ export class UIController {
         <button id="btn-text-align-center" class="tool-btn" title="Align Center">≡</button>
         <button id="btn-text-align-right" class="tool-btn" title="Align Right">⫸</button>
         <button id="btn-text-align-justify" class="tool-btn" title="Justify">▤</button>
-        <select id="annot-line-spacing" class="tool-select" title="Line Spacing">
-          <option value="1.0">1.0x</option>
-          <option value="1.25" selected>1.25x</option>
-          <option value="1.5">1.5x</option>
-          <option value="2.0">2.0x</option>
-        </select>
         <button id="btn-text-delete" class="tool-btn" style="color:#ef4444;" title="Delete Active Text Box">🗑 Del</button>
-        <select id="annot-stamp" class="tool-select" style="max-width:90px;" title="Place Stamp">
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Stamp Creation & Customization -->
+      <div class="tool-group">
+        <select id="annot-stamp" class="tool-select" style="max-width:105px;" title="Place or Select Stamp">
           <option value="">Stamp...</option>
           <option value="APPROVED">APPROVED</option>
           <option value="REJECTED">REJECTED</option>
           <option value="CONFIDENTIAL">CONFIDENTIAL</option>
           <option value="DRAFT">DRAFT</option>
+          <option value="FINAL">FINAL</option>
+          <option value="VOID">VOID</option>
+          <option value="PAID">PAID</option>
+          <option value="custom">+ Custom...</option>
         </select>
+        <input type="color" id="stamp-color" value="#dc2626" class="tool-select" style="padding:1px; width:22px; height:22px;" title="Stamp Color">
+        <select id="stamp-opacity" class="tool-select" style="width:55px;" title="Stamp Opacity">
+          <option value="1.0">100%</option>
+          <option value="0.85" selected>85%</option>
+          <option value="0.65">65%</option>
+          <option value="0.45">45%</option>
+          <option value="0.25">25%</option>
+        </select>
+        <select id="stamp-rotation" class="tool-select" style="width:58px;" title="Stamp Angle">
+          <option value="-15">-15°</option>
+          <option value="-8" selected>-8°</option>
+          <option value="0">0°</option>
+          <option value="8">+8°</option>
+          <option value="15">+15°</option>
+        </select>
+        <button id="btn-stamp-delete" class="tool-btn" style="color:#ef4444; display:none;" title="Delete Selected Stamp">🗑 Stamp</button>
       </div>
     `;
 
     if (this.documentFonts && this.documentFonts.length > 0) {
       this.setDocumentFonts(this.documentFonts);
     }
+
+    // Palette Swatches
+    const swatches = document.querySelectorAll('.annot-swatch');
+    swatches.forEach(swatch => {
+      swatch.onclick = () => {
+        swatches.forEach(s => s.classList.remove('active'));
+        swatch.classList.add('active');
+        const c = swatch.dataset.color;
+        const colorInput = document.getElementById('annot-color');
+        if (colorInput) colorInput.value = c;
+        this.app.annotator.setColor(c);
+      };
+    });
 
     // Tool switching
     const tools = ['select', 'pen', 'highlighter', 'eraser', 'note', 'text', 'rect', 'circle', 'line'];
@@ -1078,6 +1125,19 @@ export class UIController {
           this.app.annotator.setTool('eraser');
           this.setStatus('Eraser active: click or drag across ink, highlighters, or text boxes to erase');
           return;
+        }
+
+        if (t === 'highlighter') {
+          // If current color is dark, default to bright yellow highlighter
+          const curColor = document.getElementById('annot-color').value;
+          if (curColor === '#000000' || curColor === '#ef4444') {
+            const yellow = '#eab308';
+            document.getElementById('annot-color').value = yellow;
+            this.app.annotator.setColor(yellow);
+            swatches.forEach(s => s.classList.toggle('active', s.dataset.color === yellow));
+          }
+          document.getElementById('annot-size').value = '20';
+          this.app.annotator.strokeWidth = 20;
         }
 
         let toolName = t;
@@ -1105,7 +1165,9 @@ export class UIController {
     });
 
     document.getElementById('annot-color').onchange = (e) => {
-      this.app.annotator.setColor(e.target.value);
+      const c = e.target.value;
+      this.app.annotator.setColor(c);
+      swatches.forEach(s => s.classList.toggle('active', s.dataset.color === c));
     };
 
     document.getElementById('annot-size').oninput = (e) => {
@@ -1141,21 +1203,34 @@ export class UIController {
       document.getElementById('btn-text-strike').classList.toggle('active', isStrike);
     };
 
+    const alignButtons = {
+      left: document.getElementById('btn-text-align-left'),
+      center: document.getElementById('btn-text-align-center'),
+      right: document.getElementById('btn-text-align-right'),
+      justify: document.getElementById('btn-text-align-justify')
+    };
+
+    const setAlignActive = (align) => {
+      Object.keys(alignButtons).forEach(k => {
+        alignButtons[k]?.classList.toggle('active', k === align);
+      });
+    };
+
     document.getElementById('btn-text-align-left').onclick = () => {
       this.app.annotator.setTextAlign('left');
+      setAlignActive('left');
     };
     document.getElementById('btn-text-align-center').onclick = () => {
       this.app.annotator.setTextAlign('center');
+      setAlignActive('center');
     };
     document.getElementById('btn-text-align-right').onclick = () => {
       this.app.annotator.setTextAlign('right');
+      setAlignActive('right');
     };
     document.getElementById('btn-text-align-justify').onclick = () => {
       this.app.annotator.setTextAlign('justify');
-    };
-
-    document.getElementById('annot-line-spacing').onchange = (e) => {
-      this.app.annotator.setLineHeight(parseFloat(e.target.value));
+      setAlignActive('justify');
     };
 
     document.getElementById('btn-text-delete').onclick = () => {
@@ -1163,11 +1238,48 @@ export class UIController {
       this.setStatus('Text box removed');
     };
 
-    document.getElementById('annot-stamp').onchange = (e) => {
-      if (e.target.value) {
-        this.app.annotator.placeStamp(this.app.viewer.currentPage, e.target.value);
+    // Stamp controls wiring
+    const stampSelect = document.getElementById('annot-stamp');
+    const stampColorInput = document.getElementById('stamp-color');
+    const stampOpacityInput = document.getElementById('stamp-opacity');
+    const stampRotationInput = document.getElementById('stamp-rotation');
+    const btnStampDelete = document.getElementById('btn-stamp-delete');
+
+    stampSelect.onchange = (e) => {
+      let val = e.target.value;
+      if (val === 'custom') {
+        val = prompt('Enter custom stamp text:', 'CONFIDENTIAL');
+        if (!val) {
+          e.target.value = '';
+          return;
+        }
+      }
+      if (val) {
+        const stamp = this.app.annotator.placeStamp(this.app.viewer.currentPage, val);
+        if (stamp) {
+          if (stampColorInput.value) this.app.annotator.setStampColor(stampColorInput.value);
+          if (stampOpacityInput.value) this.app.annotator.setStampOpacity(parseFloat(stampOpacityInput.value));
+          if (stampRotationInput.value) this.app.annotator.setStampRotation(parseFloat(stampRotationInput.value));
+        }
         e.target.value = '';
       }
+    };
+
+    stampColorInput.onchange = (e) => {
+      this.app.annotator.setStampColor(e.target.value);
+    };
+
+    stampOpacityInput.onchange = (e) => {
+      this.app.annotator.setStampOpacity(parseFloat(e.target.value));
+    };
+
+    stampRotationInput.onchange = (e) => {
+      this.app.annotator.setStampRotation(parseFloat(e.target.value));
+    };
+
+    btnStampDelete.onclick = () => {
+      this.app.annotator.deleteActiveStamp();
+      this.setStatus('Stamp removed');
     };
   }
 
@@ -1412,16 +1524,32 @@ export class UIController {
   }
 
   syncActiveTextBox(box) {
-    if (!box) return;
+    const boldBtn = document.getElementById('btn-edit-bold') || document.getElementById('btn-text-bold');
+    const italicBtn = document.getElementById('btn-edit-italic') || document.getElementById('btn-text-italic');
+    const underlineBtn = document.getElementById('btn-edit-underline') || document.getElementById('btn-text-underline');
+    const strikeBtn = document.getElementById('btn-edit-strike') || document.getElementById('btn-text-strike');
+    const alignLeftBtn = document.getElementById('btn-text-align-left');
+    const alignCenterBtn = document.getElementById('btn-text-align-center');
+    const alignRightBtn = document.getElementById('btn-text-align-right');
+    const alignJustifyBtn = document.getElementById('btn-text-align-justify');
+
+    if (!box) {
+      boldBtn?.classList.remove('active');
+      italicBtn?.classList.remove('active');
+      underlineBtn?.classList.remove('active');
+      strikeBtn?.classList.remove('active');
+      alignLeftBtn?.classList.remove('active');
+      alignCenterBtn?.classList.remove('active');
+      alignRightBtn?.classList.remove('active');
+      alignJustifyBtn?.classList.remove('active');
+      return;
+    }
+
     const targetEl = box.querySelector?.('.textbox-content') || box;
     const cs = window.getComputedStyle(targetEl);
     const fontFamEl = document.getElementById('edit-font-family') || document.getElementById('annot-font-family');
     const fontSizeEl = document.getElementById('edit-font-size') || document.getElementById('annot-font-size');
     const colorEl = document.getElementById('edit-font-color') || document.getElementById('annot-color');
-    const boldBtn = document.getElementById('btn-edit-bold') || document.getElementById('btn-text-bold');
-    const italicBtn = document.getElementById('btn-edit-italic') || document.getElementById('btn-text-italic');
-    const underlineBtn = document.getElementById('btn-edit-underline') || document.getElementById('btn-text-underline');
-    const strikeBtn = document.getElementById('btn-edit-strike') || document.getElementById('btn-text-strike');
 
     if (fontFamEl) {
       const activeFont = targetEl.style.fontFamily || cs.fontFamily;
@@ -1469,12 +1597,86 @@ export class UIController {
       italicBtn.classList.toggle('active', isItalic);
     }
     if (underlineBtn) {
-      const isUnder = (targetEl.style.textDecoration || '').includes('underline');
+      const isUnder = (targetEl.style.textDecoration || cs.textDecoration || '').includes('underline');
       underlineBtn.classList.toggle('active', isUnder);
     }
     if (strikeBtn) {
-      const isStrike = (targetEl.style.textDecoration || '').includes('line-through');
+      const isStrike = (targetEl.style.textDecoration || cs.textDecoration || '').includes('line-through');
       strikeBtn.classList.toggle('active', isStrike);
+    }
+
+    const currentAlign = targetEl.style.textAlign || cs.textAlign || 'left';
+    alignLeftBtn?.classList.toggle('active', currentAlign === 'left');
+    alignCenterBtn?.classList.toggle('active', currentAlign === 'center');
+    alignRightBtn?.classList.toggle('active', currentAlign === 'right');
+    alignJustifyBtn?.classList.toggle('active', currentAlign === 'justify');
+  }
+
+  syncActiveStamp(stamp) {
+    const stampSelect = document.getElementById('annot-stamp');
+    const stampColorInput = document.getElementById('stamp-color');
+    const stampOpacityInput = document.getElementById('stamp-opacity');
+    const stampRotationInput = document.getElementById('stamp-rotation');
+    const btnStampDelete = document.getElementById('btn-stamp-delete');
+
+    if (!stamp) {
+      if (btnStampDelete) btnStampDelete.style.display = 'none';
+      return;
+    }
+
+    if (btnStampDelete) btnStampDelete.style.display = 'inline-flex';
+    const badge = stamp.querySelector('.stamp-badge');
+    if (!badge) return;
+
+    if (stampSelect) {
+      const txt = (badge.textContent || '').trim().toUpperCase();
+      let matched = false;
+      for (let i = 0; i < stampSelect.options.length; i++) {
+        if (stampSelect.options[i].value === txt) {
+          stampSelect.selectedIndex = i;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        stampSelect.value = '';
+      }
+    }
+
+    if (stampColorInput) {
+      const cs = window.getComputedStyle(badge);
+      const colorVal = badge.style.color || cs.color;
+      if (colorVal && colorVal.startsWith('rgb')) {
+        const rgb = colorVal.match(/\d+/g);
+        if (rgb && rgb.length >= 3) {
+          const hex = '#' + ((1 << 24) + (parseInt(rgb[0], 10) << 16) + (parseInt(rgb[1], 10) << 8) + parseInt(rgb[2], 10)).toString(16).slice(1);
+          stampColorInput.value = hex;
+        }
+      } else if (colorVal && colorVal.startsWith('#')) {
+        stampColorInput.value = colorVal;
+      }
+    }
+
+    if (stampOpacityInput) {
+      const cs = window.getComputedStyle(badge);
+      const op = badge.style.opacity || cs.opacity || '0.85';
+      const num = parseFloat(op);
+      // Pick nearest option
+      let closest = stampOpacityInput.options[0]?.value;
+      let minDiff = Infinity;
+      for (let i = 0; i < stampOpacityInput.options.length; i++) {
+        const diff = Math.abs(parseFloat(stampOpacityInput.options[i].value) - num);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closest = stampOpacityInput.options[i].value;
+        }
+      }
+      if (closest) stampOpacityInput.value = closest;
+    }
+
+    if (stampRotationInput) {
+      const rot = badge.dataset.rotation || '-8';
+      stampRotationInput.value = rot;
     }
   }
 

@@ -20,8 +20,10 @@ export class PDFAnnotatorEngine {
 
     this.activeTextBox = null;
     this.activeInPlaceSpan = null;
+    this.activeStamp = null;
     this.inPlaceEdits = new Map(); // Map<pageNum, Map<span, editData>>
     this.onActiveTextBoxChange = options.onActiveTextBoxChange || (() => {});
+    this.onActiveStampChange = options.onActiveStampChange || (() => {});
     
     // Store annotations per page
     // Map<pageNum, Array<AnnotationObject>>
@@ -410,7 +412,7 @@ export class PDFAnnotatorEngine {
     this.redoStack = [];
   }
 
-  _addTextBox(pageNum, x, y, initialText = 'Click to edit text') {
+  _addTextBox(pageNum, x, y, initialText = '') {
     const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     if (!wrapper) return;
 
@@ -422,6 +424,7 @@ export class PDFAnnotatorEngine {
     const contentArea = document.createElement('div');
     contentArea.className = 'textbox-content';
     contentArea.contentEditable = 'true';
+    contentArea.dataset.placeholder = 'Type text here...';
     contentArea.style.fontSize = `${this.fontSize}px`;
     contentArea.style.fontFamily = this.fontFamily;
     contentArea.style.fontWeight = this.fontWeight;
@@ -469,6 +472,13 @@ export class PDFAnnotatorEngine {
       selectThisBox();
     };
 
+    contentArea.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        contentArea.blur();
+      }
+    });
+
     contentArea.onblur = () => {
       if (!contentArea.innerText.trim()) {
         box.remove();
@@ -485,14 +495,16 @@ export class PDFAnnotatorEngine {
     contentArea.focus();
     selectThisBox();
 
-    // Select text on creation
-    try {
-      const range = document.createRange();
-      range.selectNodeContents(contentArea);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    } catch (_) {}
+    // If initial text is present, select it; otherwise leave caret ready for immediate typing
+    if (initialText) {
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(contentArea);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (_) {}
+    }
 
     this.undoStack.push({
       type: 'element',
@@ -555,7 +567,95 @@ export class PDFAnnotatorEngine {
       this.activeInPlaceSpan.classList.remove('inline-editing');
       this.activeInPlaceSpan = null;
     }
+    if (this.activeStamp) {
+      this.activeStamp.classList.remove('selected');
+      this.activeStamp = null;
+      this.onActiveStampChange(null);
+    }
     this.onActiveTextBoxChange(null);
+  }
+
+  setActiveStamp(stamp) {
+    if (this.activeStamp && this.activeStamp !== stamp) {
+      this.activeStamp.classList.remove('selected');
+    }
+    this.activeStamp = stamp;
+    if (stamp) {
+      stamp.classList.add('selected');
+      if (this.activeTextBox) {
+        this.activeTextBox.classList.remove('active');
+        this.activeTextBox = null;
+        this.onActiveTextBoxChange(null);
+      }
+    }
+    this.onActiveStampChange(stamp);
+  }
+
+  deleteActiveStamp() {
+    if (!this.activeStamp) return;
+    const stamp = this.activeStamp;
+    const pageWrapper = stamp.closest('.page-wrapper');
+    const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+    this.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [stamp]
+    });
+    stamp.remove();
+    this.setActiveStamp(null);
+  }
+
+  setStampText(text) {
+    if (!this.activeStamp || !text) return;
+    const badge = this.activeStamp.querySelector('.stamp-badge');
+    if (badge) {
+      badge.textContent = text;
+      const cleanClass = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+      badge.className = `stamp-badge stamp-${cleanClass}`;
+    }
+  }
+
+  setStampColor(color) {
+    if (!this.activeStamp || !color) return;
+    const badge = this.activeStamp.querySelector('.stamp-badge');
+    if (badge) {
+      badge.style.color = color;
+      badge.style.borderColor = color;
+    }
+  }
+
+  setStampOpacity(opacity) {
+    if (!this.activeStamp) return;
+    const badge = this.activeStamp.querySelector('.stamp-badge');
+    if (badge) {
+      badge.style.opacity = opacity;
+    }
+  }
+
+  setStampFontSize(size) {
+    const parsed = parseInt(size, 10);
+    if (!this.activeStamp || isNaN(parsed) || parsed < 8) return;
+    const badge = this.activeStamp.querySelector('.stamp-badge');
+    if (badge) {
+      badge.style.fontSize = `${parsed}px`;
+    }
+  }
+
+  setStampRotation(deg) {
+    if (!this.activeStamp) return;
+    const badge = this.activeStamp.querySelector('.stamp-badge');
+    if (badge) {
+      badge.style.transform = `rotate(${deg}deg)`;
+      badge.dataset.rotation = deg;
+    }
+  }
+
+  setStampFontFamily(font) {
+    if (!this.activeStamp || !font) return;
+    const badge = this.activeStamp.querySelector('.stamp-badge');
+    if (badge) {
+      badge.style.fontFamily = font;
+    }
   }
 
   recordInPlaceEdit(span, pageNum, pageWrapper) {
@@ -630,15 +730,17 @@ export class PDFAnnotatorEngine {
   toggleBold() {
     const el = this._getTargetElement();
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    let handled = false;
     if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
       document.execCommand('bold', false, null);
+      handled = true;
     }
     const isBold = el
       ? (el.style.fontWeight === 'bold' || parseInt(window.getComputedStyle(el).fontWeight, 10) >= 700)
       : (this.fontWeight === 'bold');
     const newVal = isBold ? 'normal' : 'bold';
     this.fontWeight = newVal;
-    if (el) {
+    if (el && !handled) {
       el.style.fontWeight = newVal;
     }
     return newVal === 'bold';
@@ -647,15 +749,17 @@ export class PDFAnnotatorEngine {
   toggleItalic() {
     const el = this._getTargetElement();
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    let handled = false;
     if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
       document.execCommand('italic', false, null);
+      handled = true;
     }
     const isItalic = el
       ? (el.style.fontStyle === 'italic')
       : (this.fontStyle === 'italic');
     const newVal = isItalic ? 'normal' : 'italic';
     this.fontStyle = newVal;
-    if (el) {
+    if (el && !handled) {
       el.style.fontStyle = newVal;
     }
     return newVal === 'italic';
@@ -666,15 +770,16 @@ export class PDFAnnotatorEngine {
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
     if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
       document.execCommand('underline', false, null);
+      try {
+        const state = document.queryCommandState('underline');
+        return Boolean(state);
+      } catch (_) {}
     }
-    const currentDec = el ? (el.style.textDecoration || '') : this.textDecoration;
+    const currentDec = (el ? el.style.textDecoration : this.textDecoration) || '';
     const hasUnder = currentDec.includes('underline');
-    let newDec = '';
-    if (hasUnder) {
-      newDec = currentDec.replace('underline', '').trim();
-    } else {
-      newDec = `${currentDec} underline`.trim();
-    }
+    const newDec = hasUnder
+      ? currentDec.replace(/underline/g, '').replace(/\s+/g, ' ').trim()
+      : `${currentDec} underline`.trim();
     this.textDecoration = newDec || 'none';
     if (el) {
       el.style.textDecoration = newDec || 'none';
@@ -684,23 +789,48 @@ export class PDFAnnotatorEngine {
 
   toggleStrikethrough() {
     const el = this._getTargetElement();
-    if (!el) return false;
-    const currentDec = el.style.textDecoration || '';
-    const hasStrike = currentDec.includes('line-through');
-    let newDec = '';
-    if (hasStrike) {
-      newDec = currentDec.replace('line-through', '').trim();
-    } else {
-      newDec = `${currentDec} line-through`.trim();
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
+      document.execCommand('strikeThrough', false, null);
+      try {
+        const state = document.queryCommandState('strikeThrough');
+        return Boolean(state);
+      } catch (_) {}
     }
-    el.style.textDecoration = newDec || 'none';
+    const currentDec = (el ? el.style.textDecoration : this.textDecoration) || '';
+    const hasStrike = currentDec.includes('line-through');
+    const newDec = hasStrike
+      ? currentDec.replace(/line-through/g, '').replace(/\s+/g, ' ').trim()
+      : `${currentDec} line-through`.trim();
+    this.textDecoration = newDec || 'none';
+    if (el) {
+      el.style.textDecoration = newDec || 'none';
+    }
     return !hasStrike;
   }
 
   setTextAlign(align) {
     this.textAlign = align;
     const el = this._getTargetElement();
-    if (el) {
+    if (!el) return;
+
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    let handled = false;
+    if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
+      const cmdMap = {
+        left: 'justifyLeft',
+        center: 'justifyCenter',
+        right: 'justifyRight',
+        justify: 'justifyFull'
+      };
+      const cmd = cmdMap[align];
+      if (cmd) {
+        try {
+          handled = document.execCommand(cmd, false, null);
+        } catch (_) {}
+      }
+    }
+    if (!handled) {
       el.style.textAlign = align;
     }
   }
@@ -738,9 +868,24 @@ export class PDFAnnotatorEngine {
     }
   }
 
-  placeStamp(pageNum, stampType = 'APPROVED', x = 100, y = 100) {
+  placeStamp(pageNum, stampType = 'APPROVED', x = null, y = null) {
     const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     if (!wrapper) return;
+
+    if (x === null || y === null) {
+      const container = document.getElementById('viewer-container');
+      if (container) {
+        const contRect = container.getBoundingClientRect();
+        const wrapRect = wrapper.getBoundingClientRect();
+        const viewCenterY = contRect.top + contRect.height / 2;
+        const localY = viewCenterY - wrapRect.top - 35;
+        y = Math.max(30, Math.min(wrapper.clientHeight - 90, localY));
+        x = Math.max(30, Math.round((wrapper.clientWidth - 200) / 2));
+      } else {
+        x = 100;
+        y = 100;
+      }
+    }
 
     const stamp = document.createElement('div');
     stamp.className = 'placed-stamp';
@@ -748,14 +893,45 @@ export class PDFAnnotatorEngine {
     stamp.style.top = `${y}px`;
 
     const badge = document.createElement('div');
-    badge.className = `stamp-badge stamp-${stampType.toLowerCase()}`;
+    const cleanClass = stampType.toLowerCase().replace(/[^a-z0-9]/g, '');
+    badge.className = `stamp-badge stamp-${cleanClass}`;
     badge.textContent = stampType;
+    badge.dataset.rotation = '-8';
     stamp.appendChild(badge);
 
-    // Make draggable
+    // Floating Delete Button (✕)
+    const btnDel = document.createElement('button');
+    btnDel.className = 'textbox-delete-btn';
+    btnDel.contentEditable = 'false';
+    btnDel.innerHTML = '&times;';
+    btnDel.title = 'Delete Stamp';
+    btnDel.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.undoStack.push({
+        type: 'element',
+        pageNum,
+        elements: [stamp]
+      });
+      stamp.remove();
+      if (this.activeStamp === stamp) {
+        this.setActiveStamp(null);
+      }
+    };
+    stamp.appendChild(btnDel);
+
+    // Stamp selection on click
+    stamp.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.setActiveStamp(stamp);
+    });
+
+    // Make draggable & resizable
     this._makeDraggable(stamp, wrapper);
     this._makeResizable(stamp, wrapper);
     wrapper.appendChild(stamp);
+
+    this.setActiveStamp(stamp);
 
     this.undoStack.push({
       type: 'element',
@@ -763,6 +939,7 @@ export class PDFAnnotatorEngine {
       elements: [stamp]
     });
     this.redoStack = [];
+    return stamp;
   }
 
   undo() {
@@ -979,12 +1156,21 @@ export class PDFAnnotatorEngine {
           if (badge) {
             compCtx.save();
             compCtx.translate(sx + sw / 2, sy + sh / 2);
-            compCtx.rotate(-8 * Math.PI / 180);
-            compCtx.font = `bold ${Math.round(20 * scaleX)}px sans-serif`;
-            compCtx.strokeStyle = window.getComputedStyle(badge).color;
+            const rotDeg = parseFloat(badge.dataset.rotation || -8);
+            compCtx.rotate(rotDeg * Math.PI / 180);
+
+            const badgeCs = window.getComputedStyle(badge);
+            const parsedFSize = parseFloat(badge.style.fontSize || badgeCs.fontSize) || 20;
+            const fFamily = badge.style.fontFamily || badgeCs.fontFamily || 'sans-serif';
+            const stampColor = badge.style.color || badgeCs.color || '#dc2626';
+            const stampOpacity = parseFloat(badge.style.opacity || badgeCs.opacity) || 0.85;
+
+            compCtx.globalAlpha = stampOpacity;
+            compCtx.font = `bold ${Math.round(parsedFSize * scaleX)}px ${fFamily}`;
+            compCtx.strokeStyle = stampColor;
             compCtx.lineWidth = 3 * scaleX;
             compCtx.strokeRect(-sw / 2, -sh / 2, sw, sh);
-            compCtx.fillStyle = compCtx.strokeStyle;
+            compCtx.fillStyle = stampColor;
             compCtx.textAlign = 'center';
             compCtx.textBaseline = 'middle';
             compCtx.fillText(badge.textContent, 0, 0);
@@ -1152,8 +1338,9 @@ export class PDFAnnotatorEngine {
 
     // Mouse drag handlers
     element.addEventListener('mousedown', (e) => {
+      if (document.body.classList.contains('mode-view')) return;
       if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn') || e.target.classList.contains('stamp-resize-handle')) return;
-      if (element.classList.contains('annotation-textbox') && document.activeElement === element && e.target === element) {
+      if (e.target.closest('.textbox-content') || e.target.isContentEditable) {
         return;
       }
       e.stopPropagation();
@@ -1172,7 +1359,9 @@ export class PDFAnnotatorEngine {
 
     // Touch drag handlers for Android and mobile
     element.addEventListener('touchstart', (e) => {
+      if (document.body.classList.contains('mode-view')) return;
       if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn') || e.target.classList.contains('stamp-resize-handle')) return;
+      if (e.target.closest('.textbox-content') || e.target.isContentEditable) return;
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         startDrag(touch.clientX, touch.clientY);

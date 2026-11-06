@@ -62,6 +62,9 @@ class PersonalPDFApp {
       container: viewerContainer,
       onActiveTextBoxChange: (box) => {
         if (this.ui) this.ui.syncActiveTextBox(box);
+      },
+      onActiveStampChange: (stamp) => {
+        if (this.ui) this.ui.syncActiveStamp(stamp);
       }
     });
 
@@ -429,7 +432,25 @@ class PersonalPDFApp {
 
     // Global Keyboard Shortcuts (Adobe Acrobat compatible)
     window.addEventListener('keydown', (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (
+        e.target.tagName === 'INPUT' ||
+        e.target.tagName === 'TEXTAREA' ||
+        e.target.isContentEditable ||
+        e.target.closest('[contenteditable="true"], .annotation-textbox, .textbox-content')
+      ) {
+        // Allow text editing, arrow key navigation, Backspace, Delete to stay inside the text editor
+        return;
+      }
+
+      // If active stamp is selected, Delete or Backspace key deletes it
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.annotator?.activeStamp) {
+          e.preventDefault();
+          this.annotator.deleteActiveStamp();
+          if (this.ui) this.ui.setStatus('Stamp removed');
+          return;
+        }
+      }
 
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'o' || e.key === 'O') {
