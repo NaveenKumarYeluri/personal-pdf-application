@@ -144,13 +144,11 @@
   color: transparent !important;
 }
 
-/* Edit PDF Content In-Place Mode (Adobe Acrobat Style) */
+/* Edit PDF Content In-Place Mode & Active Search Matches (Adobe Acrobat Style) */
 .page-wrapper.editing-content .textLayer,
+.page-wrapper.has-search-matches .textLayer,
 .textLayer.has-modifications,
-.textLayer.has-search-matches,
-.textLayer:has(.in-place-modified),
-.textLayer:has(.inline-editing),
-.textLayer:has(.search-highlight) {
+.textLayer.has-search-matches {
   opacity: 1 !important;
   z-index: 10 !important;
 }
@@ -222,27 +220,24 @@ body.mode-view .textLayer span.inline-editing {
   cursor: default !important;
 }
 
-/* Search Highlights (Adobe Acrobat Style) */
+/* Search Highlights (Adobe Acrobat Style - High Visibility) */
 .textLayer .search-highlight,
 .textLayer .highlight {
-  background-color: #fde047 !important;
+  background-color: rgba(254, 240, 138, 0.85) !important;
   color: transparent !important;
-  opacity: 0.65 !important;
   border-radius: 2px !important;
-  box-shadow: 0 0 0 1px rgba(202, 138, 4, 0.6) !important;
-  mix-blend-mode: multiply !important;
+  box-shadow: 0 0 0 1px #eab308 !important;
   transition: all 0.15s ease;
-  cursor: text;
+  cursor: pointer;
+  pointer-events: auto !important;
 }
 
 .textLayer .search-highlight.active-match,
 .textLayer .highlight.selected {
-  background-color: #fb923c !important;
+  background-color: rgba(251, 146, 60, 0.92) !important;
   color: transparent !important;
-  opacity: 0.85 !important;
-  box-shadow: 0 0 0 2px #ea580c !important;
-  mix-blend-mode: multiply !important;
-  z-index: 20 !important;
+  box-shadow: 0 0 0 2px #ea580c, 0 2px 6px rgba(234, 88, 12, 0.4) !important;
+  z-index: 25 !important;
 }
 
 /* Print Stylesheet (Clean, full-width, multi-page printing without UI chrome clipping) */

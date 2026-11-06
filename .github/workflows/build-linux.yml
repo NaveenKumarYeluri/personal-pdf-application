@@ -38,6 +38,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          args: --bundles appimage,deb
           tagName: v__VERSION__
           releaseName: 'v__VERSION__'
           releaseBody: 'Automated personal build'

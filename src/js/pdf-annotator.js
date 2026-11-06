@@ -568,6 +568,7 @@ export class PDFAnnotatorEngine {
       span,
       originalText: span._originalText,
       newText: span.textContent,
+      normRect: span._normRect,
       pageNum
     });
     this.undoStack.push({

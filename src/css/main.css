@@ -548,28 +548,29 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
+  min-width: 32px;
   width: auto !important;
-  height: 28px;
+  height: 30px;
   padding: 0 10px;
   box-sizing: border-box;
   white-space: nowrap;
   gap: 6px;
-  border-radius: 4px;
+  border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: all 0.15s ease;
   font-size: 12px;
   font-weight: 500;
   flex-shrink: 0;
   box-shadow: none !important;
+  outline: none !important;
 }
 
 .tool-btn:hover {
   background-color: var(--bg-tertiary);
-  border-color: var(--border-color);
+  border-color: var(--border-subtle);
   color: var(--text-primary);
   box-shadow: none !important;
 }
@@ -578,6 +579,7 @@ body {
   background-color: var(--bg-tertiary);
   border-color: var(--accent-red);
   color: var(--accent-red);
+  font-weight: 600;
   box-shadow: none !important;
 }
 

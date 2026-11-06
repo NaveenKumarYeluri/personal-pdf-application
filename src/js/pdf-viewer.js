@@ -417,12 +417,15 @@ export class PDFViewerEngine {
     this.currentSearchQuery = '';
     this.searchResults = [];
     this.currentSearchIndex = -1;
-    const target = this.pagesContainer || this.container;
+    const target = this.pagesContainer || this.container || document;
     target.querySelectorAll('.search-highlight, .active-match').forEach(el => {
       el.classList.remove('search-highlight', 'active-match', 'highlight', 'selected');
     });
     target.querySelectorAll('.has-search-matches').forEach(tl => {
       tl.classList.remove('has-search-matches');
+    });
+    document.querySelectorAll('.page-wrapper.has-search-matches').forEach(pw => {
+      pw.classList.remove('has-search-matches');
     });
   }
 
@@ -473,6 +476,8 @@ export class PDFViewerEngine {
 
     if (hasMatches) {
       textLayer.classList.add('has-search-matches');
+      const pw = textLayer.closest('.page-wrapper');
+      if (pw) pw.classList.add('has-search-matches');
     }
   }
 
@@ -487,11 +492,11 @@ export class PDFViewerEngine {
     const searchRegex = this._buildSearchRegex(q);
     if (!searchRegex) return { total: 0, current: 0 };
 
-    const target = this.pagesContainer || this.container;
+    const target = this.pagesContainer || this.container || document;
 
     // Search across rendered textLayers for precise DOM highlighting & instant centering
     for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
-      const pageWrapper = target.querySelector(`#page-wrapper-${pageNum}`);
+      const pageWrapper = document.getElementById(`page-wrapper-${pageNum}`);
       if (!pageWrapper) continue;
       const textLayer = pageWrapper.querySelector('.textLayer');
       if (!textLayer) continue;
@@ -536,6 +541,7 @@ export class PDFViewerEngine {
 
       if (pageHasMatches) {
         textLayer.classList.add('has-search-matches');
+        pageWrapper.classList.add('has-search-matches');
       }
     }
 
@@ -579,23 +585,13 @@ export class PDFViewerEngine {
 
   _scrollToMatch(match) {
     const pageWrapper = document.getElementById(`page-wrapper-${match.pageNum}`);
-    if (!pageWrapper || !this.container) return;
-
-    const containerRect = this.container.getBoundingClientRect();
-    let targetScrollTop = 0;
+    if (!pageWrapper) return;
 
     if (match.element && match.element.isConnected) {
-      const elemRect = match.element.getBoundingClientRect();
-      targetScrollTop = (elemRect.top - containerRect.top) + this.container.scrollTop - (containerRect.height / 2) + (elemRect.height / 2);
+      match.element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     } else {
-      const pageRect = pageWrapper.getBoundingClientRect();
-      targetScrollTop = (pageRect.top - containerRect.top) + this.container.scrollTop - 40;
+      pageWrapper.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
     }
-
-    this.container.scrollTo({
-      top: Math.max(0, targetScrollTop),
-      behavior: 'smooth'
-    });
 
     this.currentPage = match.pageNum;
     this.onPageChange(match.pageNum, this.totalPages);

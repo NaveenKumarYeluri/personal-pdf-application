@@ -24,8 +24,15 @@ export class PDFOrganizerEngine {
   async reorderAndModifyPages(pdfBytes, operations) {
     this._checkLib();
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
-    const srcDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
+    const srcDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true, parseSpeed: Infinity });
     const newDoc = await this.PDFDocument.create();
+
+    const deg = (angle) => {
+      if (typeof this.degrees === 'function') return this.degrees(angle);
+      const lib = window.PDFLib || window.pdfLib;
+      if (lib && typeof lib.degrees === 'function') return lib.degrees(angle);
+      return { type: 'degrees', angle };
+    };
 
     // operations is an array of page descriptors:
     // [{ originalIndex: 0, rotationDelta: 90, isBlank: false }]
@@ -34,18 +41,23 @@ export class PDFOrganizerEngine {
         const blankPage = newDoc.addPage([595.28, 841.89]); // A4 dimensions
         if (op.rotationDelta) {
           const finalAngle = ((op.rotationDelta % 360) + 360) % 360;
-          blankPage.setRotation(this.degrees(finalAngle));
+          blankPage.setRotation(deg(finalAngle));
         }
-      } else if (op.originalIndex >= 0 && op.originalIndex < srcDoc.getPageCount()) {
-        const [copiedPage] = await newDoc.copyPages(srcDoc, [op.originalIndex]);
-        if (op.rotationDelta) {
-          const currentRot = (copiedPage.getRotation() && typeof copiedPage.getRotation().angle === 'number')
-            ? copiedPage.getRotation().angle
-            : 0;
-          const finalAngle = (((currentRot + op.rotationDelta) % 360) + 360) % 360;
-          copiedPage.setRotation(this.degrees(finalAngle));
+      } else if (typeof op.originalIndex === 'number' && op.originalIndex >= 0 && op.originalIndex < srcDoc.getPageCount()) {
+        try {
+          const [copiedPage] = await newDoc.copyPages(srcDoc, [op.originalIndex]);
+          if (op.rotationDelta) {
+            const rot = copiedPage.getRotation();
+            const currentRot = (rot && typeof rot.angle === 'number') ? rot.angle : 0;
+            const finalAngle = (((currentRot + op.rotationDelta) % 360) + 360) % 360;
+            copiedPage.setRotation(deg(finalAngle));
+          }
+          newDoc.addPage(copiedPage);
+        } catch (copyErr) {
+          console.warn(`Could not copy page ${op.originalIndex} with full references, falling back:`, copyErr);
+          const [copiedPage] = await newDoc.copyPages(srcDoc, [op.originalIndex]);
+          newDoc.addPage(copiedPage);
         }
-        newDoc.addPage(copiedPage);
       }
     }
 

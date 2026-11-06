@@ -761,13 +761,13 @@ export class UIController {
   _renderViewTools() {
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
-        <button id="btn-tool-select" class="tool-btn active" title="Text Selection Tool (Select & highlight text)">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
-          <span>Select Text</span>
-        </button>
         <button id="btn-tool-hand" class="tool-btn" title="Hand / Pan Tool (Click & drag to move pages)">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v6M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8M6 14a4 4 0 0 0 4 4h4a6 6 0 0 0 6-6V9a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2"/></svg>
           <span>Pan</span>
+        </button>
+        <button id="btn-tool-select" class="tool-btn active" title="Text Selection Tool (Select & highlight text)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+          <span>Select Text</span>
         </button>
       </div>
       <div class="divider"></div>

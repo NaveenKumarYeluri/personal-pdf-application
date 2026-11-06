@@ -27,6 +27,7 @@ class PersonalPDFApp {
     this._bindWatermarkEvents();
     this._setupElectronBridge();
     this._initBackButton();
+    this._initAppStatePersistence();
     this._restoreSession();
 
     // Check if running in native desktop shell
@@ -358,19 +359,25 @@ class PersonalPDFApp {
       }, 250);
     };
 
-    searchInput.onkeydown = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        searchInput.value = '';
-        this.viewer.clearSearch();
-        searchCount.textContent = '0/0';
+    const blurSearchInput = () => {
+      searchInput.value = '';
+      this.viewer.clearSearch();
+      searchCount.textContent = '0/0';
+      searchInput.blur();
+      setTimeout(() => {
         searchInput.blur();
         if (document.activeElement) document.activeElement.blur();
         const container = document.getElementById('viewer-container');
-        if (container) {
-          container.focus();
-        }
-        window.focus();
+        if (container) container.focus();
+        document.body.focus();
+      }, 0);
+    };
+
+    searchInput.onkeydown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        blurSearchInput();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -378,6 +385,14 @@ class PersonalPDFApp {
         } else {
           btnSearchNext.click();
         }
+      }
+    };
+
+    searchInput.onkeyup = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        blurSearchInput();
       }
     };
 
@@ -452,10 +467,24 @@ class PersonalPDFApp {
     // Save initial text once
     if (span._originalText === undefined) {
       span._originalText = span.textContent;
-      const b = span.getBoundingClientRect();
-      span._originalWidth = b.width;
-      span._originalHeight = b.height;
+      const wrapRect = pageWrapper.getBoundingClientRect();
+      const sRect = span.getBoundingClientRect();
+      const wW = wrapRect.width || 1;
+      const wH = wrapRect.height || 1;
+      span._normRect = {
+        x: Math.max(0, (sRect.left - wrapRect.left) / wW),
+        y: Math.max(0, (sRect.top - wrapRect.top) / wH),
+        w: Math.min(1, Math.max(0.005, sRect.width / wW)),
+        h: Math.min(1, Math.max(0.005, sRect.height / wH))
+      };
+      span._originalWidth = sRect.width;
+      span._originalHeight = sRect.height;
     }
+
+    // Preserve native PDF font family and size
+    const compStyle = window.getComputedStyle(span);
+    if (!span.style.fontFamily) span.style.fontFamily = compStyle.fontFamily;
+    if (!span.style.fontSize) span.style.fontSize = compStyle.fontSize;
 
     // Set as active in-place span in annotator engine
     this.annotator.setActiveInPlaceSpan(span);
@@ -508,24 +537,20 @@ class PersonalPDFApp {
             span.style.minWidth = `${span._originalWidth}px`;
           }
 
-          // Directly erase original text pixels from underlying PDF canvas
+          // Directly erase original text pixels from underlying PDF canvas using normalized coordinates
           const pageCanvas = pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
-          if (pageCanvas) {
+          if (pageCanvas && span._normRect) {
             const canvasCtx = pageCanvas.getContext('2d');
-            const cScaleX = pageCanvas.width / pageWrapper.clientWidth;
-            const cScaleY = pageCanvas.height / pageWrapper.clientHeight;
-            const wrapRect = pageWrapper.getBoundingClientRect();
-            const sRect = span.getBoundingClientRect();
-            const maskW = Math.max(span._originalWidth || 0, sRect.width);
-            const maskH = Math.max(span._originalHeight || 0, sRect.height);
-            const cx = (sRect.left - wrapRect.left) * cScaleX;
-            const cy = (sRect.top - wrapRect.top) * cScaleY;
+            const normX = span._normRect.x;
+            const normY = span._normRect.y;
+            const normW = Math.max(span._normRect.w, (span.offsetWidth || 0) / (pageWrapper.clientWidth || 1));
+            const normH = Math.max(span._normRect.h, (span.offsetHeight || 0) / (pageWrapper.clientHeight || 1));
             canvasCtx.fillStyle = '#ffffff';
             canvasCtx.fillRect(
-              Math.floor(cx) - 2,
-              Math.floor(cy) - 2,
-              Math.ceil(maskW * cScaleX) + 4,
-              Math.ceil(maskH * cScaleY) + 4
+              Math.floor(normX * pageCanvas.width) - 2,
+              Math.floor(normY * pageCanvas.height) - 2,
+              Math.ceil(normW * pageCanvas.width) + 4,
+              Math.ceil(normH * pageCanvas.height) + 4
             );
           }
 
@@ -576,22 +601,19 @@ class PersonalPDFApp {
             span.style.minWidth = `${span._originalWidth}px`;
           }
 
-          if (pageCanvas && pageWrapper) {
+          const normRect = edit.normRect || origSpan._normRect || span._normRect;
+          if (pageCanvas && pageWrapper && normRect) {
             const canvasCtx = pageCanvas.getContext('2d');
-            const cScaleX = pageCanvas.width / pageWrapper.clientWidth;
-            const cScaleY = pageCanvas.height / pageWrapper.clientHeight;
-            const wrapRect = pageWrapper.getBoundingClientRect();
-            const sRect = span.getBoundingClientRect();
-            const maskW = Math.max(span._originalWidth || 0, sRect.width);
-            const maskH = Math.max(span._originalHeight || 0, sRect.height);
-            const cx = (sRect.left - wrapRect.left) * cScaleX;
-            const cy = (sRect.top - wrapRect.top) * cScaleY;
+            const normX = normRect.x;
+            const normY = normRect.y;
+            const normW = Math.max(normRect.w, (span.offsetWidth || 0) / (pageWrapper.clientWidth || 1));
+            const normH = Math.max(normRect.h, (span.offsetHeight || 0) / (pageWrapper.clientHeight || 1));
             canvasCtx.fillStyle = '#ffffff';
             canvasCtx.fillRect(
-              Math.floor(cx) - 2,
-              Math.floor(cy) - 2,
-              Math.ceil(maskW * cScaleX) + 4,
-              Math.ceil(maskH * cScaleY) + 4
+              Math.floor(normX * pageCanvas.width) - 2,
+              Math.floor(normY * pageCanvas.height) - 2,
+              Math.ceil(normW * pageCanvas.width) + 4,
+              Math.ceil(normH * pageCanvas.height) + 4
             );
           }
 
@@ -880,6 +902,58 @@ class PersonalPDFApp {
     try {
       history.pushState({ app: 'personal-pdf' }, '');
     } catch (_) {}
+  }
+
+  _initAppStatePersistence() {
+    const persistActiveDoc = async () => {
+      if (this.currentPdfBytes && this.currentDocName && this.storage) {
+        try {
+          const currentPage = this.viewer ? (this.viewer.currentPage || 1) : 1;
+          await this.storage.saveActiveDocument(this.currentDocName, this.currentPdfBytes, currentPage);
+          console.log('[Session] Flushed active document to storage on backgrounding');
+        } catch (e) {
+          console.warn('[Session] Failed to persist on pause:', e);
+        }
+      }
+    };
+
+    const handleResume = async () => {
+      try {
+        if (!this.currentPdfBytes) {
+          console.log('[Session] Resumed with empty memory: restoring full document session');
+          await this._restoreSession();
+        } else if (this.viewer && this.viewer.pdfDoc) {
+          console.log('[Session] Resumed from background: re-rendering pages to restore GPU surfaces');
+          await this.viewer.renderAllPages();
+        }
+      } catch (e) {
+        console.warn('[Session] Failed to recover session on resume:', e);
+      }
+    };
+
+    // 1. Capacitor native app state change (Android Activity pause/resume)
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+      window.Capacitor.Plugins.App.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+          handleResume();
+        } else {
+          persistActiveDoc();
+        }
+      });
+    }
+
+    // 2. Web visibility API & pagehide (Standard browser and WebView background events)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        persistActiveDoc();
+      } else if (document.visibilityState === 'visible') {
+        handleResume();
+      }
+    });
+
+    window.addEventListener('pagehide', () => {
+      persistActiveDoc();
+    });
   }
 
   _handleBackPress() {
