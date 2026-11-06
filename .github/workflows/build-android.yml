@@ -56,32 +56,13 @@ jobs:
           fi
 
       - name: Configure Deterministic Android Signing & Versioning
-        working-directory: android
         run: |
           # 1. Update versionCode and versionName
-          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/" app/build.gradle
-          sed -i -E 's/versionName "[^"]+"/versionName "1.0.${{ github.run_number }}"/' app/build.gradle
+          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i -E 's/versionName "[^"]+"/versionName "1.0.${{ github.run_number }}"/' android/app/build.gradle
 
           # 2. Inject explicit debug signing config into app/build.gradle
-          python3 -c "
-with open('app/build.gradle', 'r') as f:
-    c = f.read()
-if 'signingConfigs' not in c:
-    sig = '''
-    signingConfigs {
-        debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-        }
-    }'''
-    c = c.replace('android {', 'android {\n' + sig, 1)
-    c = c.replace('buildTypes {', 'buildTypes {\n        debug {\n            signingConfig signingConfigs.debug\n        }', 1)
-    with open('app/build.gradle', 'w') as f:
-        f.write(c)
-    print('Successfully injected persistent signing configuration into app/build.gradle')
-"
+          python3 scripts/configure_android_signing.py
 
       - name: Build Android APK with Gradle
         working-directory: android
