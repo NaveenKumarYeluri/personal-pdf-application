@@ -6,8 +6,9 @@
 import { healPdfTextLigatures } from './pdf-viewer.js';
 
 export class PDFExportEngine {
-  constructor(viewer) {
+  constructor(viewer, app = null) {
     this.viewer = viewer;
+    this.app = app || (typeof window !== 'undefined' ? window.app : null);
   }
 
   async exportPageAsImage(pageNum, format = 'image/png') {
@@ -337,9 +338,13 @@ export class PDFExportEngine {
   }
 
   printDocument() {
-    if (!this.app.viewer || !this.app.viewer.pdfDoc) {
-      if (this.app.ui && this.app.ui.showToast) {
-        this.app.ui.showToast('Please open a PDF document to print', 'warning');
+    const viewer = this.viewer || this.app?.viewer || (typeof window !== 'undefined' ? window.app?.viewer : null);
+    if (!viewer || !viewer.pdfDoc) {
+      const ui = this.app?.ui || (typeof window !== 'undefined' ? window.app?.ui : null);
+      if (ui && ui.showToast) {
+        ui.showToast('Please open a PDF document to print', 'warning');
+      } else {
+        alert('Please open a PDF document to print');
       }
       return;
     }

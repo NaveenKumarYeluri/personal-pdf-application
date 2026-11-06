@@ -222,8 +222,8 @@
 .textLayer span.inline-editing *::selection,
 .textLayer span.in-place-modified::selection,
 .textLayer span.in-place-modified *::selection {
-  background-color: #2563eb !important;
-  color: #ffffff !important;
+  background-color: rgba(59, 130, 246, 0.45) !important;
+  color: #111827 !important;
 }
 
 /* Modified text spans persist seamlessly across View & Edit modes */
@@ -317,6 +317,10 @@ body.mode-view .textLayer span.inline-editing {
   .tab-close,
   .acrobat-doc-tab,
   .stamp-resize-handle,
+  .element-resize-handle,
+  .element-rotate-handle,
+  .element-rotate-line,
+  .element-floating-bar,
   .textbox-delete-btn,
   .bookmark-delete-btn,
   .desktop-only,

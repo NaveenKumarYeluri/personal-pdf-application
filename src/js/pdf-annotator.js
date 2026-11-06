@@ -1300,12 +1300,21 @@ export class PDFAnnotatorEngine {
     this._deselectAllElements();
     if (element) {
       element.classList.add('element-selected');
+      if (typeof element._updateBar === 'function') {
+        element._updateBar();
+      }
     }
   }
 
   _deselectAllElements() {
     document.querySelectorAll('.element-selected').forEach(el => {
       el.classList.remove('element-selected');
+      if (typeof el._updateBar === 'function') {
+        el._updateBar();
+      }
+    });
+    document.querySelectorAll('.element-floating-bar').forEach(bar => {
+      bar.style.display = 'none';
     });
   }
 
@@ -1351,6 +1360,10 @@ export class PDFAnnotatorEngine {
       element.style.left = `${initialX + dx}px`;
       element.style.top = `${initialY + dy}px`;
 
+      if (typeof element._updateBar === 'function') {
+        element._updateBar();
+      }
+
       // Live cross-page reparenting while dragging across pages
       const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
       const targetWrapper = elementsAtPoint.find(el => el.classList && el.classList.contains('page-wrapper'));
@@ -1387,12 +1400,15 @@ export class PDFAnnotatorEngine {
           targetWrapper.appendChild(element);
         }
       }
+
+      if (typeof element._updateBar === 'function') {
+        element._updateBar();
+      }
     };
 
     // Mouse drag handlers: only drag when selected, not locked, and not in view mode
     element.addEventListener('mousedown', (e) => {
       if (document.body.classList.contains('mode-view')) return;
-      if (element.dataset.locked === 'true') return;
       if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn')) {
         return;
       }
@@ -1401,11 +1417,14 @@ export class PDFAnnotatorEngine {
       }
       e.stopPropagation();
 
-      // If not yet selected, select it on first click and do not move yet
+      // Always select element on click so floating toolbar with unlock & delete buttons is revealed
       const wasSelected = element.classList.contains('element-selected');
       if (!wasSelected) {
         this._selectElement(element);
       }
+
+      // If locked, prevent movement but leave element selected
+      if (element.dataset.locked === 'true') return;
 
       startDrag(e.clientX, e.clientY);
 
@@ -1423,7 +1442,6 @@ export class PDFAnnotatorEngine {
     // Touch drag handlers for Android and mobile
     element.addEventListener('touchstart', (e) => {
       if (document.body.classList.contains('mode-view')) return;
-      if (element.dataset.locked === 'true') return;
       if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn')) {
         return;
       }
@@ -1432,6 +1450,7 @@ export class PDFAnnotatorEngine {
         if (!element.classList.contains('element-selected')) {
           this._selectElement(element);
         }
+        if (element.dataset.locked === 'true') return;
         const touch = e.touches[0];
         startDrag(touch.clientX, touch.clientY);
       }
@@ -1480,9 +1499,33 @@ export class PDFAnnotatorEngine {
       this._bindRotateHandle(rotHandle, element);
     }
 
-    // 3. Floating action toolbar
+    // 3. Floating action toolbar (attached to parent wrapper so it never rotates with the element)
     const bar = document.createElement('div');
     bar.className = 'element-floating-bar';
+    element._floatingBar = bar;
+    parent.appendChild(bar);
+
+    const updateBar = () => {
+      if (!element.classList.contains('element-selected') || !element.isConnected) {
+        bar.style.display = 'none';
+        return;
+      }
+      bar.style.display = 'flex';
+      const elRect = element.getBoundingClientRect();
+      const parentRect = parent.getBoundingClientRect();
+      const top = elRect.top - parentRect.top;
+      const left = elRect.left - parentRect.left;
+      const width = elRect.width;
+
+      if (top < 44) {
+        bar.style.top = `${Math.round(top + elRect.height + 8)}px`;
+      } else {
+        bar.style.top = `${Math.round(top - 38)}px`;
+      }
+      bar.style.left = `${Math.round(left + width / 2)}px`;
+      bar.style.transform = 'translateX(-50%)';
+    };
+    element._updateBar = updateBar;
 
     if (isWhiteout) {
       const label = document.createElement('span');
@@ -1501,6 +1544,7 @@ export class PDFAnnotatorEngine {
         cur = (cur - 90 + 360) % 360;
         element.dataset.rotation = cur;
         element.style.transform = cur === 0 ? '' : `rotate(${cur}deg)`;
+        updateBar();
       };
       bar.appendChild(btnRotCCW);
 
@@ -1515,29 +1559,33 @@ export class PDFAnnotatorEngine {
         cur = (cur + 90) % 360;
         element.dataset.rotation = cur;
         element.style.transform = cur === 0 ? '' : `rotate(${cur}deg)`;
+        updateBar();
       };
       bar.appendChild(btnRotCW);
     }
 
     // Lock toggle button
     const btnLock = document.createElement('button');
-    btnLock.className = 'element-bar-btn';
-    btnLock.innerHTML = '🔒';
-    btnLock.title = 'Lock in place';
+    btnLock.className = 'element-bar-btn btn-lock';
+    const isLockedInit = element.dataset.locked === 'true';
+    btnLock.innerHTML = isLockedInit ? '🔒' : '🔓';
+    btnLock.title = isLockedInit ? 'Click to Unlock element' : 'Lock in place';
+    if (isLockedInit) btnLock.classList.add('is-locked');
+
     btnLock.onclick = (e) => {
       e.stopPropagation();
       const isLocked = element.dataset.locked === 'true';
-      element.dataset.locked = isLocked ? 'false' : 'true';
-      element.classList.toggle('element-locked', !isLocked);
-      btnLock.innerHTML = !isLocked ? '🔓' : '🔒';
-      btnLock.title = !isLocked ? 'Unlock element' : 'Lock in place';
-      if (!isLocked) {
-        element.classList.remove('element-selected');
-      }
+      const willLock = !isLocked;
+      element.dataset.locked = willLock ? 'true' : 'false';
+      element.classList.toggle('element-locked', willLock);
+      btnLock.innerHTML = willLock ? '🔒' : '🔓';
+      btnLock.title = willLock ? 'Click to Unlock element' : 'Lock in place';
+      btnLock.classList.toggle('is-locked', willLock);
+      updateBar();
     };
     bar.appendChild(btnLock);
 
-    // Delete button
+    // Delete button (always accessible even when element is locked)
     const btnDel = document.createElement('button');
     btnDel.className = 'element-bar-btn btn-delete';
     btnDel.innerHTML = '&times;';
@@ -1551,11 +1599,10 @@ export class PDFAnnotatorEngine {
         pageNum,
         elements: [element]
       });
+      bar.remove();
       element.remove();
     };
     bar.appendChild(btnDel);
-
-    element.appendChild(bar);
   }
 
   _bindResizeHandle(handle, element, parent, keepAspectRatio) {
@@ -1582,8 +1629,20 @@ export class PDFAnnotatorEngine {
 
     const onMove = (clientX, clientY) => {
       if (!isResizing) return;
-      const dx = clientX - startX;
-      const dy = clientY - startY;
+      let dx = clientX - startX;
+      let dy = clientY - startY;
+
+      // Project screen delta into local element coordinates when rotated
+      const deg = parseFloat(element.dataset.rotation || 0);
+      if (deg !== 0) {
+        const rad = (deg * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const ldx = dx * cos + dy * sin;
+        const ldy = -dx * sin + dy * cos;
+        dx = ldx;
+        dy = ldy;
+      }
 
       // Corner handles with aspect ratio option
       const isCorner = ['nw', 'ne', 'se', 'sw'].includes(handleType);
@@ -1627,6 +1686,10 @@ export class PDFAnnotatorEngine {
         element.style.height = `${newH}px`;
         element.style.left = `${startLeft + (startWidth - newW)}px`;
         element.style.top = `${startTop + (startHeight - newH)}px`;
+      }
+
+      if (typeof element._updateBar === 'function') {
+        element._updateBar();
       }
     };
 
@@ -1700,6 +1763,9 @@ export class PDFAnnotatorEngine {
 
       element.dataset.rotation = deg;
       element.style.transform = deg === 0 ? '' : `rotate(${deg}deg)`;
+      if (typeof element._updateBar === 'function') {
+        element._updateBar();
+      }
     };
 
     const onEnd = () => {
@@ -1707,6 +1773,9 @@ export class PDFAnnotatorEngine {
       isRotating = false;
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      if (typeof element._updateBar === 'function') {
+        element._updateBar();
+      }
     };
 
     handle.addEventListener('mousedown', (e) => {

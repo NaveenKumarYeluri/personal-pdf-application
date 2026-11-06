@@ -388,6 +388,11 @@ body.mode-view .in-place-editor {
   color: #ffffff;
 }
 
+.element-bar-btn.btn-lock.is-locked {
+  background: rgba(234, 179, 8, 0.25);
+  color: #fde047;
+}
+
 /* Locked Element State: Pinned in place, clicks pass through */
 .element-locked {
   cursor: default !important;

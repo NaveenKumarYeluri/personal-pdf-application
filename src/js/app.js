@@ -81,7 +81,7 @@ class PersonalPDFApp {
     this.security = new PDFSecurityEngine();
 
     // 6. Exporter Engine
-    this.exporter = new PDFExportEngine(this.viewer);
+    this.exporter = new PDFExportEngine(this.viewer, this);
 
     // 7. UI Controller
     this.ui = new UIController(this);

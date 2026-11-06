@@ -190,8 +190,10 @@ export class PDFSignatureEngine {
 
   extractSignatureInk(img, removeBg = true, threshold = 215) {
     const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth || img.width || 400;
-    canvas.height = img.naturalHeight || img.height || 160;
+    const w = img.naturalWidth || img.width || 400;
+    const h = img.naturalHeight || img.height || 160;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0);
 
@@ -200,30 +202,72 @@ export class PDFSignatureEngine {
     }
 
     try {
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const imgData = ctx.getImageData(0, 0, w, h);
       const data = imgData.data;
-      const len = data.length;
+      const totalPixels = w * h;
 
-      for (let i = 0; i < len; i += 4) {
+      // 1. Adaptive paper detection: Sample perimeter borders to find actual paper color & brightness
+      let borderR = 0, borderG = 0, borderB = 0, borderCount = 0;
+      const borderThickness = Math.max(2, Math.floor(Math.min(w, h) * 0.08));
+
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x += 2) {
+          if (y < borderThickness || y >= h - borderThickness || x < borderThickness || x >= w - borderThickness) {
+            const idx = (y * w + x) * 4;
+            borderR += data[idx];
+            borderG += data[idx + 1];
+            borderB += data[idx + 2];
+            borderCount++;
+          }
+        }
+      }
+
+      const bgR = borderCount > 0 ? (borderR / borderCount) : 255;
+      const bgG = borderCount > 0 ? (borderG / borderCount) : 255;
+      const bgB = borderCount > 0 ? (borderB / borderCount) : 255;
+      const bgLum = 0.299 * bgR + 0.587 * bgG + 0.114 * bgB;
+
+      // 2. Find minimum ink luminance
+      let minLum = 255;
+      for (let i = 0; i < data.length; i += 16) {
+        const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        if (lum < minLum) minLum = lum;
+      }
+
+      // Sensitivity factor: slider 140-250 maps to 0.1 - 0.95
+      const sensitivity = Math.max(0.1, Math.min(0.95, (threshold - 130) / 120));
+      const contrastRange = Math.max(15, bgLum - minLum);
+      const cutoff = bgLum - (contrastRange * (0.04 + (1.0 - sensitivity) * 0.42));
+      const colorTolerance = 25 * (sensitivity + 0.4);
+
+      for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
-        // Calculate perceived brightness
         const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const colorDist = Math.hypot(r - bgR, g - bgG, b - bgB);
 
-        if (lum >= threshold) {
-          // Paper background -> 100% transparent
+        // If luminance is close to paper or color is paper-like -> 100% transparent
+        if (lum >= cutoff || colorDist < colorTolerance) {
           data[i + 3] = 0;
         } else {
           // Dark ink -> smooth antialiased alpha transition
-          const delta = threshold - lum;
-          if (delta < 40) {
-            data[i + 3] = Math.round(255 * (delta / 40));
+          const delta = cutoff - lum;
+          const alphaRatio = delta / Math.max(10, cutoff - minLum);
+          const alpha = Math.min(255, Math.max(0, Math.round(255 * Math.pow(alphaRatio, 0.75))));
+          data[i + 3] = alpha;
+
+          // Preserve rich blue ink if detected, otherwise render deep crisp dark ink
+          const isBlueInk = (b > r + 15 && b > g + 10);
+          if (isBlueInk) {
+            data[i] = Math.min(25, r);
+            data[i + 1] = Math.min(50, g);
+            data[i + 2] = Math.max(120, b);
+          } else {
+            data[i] = Math.min(20, Math.max(0, r - 60));
+            data[i + 1] = Math.min(20, Math.max(0, g - 60));
+            data[i + 2] = Math.min(20, Math.max(0, b - 60));
           }
-          // Enhance ink contrast for crisp visibility
-          data[i] = Math.max(0, r - 30);
-          data[i + 1] = Math.max(0, g - 30);
-          data[i + 2] = Math.max(0, b - 30);
         }
       }
 
