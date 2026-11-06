@@ -459,7 +459,21 @@
           <!-- Mode 3: Upload signature image -->
           <div id="sig-pane-image" class="sig-pane">
             <input type="file" id="sig-image-file" accept="image/png, image/jpeg" class="form-input">
-            <p class="text-muted">Upload a transparent PNG or high-contrast photo of your signature.</p>
+            <div id="sig-image-options" style="margin-top: 10px; display: none;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; margin-bottom: 8px;">
+                <input type="checkbox" id="sig-remove-bg" checked>
+                <span>Remove paper background (Extract transparent ink)</span>
+              </label>
+              <div id="sig-threshold-row" style="display: flex; align-items: center; gap: 10px; font-size: 12px; margin-bottom: 10px;">
+                <label for="sig-threshold" style="min-width: 90px; color: var(--text-muted);">Ink Sensitivity:</label>
+                <input type="range" id="sig-threshold" min="140" max="250" value="215" style="flex: 1;">
+                <span id="sig-threshold-val" style="min-width: 30px; font-family: monospace;">215</span>
+              </div>
+              <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; background-image: repeating-conic-gradient(#e2e8f0 0% 25%, #ffffff 0% 50%) 50% / 16px 16px; text-align: center; min-height: 80px; display: flex; align-items: center; justify-content: center;">
+                <canvas id="sig-image-preview-canvas" style="max-width: 100%; max-height: 120px; object-fit: contain;"></canvas>
+              </div>
+            </div>
+            <p class="text-muted" style="margin-top: 8px; font-size: 12px;">Upload a scan or photo of your handwritten signature on paper. The white/gray paper is automatically removed.</p>
           </div>
         </div>
         <div class="modal-footer">

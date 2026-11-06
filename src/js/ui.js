@@ -782,6 +782,9 @@ export class UIController {
 
     // Deselect any active text box or editor when switching modes
     if (this.app.annotator) {
+      if (typeof this.app.annotator._deselectAllElements === 'function') {
+        this.app.annotator._deselectAllElements();
+      }
       if (this.app.annotator.activeTextBox) {
         this.app.annotator.activeTextBox.classList.remove('active');
         this.app.annotator.activeTextBox = null;

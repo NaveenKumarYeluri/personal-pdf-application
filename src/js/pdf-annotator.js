@@ -1082,8 +1082,18 @@ export class PDFAnnotatorEngine {
         const wy = wb.offsetTop * scaleY;
         const ww = wb.offsetWidth * scaleX;
         const wh = wb.offsetHeight * scaleY;
-        compCtx.fillStyle = '#ffffff';
-        compCtx.fillRect(wx, wy, ww, wh);
+        const rotDeg = parseFloat(wb.dataset.rotation || 0);
+        compCtx.save();
+        if (rotDeg !== 0) {
+          compCtx.translate(wx + ww / 2, wy + wh / 2);
+          compCtx.rotate(rotDeg * Math.PI / 180);
+          compCtx.fillStyle = '#ffffff';
+          compCtx.fillRect(-ww / 2, -wh / 2, ww, wh);
+        } else {
+          compCtx.fillStyle = '#ffffff';
+          compCtx.fillRect(wx, wy, ww, wh);
+        }
+        compCtx.restore();
       }
 
       // 2b. Draw In-Place Text Edits (Mask original canvas text with white and render new text using PDF's exact font)
@@ -1141,16 +1151,26 @@ export class PDFAnnotatorEngine {
         }
       }
 
-      // 3. Draw placed stamps and signatures
+      // 3. Draw placed stamps, signatures, and images
       for (const stamp of stamps) {
+        if (stamp.classList.contains('whiteout-box')) continue;
         const sx = stamp.offsetLeft * scaleX;
         const sy = stamp.offsetTop * scaleY;
         const sw = stamp.offsetWidth * scaleX;
         const sh = stamp.offsetHeight * scaleY;
+        const rotDeg = parseFloat(stamp.dataset.rotation || 0);
 
         const img = stamp.querySelector('img');
         if (img && img.complete) {
-          compCtx.drawImage(img, sx, sy, sw, sh);
+          compCtx.save();
+          if (rotDeg !== 0) {
+            compCtx.translate(sx + sw / 2, sy + sh / 2);
+            compCtx.rotate(rotDeg * Math.PI / 180);
+            compCtx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+          } else {
+            compCtx.drawImage(img, sx, sy, sw, sh);
+          }
+          compCtx.restore();
         } else {
           const badge = stamp.querySelector('.stamp-badge');
           if (badge) {
@@ -1256,6 +1276,19 @@ export class PDFAnnotatorEngine {
     return await doc.save();
   }
 
+  _selectElement(element) {
+    this._deselectAllElements();
+    if (element) {
+      element.classList.add('element-selected');
+    }
+  }
+
+  _deselectAllElements() {
+    document.querySelectorAll('.element-selected').forEach(el => {
+      el.classList.remove('element-selected');
+    });
+  }
+
   _makeDraggable(element, parent) {
     let isDragging = false;
     let startX, startY, initialX, initialY;
@@ -1336,14 +1369,24 @@ export class PDFAnnotatorEngine {
       }
     };
 
-    // Mouse drag handlers
+    // Mouse drag handlers: only drag when selected, not locked, and not in view mode
     element.addEventListener('mousedown', (e) => {
       if (document.body.classList.contains('mode-view')) return;
-      if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn') || e.target.classList.contains('stamp-resize-handle')) return;
+      if (element.dataset.locked === 'true') return;
+      if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn')) {
+        return;
+      }
       if (e.target.closest('.textbox-content') || e.target.isContentEditable) {
         return;
       }
       e.stopPropagation();
+
+      // If not yet selected, select it on first click and do not move yet
+      const wasSelected = element.classList.contains('element-selected');
+      if (!wasSelected) {
+        this._selectElement(element);
+      }
+
       startDrag(e.clientX, e.clientY);
 
       const onMouseMove = (moveEvt) => moveDrag(moveEvt.clientX, moveEvt.clientY);
@@ -1360,9 +1403,15 @@ export class PDFAnnotatorEngine {
     // Touch drag handlers for Android and mobile
     element.addEventListener('touchstart', (e) => {
       if (document.body.classList.contains('mode-view')) return;
-      if (e.target.tagName === 'BUTTON' || e.target.classList.contains('textbox-delete-btn') || e.target.classList.contains('stamp-resize-handle')) return;
+      if (element.dataset.locked === 'true') return;
+      if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn')) {
+        return;
+      }
       if (e.target.closest('.textbox-content') || e.target.isContentEditable) return;
       if (e.touches.length === 1) {
+        if (!element.classList.contains('element-selected')) {
+          this._selectElement(element);
+        }
         const touch = e.touches[0];
         startDrag(touch.clientX, touch.clientY);
       }
@@ -1384,45 +1433,186 @@ export class PDFAnnotatorEngine {
     });
   }
 
-  _makeResizable(element, parent) {
-    const handle = document.createElement('div');
-    handle.className = 'stamp-resize-handle';
-    handle.title = 'Drag to resize';
-    element.appendChild(handle);
+  _makeResizable(element, parent, { keepAspectRatio = false, isWhiteout = false } = {}) {
+    // 1. Create 8 resize handles
+    const handlePositions = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+    handlePositions.forEach(pos => {
+      const h = document.createElement('div');
+      h.className = `element-resize-handle handle-${pos}`;
+      h.dataset.handle = pos;
+      h.title = `Resize (${pos.toUpperCase()})`;
+      element.appendChild(h);
 
+      this._bindResizeHandle(h, element, parent, keepAspectRatio);
+    });
+
+    // 2. Rotation handle (for non-whiteout elements)
+    if (!isWhiteout) {
+      const rotLine = document.createElement('div');
+      rotLine.className = 'element-rotate-line';
+      element.appendChild(rotLine);
+
+      const rotHandle = document.createElement('div');
+      rotHandle.className = 'element-rotate-handle';
+      rotHandle.title = 'Drag to rotate';
+      element.appendChild(rotHandle);
+
+      this._bindRotateHandle(rotHandle, element);
+    }
+
+    // 3. Floating action toolbar
+    const bar = document.createElement('div');
+    bar.className = 'element-floating-bar';
+
+    if (isWhiteout) {
+      const label = document.createElement('span');
+      label.className = 'element-bar-label';
+      label.textContent = '⬜ Whiteout Mask';
+      bar.appendChild(label);
+    } else {
+      // Rotate 90° CCW
+      const btnRotCCW = document.createElement('button');
+      btnRotCCW.className = 'element-bar-btn';
+      btnRotCCW.innerHTML = '↺';
+      btnRotCCW.title = 'Rotate 90° Left';
+      btnRotCCW.onclick = (e) => {
+        e.stopPropagation();
+        let cur = parseFloat(element.dataset.rotation || 0);
+        cur = (cur - 90 + 360) % 360;
+        element.dataset.rotation = cur;
+        element.style.transform = cur === 0 ? '' : `rotate(${cur}deg)`;
+      };
+      bar.appendChild(btnRotCCW);
+
+      // Rotate 90° CW
+      const btnRotCW = document.createElement('button');
+      btnRotCW.className = 'element-bar-btn';
+      btnRotCW.innerHTML = '↻';
+      btnRotCW.title = 'Rotate 90° Right';
+      btnRotCW.onclick = (e) => {
+        e.stopPropagation();
+        let cur = parseFloat(element.dataset.rotation || 0);
+        cur = (cur + 90) % 360;
+        element.dataset.rotation = cur;
+        element.style.transform = cur === 0 ? '' : `rotate(${cur}deg)`;
+      };
+      bar.appendChild(btnRotCW);
+    }
+
+    // Lock toggle button
+    const btnLock = document.createElement('button');
+    btnLock.className = 'element-bar-btn';
+    btnLock.innerHTML = '🔒';
+    btnLock.title = 'Lock in place';
+    btnLock.onclick = (e) => {
+      e.stopPropagation();
+      const isLocked = element.dataset.locked === 'true';
+      element.dataset.locked = isLocked ? 'false' : 'true';
+      element.classList.toggle('element-locked', !isLocked);
+      btnLock.innerHTML = !isLocked ? '🔓' : '🔒';
+      btnLock.title = !isLocked ? 'Unlock element' : 'Lock in place';
+      if (!isLocked) {
+        element.classList.remove('element-selected');
+      }
+    };
+    bar.appendChild(btnLock);
+
+    // Delete button
+    const btnDel = document.createElement('button');
+    btnDel.className = 'element-bar-btn btn-delete';
+    btnDel.innerHTML = '&times;';
+    btnDel.title = 'Remove';
+    btnDel.onclick = (e) => {
+      e.stopPropagation();
+      const pageWrapper = element.closest('.page-wrapper');
+      const pageNum = pageWrapper ? parseInt(pageWrapper.id.replace('page-wrapper-', ''), 10) : 1;
+      this.undoStack.push({
+        type: 'element',
+        pageNum,
+        elements: [element]
+      });
+      element.remove();
+    };
+    bar.appendChild(btnDel);
+
+    element.appendChild(bar);
+  }
+
+  _bindResizeHandle(handle, element, parent, keepAspectRatio) {
     let isResizing = false;
-    let startX = 0;
-    let startY = 0;
-    let startWidth = 0;
-    let startHeight = 0;
+    let startX = 0, startY = 0;
+    let startLeft = 0, startTop = 0;
+    let startWidth = 0, startHeight = 0;
     let aspectRatio = 1;
+    const handleType = handle.dataset.handle;
 
     const onStart = (clientX, clientY) => {
+      if (document.body.classList.contains('mode-view')) return;
+      if (element.dataset.locked === 'true') return;
       isResizing = true;
       startX = clientX;
       startY = clientY;
-      startWidth = element.offsetWidth || 180;
-      startHeight = element.offsetHeight || 60;
+      startLeft = element.offsetLeft;
+      startTop = element.offsetTop;
+      startWidth = element.offsetWidth;
+      startHeight = element.offsetHeight;
       aspectRatio = startWidth / (startHeight || 1);
-      document.body.style.cursor = 'nwse-resize';
       document.body.style.userSelect = 'none';
     };
 
     const onMove = (clientX, clientY) => {
       if (!isResizing) return;
       const dx = clientX - startX;
-      const maxW = parent ? parent.clientWidth - element.offsetLeft : 2000;
-      const newWidth = Math.max(40, Math.min(maxW, startWidth + dx));
-      const newHeight = Math.max(20, Math.round(newWidth / aspectRatio));
+      const dy = clientY - startY;
 
-      element.style.width = `${newWidth}px`;
-      element.style.height = `${newHeight}px`;
+      // Corner handles with aspect ratio option
+      const isCorner = ['nw', 'ne', 'se', 'sw'].includes(handleType);
+      const shouldKeepRatio = keepAspectRatio && isCorner;
+
+      if (handleType === 'se') {
+        const newW = Math.max(20, startWidth + dx);
+        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.max(12, startHeight + dy);
+        element.style.width = `${newW}px`;
+        element.style.height = `${newH}px`;
+      } else if (handleType === 'e') {
+        const newW = Math.max(20, startWidth + dx);
+        element.style.width = `${newW}px`;
+      } else if (handleType === 's') {
+        const newH = Math.max(12, startHeight + dy);
+        element.style.height = `${newH}px`;
+      } else if (handleType === 'w') {
+        const newW = Math.max(20, startWidth - dx);
+        element.style.width = `${newW}px`;
+        element.style.left = `${startLeft + (startWidth - newW)}px`;
+      } else if (handleType === 'n') {
+        const newH = Math.max(12, startHeight - dy);
+        element.style.height = `${newH}px`;
+        element.style.top = `${startTop + (startHeight - newH)}px`;
+      } else if (handleType === 'ne') {
+        const newW = Math.max(20, startWidth + dx);
+        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.max(12, startHeight - dy);
+        element.style.width = `${newW}px`;
+        element.style.height = `${newH}px`;
+        element.style.top = `${startTop + (startHeight - newH)}px`;
+      } else if (handleType === 'sw') {
+        const newW = Math.max(20, startWidth - dx);
+        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.max(12, startHeight + dy);
+        element.style.width = `${newW}px`;
+        element.style.height = `${newH}px`;
+        element.style.left = `${startLeft + (startWidth - newW)}px`;
+      } else if (handleType === 'nw') {
+        const newW = Math.max(20, startWidth - dx);
+        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.max(12, startHeight - dy);
+        element.style.width = `${newW}px`;
+        element.style.height = `${newH}px`;
+        element.style.left = `${startLeft + (startWidth - newW)}px`;
+        element.style.top = `${startTop + (startHeight - newH)}px`;
+      }
     };
 
     const onEnd = () => {
       if (!isResizing) return;
       isResizing = false;
-      document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
 
@@ -1431,14 +1621,14 @@ export class PDFAnnotatorEngine {
       e.preventDefault();
       onStart(e.clientX, e.clientY);
 
-      const mouseMoveHandler = (ev) => onMove(ev.clientX, ev.clientY);
-      const mouseUpHandler = () => {
-        window.removeEventListener('mousemove', mouseMoveHandler);
-        window.removeEventListener('mouseup', mouseUpHandler);
+      const mouseMove = (ev) => onMove(ev.clientX, ev.clientY);
+      const mouseUp = () => {
+        window.removeEventListener('mousemove', mouseMove);
+        window.removeEventListener('mouseup', mouseUp);
         onEnd();
       };
-      window.addEventListener('mousemove', mouseMoveHandler);
-      window.addEventListener('mouseup', mouseUpHandler);
+      window.addEventListener('mousemove', mouseMove);
+      window.addEventListener('mouseup', mouseUp);
     });
 
     handle.addEventListener('touchstart', (e) => {
@@ -1447,19 +1637,90 @@ export class PDFAnnotatorEngine {
       if (e.touches.length > 0) {
         onStart(e.touches[0].clientX, e.touches[0].clientY);
       }
-
-      const touchMoveHandler = (ev) => {
+      const touchMove = (ev) => {
         if (ev.touches.length > 0) {
           onMove(ev.touches[0].clientX, ev.touches[0].clientY);
         }
       };
-      const touchEndHandler = () => {
-        window.removeEventListener('touchmove', touchMoveHandler);
-        window.removeEventListener('touchend', touchEndHandler);
+      const touchEnd = () => {
+        window.removeEventListener('touchmove', touchMove);
+        window.removeEventListener('touchend', touchEnd);
         onEnd();
       };
-      window.addEventListener('touchmove', touchMoveHandler, { passive: false });
-      window.addEventListener('touchend', touchEndHandler);
+      window.addEventListener('touchmove', touchMove, { passive: false });
+      window.addEventListener('touchend', touchEnd);
+    }, { passive: false });
+  }
+
+  _bindRotateHandle(handle, element) {
+    let isRotating = false;
+
+    const onStart = (clientX, clientY) => {
+      if (document.body.classList.contains('mode-view')) return;
+      if (element.dataset.locked === 'true') return;
+      isRotating = true;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'grabbing';
+    };
+
+    const onMove = (clientX, clientY) => {
+      if (!isRotating) return;
+      const rect = element.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const rad = Math.atan2(clientY - centerY, clientX - centerX);
+      let deg = Math.round(rad * (180 / Math.PI)) + 90;
+      deg = (deg + 360) % 360;
+
+      // Magnetic snap within 4 degrees of cardinal angles
+      if (Math.abs(deg - 0) < 4 || Math.abs(deg - 360) < 4) deg = 0;
+      else if (Math.abs(deg - 90) < 4) deg = 90;
+      else if (Math.abs(deg - 180) < 4) deg = 180;
+      else if (Math.abs(deg - 270) < 4) deg = 270;
+
+      element.dataset.rotation = deg;
+      element.style.transform = deg === 0 ? '' : `rotate(${deg}deg)`;
+    };
+
+    const onEnd = () => {
+      if (!isRotating) return;
+      isRotating = false;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    handle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      onStart(e.clientX, e.clientY);
+      const mouseMove = (ev) => onMove(ev.clientX, ev.clientY);
+      const mouseUp = () => {
+        window.removeEventListener('mousemove', mouseMove);
+        window.removeEventListener('mouseup', mouseUp);
+        onEnd();
+      };
+      window.addEventListener('mousemove', mouseMove);
+      window.addEventListener('mouseup', mouseUp);
+    });
+
+    handle.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.touches.length > 0) {
+        onStart(e.touches[0].clientX, e.touches[0].clientY);
+      }
+      const touchMove = (ev) => {
+        if (ev.touches.length > 0) {
+          onMove(ev.touches[0].clientX, ev.touches[0].clientY);
+        }
+      };
+      const touchEnd = () => {
+        window.removeEventListener('touchmove', touchMove);
+        window.removeEventListener('touchend', touchEnd);
+        onEnd();
+      };
+      window.addEventListener('touchmove', touchMove, { passive: false });
+      window.addEventListener('touchend', touchEnd);
     }, { passive: false });
   }
 }

@@ -215,9 +215,12 @@
   caret-color: #2563eb !important;
 }
 
-.textLayer span.inline-editing::selection {
-  background-color: rgba(59, 130, 246, 0.35) !important;
-  color: inherit !important;
+.textLayer span.inline-editing::selection,
+.textLayer span.inline-editing *::selection,
+.textLayer span.in-place-modified::selection,
+.textLayer span.in-place-modified *::selection {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
 }
 
 /* Modified text spans persist seamlessly across View & Edit modes */

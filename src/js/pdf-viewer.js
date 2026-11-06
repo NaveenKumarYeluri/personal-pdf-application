@@ -9,11 +9,21 @@
  */
 export function healPdfTextLigatures(text) {
   if (!text || typeof text !== 'string') return text;
-  if (!text.includes('\ufffd') && !text.includes('\u0000') && !text.includes('\u001f') && !text.includes('')) {
+  if (!text.includes('\ufffd') && !text.includes('\u0000') && !text.includes('\u001f') && !text.includes('?') && !/[\uFB00-\uFB06\uE000-\uF8FF]/.test(text)) {
     return text;
   }
 
   let cleaned = text;
+
+  // 0. Standard Unicode alphabetic presentation forms
+  cleaned = cleaned
+    .replace(/\uFB00/g, 'ff')
+    .replace(/\uFB01/g, 'fi')
+    .replace(/\uFB02/g, 'fl')
+    .replace(/\uFB03/g, 'ffi')
+    .replace(/\uFB04/g, 'ffl')
+    .replace(/\uFB05/g, 'ft')
+    .replace(/\uFB06/g, 'st');
 
   // 1. Common database/technical words: partition / partitioned / partitioning
   cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}on\b/gi, 'partition');
@@ -46,12 +56,21 @@ export function healPdfTextLigatures(text) {
   cleaned = cleaned.replace(/mul[\ufffd\u0000\u001f\u007f\?]ply\b/gi, 'multiply');
   cleaned = cleaned.replace(/mul[\ufffd\u0000\u001f\u007f\?]/gi, 'multi');
 
-  // 7. Contextual ligature repair:
+  // 7. Common technical words with fi / fl / ff ligatures
+  cleaned = cleaned.replace(/spe[\ufffd\u0000\u001f\u007f\?]{1,2}c\b/gi, 'specific');
+  cleaned = cleaned.replace(/spe[\ufffd\u0000\u001f\u007f\?]{1,2}cs\b/gi, 'specifics');
+  cleaned = cleaned.replace(/spe[\ufffd\u0000\u001f\u007f\?]{1,2}cally\b/gi, 'specifically');
+  cleaned = cleaned.replace(/suf[\ufffd\u0000\u001f\u007f\?]{1,2}cent\b/gi, 'sufficient');
+  cleaned = cleaned.replace(/ef[\ufffd\u0000\u001f\u007f\?]{1,2}cent\b/gi, 'efficient');
+  cleaned = cleaned.replace(/dif[\ufffd\u0000\u001f\u007f\?]{1,2}erent\b/gi, 'different');
+  cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}cular\b/gi, 'particular');
+
+  // 8. Contextual ligature repair:
   cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}([aeiou])/g, '$1ti$2');
   cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]([a-zA-Z])/g, '$1t$2');
 
   // Strip any leftover replacement characters
-  cleaned = cleaned.replace(/[\ufffd\u0000\u001f\u007f]/g, '');
+  cleaned = cleaned.replace(/[\ufffd\u0000\u001f\u007f\uE000-\uF8FF]/g, '');
 
   return cleaned;
 }
@@ -399,6 +418,13 @@ export class PDFViewerEngine {
           await textTask.promise;
         }
       }
+
+      // Heal any ligature defects directly in the rendered textLayer DOM spans
+      textLayer.querySelectorAll('span').forEach(s => {
+        if (s.textContent && (s.textContent.includes('\ufffd') || s.textContent.includes('?') || /[\uFB00-\uFB06\uE000-\uF8FF]/.test(s.textContent))) {
+          s.textContent = healPdfTextLigatures(s.textContent);
+        }
+      });
 
       this._setupTextLayerSelection(textLayer, pageWrapper);
       this._setupContentEditingHandlers(textLayer, pageNum, pageWrapper);

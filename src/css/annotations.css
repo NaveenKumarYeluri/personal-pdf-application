@@ -197,10 +197,13 @@ body.mode-view .in-place-editor {
   box-shadow: none !important;
 }
 
-/* Placed Signatures & Stamps */
-.placed-stamp {
+/* Placed Signatures, Stamps, Images & Whiteout Blocks */
+.placed-stamp,
+.placed-image-box,
+.placed-signature-box,
+.whiteout-box {
   position: absolute;
-  cursor: move;
+  cursor: pointer;
   z-index: 15;
   pointer-events: auto;
   user-select: none;
@@ -209,17 +212,30 @@ body.mode-view .in-place-editor {
   justify-content: center;
   border: 1.5px dashed transparent;
   box-sizing: border-box;
-  border-radius: 4px;
+  border-radius: 3px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .placed-stamp:hover,
-.placed-stamp.selected {
-  border-color: var(--accent-red) !important;
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25);
+.placed-image-box:hover,
+.placed-signature-box:hover {
+  border-color: rgba(37, 99, 235, 0.45);
 }
 
-.placed-stamp img {
+/* Explicit Selection State: Only selected elements can be dragged or resized */
+.placed-stamp.element-selected,
+.placed-image-box.element-selected,
+.placed-signature-box.element-selected,
+.whiteout-box.element-selected {
+  border: 1.5px solid var(--accent-blue) !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25), 0 4px 12px rgba(0, 0, 0, 0.12) !important;
+  z-index: 50 !important;
+  cursor: move !important;
+}
+
+.placed-stamp img,
+.placed-image-box img,
+.placed-signature-box img {
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -227,45 +243,184 @@ body.mode-view .in-place-editor {
   display: block;
 }
 
-/* Resize Handle for Placed Signatures & Stamps */
-.stamp-resize-handle {
-  position: absolute;
-  right: -6px;
-  bottom: -6px;
-  width: 14px;
-  height: 14px;
-  background-color: #ffffff;
-  border: 2px solid var(--accent-red);
-  border-radius: 50%;
-  cursor: nwse-resize;
-  z-index: 30;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-  touch-action: none;
-  transition: transform 0.1s ease, background-color 0.1s ease;
-  display: none;
+/* Whiteout Mask: Correction Tape Redaction */
+.whiteout-box {
+  background-color: #ffffff !important;
+  border: 1.5px dashed rgba(37, 99, 235, 0.5);
+  min-width: 20px;
+  min-height: 12px;
+  z-index: 18;
 }
 
-.placed-stamp:hover .stamp-resize-handle,
-.placed-stamp.selected .stamp-resize-handle {
+.whiteout-box:hover {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.2);
+}
+
+/* 8-Point Resize Handles (Unconstrained horizontal/vertical & corner resizing) */
+.element-resize-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background-color: #ffffff;
+  border: 1.5px solid var(--accent-blue);
+  border-radius: 2px;
+  box-sizing: border-box;
+  display: none;
+  z-index: 60;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  touch-action: none;
+}
+
+.element-selected .element-resize-handle {
   display: block !important;
 }
 
-.stamp-resize-handle:hover {
-  background-color: var(--accent-red);
+.element-resize-handle:hover {
+  background-color: var(--accent-blue);
+  transform: scale(1.25);
+}
+
+.handle-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.handle-n  { top: -5px; left: calc(50% - 4.5px); cursor: ns-resize; }
+.handle-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.handle-e  { top: calc(50% - 4.5px); right: -5px; cursor: ew-resize; }
+.handle-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.handle-s  { bottom: -5px; left: calc(50% - 4.5px); cursor: ns-resize; }
+.handle-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.handle-w  { top: calc(50% - 4.5px); left: -5px; cursor: ew-resize; }
+
+/* Rotation Handle with connection line */
+.element-rotate-handle {
+  position: absolute;
+  top: -24px;
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  display: none;
+  z-index: 60;
+  touch-action: none;
+}
+
+.element-rotate-handle:hover {
   transform: scale(1.2);
 }
 
-body.mode-view .stamp-resize-handle {
+.element-rotate-line {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  width: 1.5px;
+  height: 16px;
+  background-color: var(--accent-blue);
+  transform: translateX(-50%);
+  display: none;
+  z-index: 59;
+}
+
+.element-selected .element-rotate-handle,
+.element-selected .element-rotate-line {
+  display: block !important;
+}
+
+/* Floating Action Toolbar attached to selected element */
+.element-floating-bar {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 3px 8px;
+  border-radius: 20px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  z-index: 70;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.element-selected .element-floating-bar {
+  display: flex !important;
+}
+
+.element-bar-label {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-right: 4px;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.element-bar-btn {
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.element-bar-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.element-bar-btn.btn-delete:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+/* Locked Element State: Pinned in place, clicks pass through */
+.element-locked {
+  cursor: default !important;
+}
+
+.element-locked .element-resize-handle,
+.element-locked .element-rotate-handle,
+.element-locked .element-rotate-line {
   display: none !important;
 }
 
-body.mode-view .placed-stamp {
+/* Legacy single handle compatibility */
+.stamp-resize-handle {
+  display: none !important;
+}
+
+/* View / Read Mode Security: All elements are 100% inert, pure native document display */
+body.mode-view .placed-stamp,
+body.mode-view .placed-image-box,
+body.mode-view .placed-signature-box,
+body.mode-view .whiteout-box {
   border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
   cursor: default !important;
   pointer-events: none !important;
 }
 
-body.mode-view .placed-stamp .textbox-delete-btn {
+body.mode-view .element-floating-bar,
+body.mode-view .element-resize-handle,
+body.mode-view .element-rotate-handle,
+body.mode-view .element-rotate-line,
+body.mode-view .textbox-delete-btn {
   display: none !important;
 }
 

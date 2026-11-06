@@ -135,6 +135,16 @@ class PersonalPDFApp {
     if (btnSaveAsPdf) btnSaveAsPdf.onclick = () => this.saveAsDocument();
     btnPrint.onclick = () => this.exporter.printDocument();
 
+    // Deselect annotations, stamps, images, signatures, and whiteouts when clicking outside
+    document.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.placed-stamp, .placed-image-box, .placed-signature-box, .whiteout-box, .element-floating-bar, .element-resize-handle, .element-rotate-handle, .element-rotate-line, .textbox-delete-btn')) {
+        return;
+      }
+      if (this.annotator && typeof this.annotator._deselectAllElements === 'function') {
+        this.annotator._deselectAllElements();
+      }
+    });
+
     // Drag and drop PDF files onto the window
     window.addEventListener('dragover', (e) => e.preventDefault());
     window.addEventListener('drop', (e) => {
@@ -1919,26 +1929,10 @@ class PersonalPDFApp {
     img.style.display = 'block';
     container.appendChild(img);
 
-    // Delete button
-    const btnDel = document.createElement('button');
-    btnDel.className = 'textbox-delete-btn';
-    btnDel.innerHTML = '&times;';
-    btnDel.title = 'Remove Image';
-    btnDel.onclick = (e) => {
-      e.stopPropagation();
-      this.annotator.undoStack.push({
-        type: 'element',
-        pageNum,
-        elements: [container]
-      });
-      container._savedParent = container.parentNode;
-      container.remove();
-    };
-    container.appendChild(btnDel);
-
     this.annotator._makeDraggable(container, wrapper);
-    this.annotator._makeResizable(container, wrapper);
+    this.annotator._makeResizable(container, wrapper, { keepAspectRatio: true });
     wrapper.appendChild(container);
+    this.annotator._selectElement(container);
 
     this.annotator.undoStack.push({
       type: 'element',
@@ -1971,26 +1965,10 @@ class PersonalPDFApp {
     img.style.display = 'block';
     container.appendChild(img);
 
-    // Delete button
-    const btnDel = document.createElement('button');
-    btnDel.className = 'textbox-delete-btn';
-    btnDel.innerHTML = '&times;';
-    btnDel.title = 'Remove Signature';
-    btnDel.onclick = (e) => {
-      e.stopPropagation();
-      this.annotator.undoStack.push({
-        type: 'element',
-        pageNum,
-        elements: [container]
-      });
-      container._savedParent = container.parentNode;
-      container.remove();
-    };
-    container.appendChild(btnDel);
-
     this.annotator._makeDraggable(container, wrapper);
-    this.annotator._makeResizable(container, wrapper);
+    this.annotator._makeResizable(container, wrapper, { keepAspectRatio: true });
     wrapper.appendChild(container);
+    this.annotator._selectElement(container);
 
     this.annotator.undoStack.push({
       type: 'element',
@@ -2000,7 +1978,7 @@ class PersonalPDFApp {
     this.annotator.redoStack = [];
   }
 
-  insertWhiteoutOnPage(pageNum, x = 150, y = 150, width = 140, height = 28) {
+  insertWhiteoutOnPage(pageNum, x = 150, y = 150, width = 160, height = 30) {
     const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     if (!wrapper) return;
 
@@ -2010,31 +1988,11 @@ class PersonalPDFApp {
     box.style.top = `${y}px`;
     box.style.width = `${width}px`;
     box.style.height = `${height}px`;
-    box.style.backgroundColor = '#ffffff';
-    box.style.border = '1.5px dashed #3b82f6';
-    box.title = 'Whiteout block (drags to cover text)';
-
-    // Delete button
-    const btnDel = document.createElement('button');
-    btnDel.className = 'tool-btn-sm';
-    btnDel.style.position = 'absolute';
-    btnDel.style.top = '-8px';
-    btnDel.style.right = '-8px';
-    btnDel.style.background = '#ef4444';
-    btnDel.style.color = '#fff';
-    btnDel.style.borderRadius = '50%';
-    btnDel.style.width = '18px';
-    btnDel.style.height = '18px';
-    btnDel.innerHTML = '&times;';
-    btnDel.onclick = (e) => {
-      e.stopPropagation();
-      box.remove();
-    };
-    box.appendChild(btnDel);
 
     this.annotator._makeDraggable(box, wrapper);
-    this.annotator._makeResizable(box, wrapper);
+    this.annotator._makeResizable(box, wrapper, { keepAspectRatio: false, isWhiteout: true });
     wrapper.appendChild(box);
+    this.annotator._selectElement(box);
 
     this.annotator.undoStack.push({
       type: 'element',
