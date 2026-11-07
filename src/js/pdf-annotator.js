@@ -19,8 +19,10 @@ export class PDFAnnotatorEngine {
     this.lineHeight = 1.25;
 
     this.activeTextBox = null;
+    this.activeStickyNote = null;
     this.activeInPlaceSpan = null;
     this.activeStamp = null;
+    this.ui = options.ui || null;
     this.inPlaceEdits = new Map(); // Map<pageNum, Map<span, editData>>
     this.onActiveTextBoxChange = options.onActiveTextBoxChange || (() => {});
     this.onActiveStampChange = options.onActiveStampChange || (() => {});
@@ -114,7 +116,7 @@ export class PDFAnnotatorEngine {
     if (this.currentTool === 'none' || this.currentTool === 'select') return;
 
     // If clicking inside an existing active textbox editor or handle, let it interact normally
-    if (e.target.closest('.annotation-textbox, .textbox-content, .resize-handle, .element-rotate-handle, .annotation-action-bar, .sticky-note-popup')) {
+    if (e.target.closest('.annotation-textbox, .textbox-content, .resize-handle, .element-rotate-handle, .annotation-action-bar, .sticky-note-popup, .sticky-note-marker, .sticky-note-container')) {
       if (this.currentTool !== 'eraser') return;
     }
 
@@ -126,21 +128,25 @@ export class PDFAnnotatorEngine {
 
     // 1. Dedicated Eraser Tool handling
     if (this.currentTool === 'eraser') {
-      const annotEl = e.target.closest('.annotation-textbox, .placed-stamp, .sticky-note-marker, .sticky-note-popup, .whiteout-box, .redaction-box');
+      const annotEl = e.target.closest('.annotation-textbox, .placed-stamp, .sticky-note-marker, .sticky-note-popup, .sticky-note-container, .whiteout-box, .redaction-box');
       if (annotEl) {
         e.stopPropagation();
-        const pageWrapper = annotEl.closest('.page-wrapper');
+        const actualEl = annotEl.closest('.sticky-note-container') || annotEl;
+        const pageWrapper = actualEl.closest('.page-wrapper');
         const pNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
         this.undoStack.push({
           type: 'element',
           pageNum: pNum,
-          elements: [annotEl]
+          elements: [actualEl]
         });
-        annotEl._savedParent = annotEl.parentNode;
-        annotEl.remove();
-        if (this.activeTextBox === annotEl) {
+        actualEl._savedParent = actualEl.parentNode;
+        actualEl.remove();
+        if (this.activeTextBox === actualEl) {
           this.activeTextBox = null;
           this.onActiveTextBoxChange(null);
+        }
+        if (this.activeStickyNote === actualEl) {
+          this.activeStickyNote = null;
         }
         return;
       }
@@ -395,7 +401,7 @@ export class PDFAnnotatorEngine {
     if (!wrapper) return;
 
     const noteContainer = document.createElement('div');
-    noteContainer.className = 'sticky-note-container placed-stamp';
+    noteContainer.className = 'sticky-note-container';
     noteContainer.style.left = `${x}px`;
     noteContainer.style.top = `${y}px`;
 
@@ -408,6 +414,7 @@ export class PDFAnnotatorEngine {
     popup.className = 'sticky-note-popup';
     popup.style.left = '30px';
     popup.style.top = '0px';
+    popup.style.display = 'block';
     popup.innerHTML = `
       <div class="sticky-note-header">
         <span>Note</span>
@@ -416,28 +423,114 @@ export class PDFAnnotatorEngine {
       <textarea placeholder="Type your comment..."></textarea>
     `;
 
-    popup.querySelector('.btn-delete-note').onclick = (e) => {
-      e.stopPropagation();
+    const btnDel = popup.querySelector('.btn-delete-note');
+    const doDelete = (e) => {
+      if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
       this.undoStack.push({
         type: 'element',
         pageNum,
         elements: [noteContainer]
       });
       noteContainer.remove();
+      if (this.activeStickyNote === noteContainer) {
+        this.activeStickyNote = null;
+      }
+    };
+    btnDel.onclick = doDelete;
+    btnDel.onmousedown = (e) => { e.stopPropagation(); doDelete(e); };
+    btnDel.onpointerdown = (e) => { e.stopPropagation(); };
+
+    const textarea = popup.querySelector('textarea');
+    ['mousedown', 'click', 'keydown', 'touchstart', 'pointerdown'].forEach(evt => {
+      textarea.addEventListener(evt, (e) => {
+        e.stopPropagation();
+      });
+    });
+
+    const setActiveNote = (e) => {
+      e?.stopPropagation();
+      this.activeStickyNote = noteContainer;
+      document.querySelectorAll('.sticky-note-container').forEach(c => c.classList.remove('active-note'));
+      noteContainer.classList.add('active-note');
     };
 
-    marker.onclick = (e) => {
-      e.stopPropagation();
-      popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
-      if (popup.style.display !== 'none') popup.querySelector('textarea').focus();
+    noteContainer.onmousedown = setActiveNote;
+    marker.onmousedown = setActiveNote;
+    popup.onmousedown = setActiveNote;
+
+    // Displacement-based drag handling for marker & header
+    const setupDrag = (handleEl) => {
+      let isDragging = false;
+      let startX = 0, startY = 0;
+      let initLeft = 0, initTop = 0;
+      let hasMoved = false;
+
+      const onPointerDown = (e) => {
+        if (e.target.closest('.btn-delete-note, textarea, button')) return;
+        e.stopPropagation();
+        setActiveNote(e);
+        isDragging = true;
+        hasMoved = false;
+        const pt = e.touches ? e.touches[0] : e;
+        startX = pt.clientX;
+        startY = pt.clientY;
+        initLeft = parseFloat(noteContainer.style.left) || 0;
+        initTop = parseFloat(noteContainer.style.top) || 0;
+
+        const onPointerMove = (mEvt) => {
+          if (!isDragging) return;
+          const mPt = mEvt.touches ? mEvt.touches[0] : mEvt;
+          const dx = mPt.clientX - startX;
+          const dy = mPt.clientY - startY;
+          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+            hasMoved = true;
+            const wrapRect = wrapper.getBoundingClientRect();
+            const maxL = Math.max(0, (wrapRect.width || 800) - 32);
+            const maxT = Math.max(0, (wrapRect.height || 1000) - 32);
+            const newL = Math.min(maxL, Math.max(0, initLeft + dx));
+            const newT = Math.min(maxT, Math.max(0, initTop + dy));
+            noteContainer.style.left = `${Math.round(newL)}px`;
+            noteContainer.style.top = `${Math.round(newT)}px`;
+          }
+        };
+
+        const onPointerUp = () => {
+          if (!isDragging) return;
+          isDragging = false;
+          window.removeEventListener('mousemove', onPointerMove);
+          window.removeEventListener('mouseup', onPointerUp);
+          window.removeEventListener('touchmove', onPointerMove);
+          window.removeEventListener('touchend', onPointerUp);
+
+          if (!hasMoved && handleEl === marker) {
+            // Click toggle on marker
+            popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+            if (popup.style.display !== 'none') textarea.focus();
+          }
+        };
+
+        window.addEventListener('mousemove', onPointerMove);
+        window.addEventListener('mouseup', onPointerUp);
+        window.addEventListener('touchmove', onPointerMove, { passive: false });
+        window.addEventListener('touchend', onPointerUp);
+      };
+
+      handleEl.addEventListener('mousedown', onPointerDown);
+      handleEl.addEventListener('touchstart', onPointerDown, { passive: false });
     };
+
+    setupDrag(marker);
+    setupDrag(popup.querySelector('.sticky-note-header'));
 
     noteContainer.appendChild(marker);
     noteContainer.appendChild(popup);
-
-    this._makeDraggable(noteContainer, wrapper);
     wrapper.appendChild(noteContainer);
-    popup.querySelector('textarea').focus();
+
+    this.activeStickyNote = noteContainer;
+    textarea.focus();
 
     this.undoStack.push({
       type: 'element',
@@ -445,6 +538,12 @@ export class PDFAnnotatorEngine {
       elements: [noteContainer]
     });
     this.redoStack = [];
+
+    // Switch tool to select mode so user doesn't accidentally drop more notes
+    this.setTool('select');
+    if (this.ui && typeof this.ui.setAnnotationTool === 'function') {
+      this.ui.setAnnotationTool('select');
+    }
   }
 
   _addTextBox(pageNum, x, y, initialText = '') {
@@ -547,6 +646,13 @@ export class PDFAnnotatorEngine {
       elements: [box]
     });
     this.redoStack = [];
+
+    // Auto-switch tool to select mode so subsequent clicks don't drop extra textboxes
+    this.setTool('select');
+    if (this.ui && typeof this.ui.setAnnotationTool === 'function') {
+      this.ui.setAnnotationTool('select');
+    }
+
     return box;
   }
 
@@ -961,6 +1067,10 @@ export class PDFAnnotatorEngine {
       this.clearActiveEditing();
       return;
     }
+    if (this.activeStickyNote) {
+      this.deleteActiveStickyNote();
+      return;
+    }
     if (this.activeTextBox) {
       const box = this.activeTextBox;
       const pageWrapper = box.closest('.page-wrapper');
@@ -975,7 +1085,42 @@ export class PDFAnnotatorEngine {
       box.remove();
       this.activeTextBox = null;
       this.onActiveTextBoxChange(null);
+      return;
     }
+    if (this.activeStamp) {
+      this.deleteActiveStamp();
+      return;
+    }
+    const selEl = document.querySelector('.element-selected');
+    if (selEl) {
+      const pWrap = selEl.closest('.page-wrapper');
+      const pNum = pWrap ? parseInt(pWrap.dataset.pageNumber, 10) : 1;
+      this.undoStack.push({
+        type: 'element',
+        pageNum: pNum,
+        elements: [selEl]
+      });
+      selEl.remove();
+      return;
+    }
+  }
+
+  deleteActiveBox() {
+    this.deleteActiveTextBox();
+  }
+
+  deleteActiveStickyNote() {
+    if (!this.activeStickyNote) return;
+    const note = this.activeStickyNote;
+    const pageWrapper = note.closest('.page-wrapper');
+    const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+    this.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [note]
+    });
+    note.remove();
+    this.activeStickyNote = null;
   }
 
   placeStamp(pageNum, stampType = 'APPROVED', x = null, y = null) {
@@ -1506,7 +1651,7 @@ export class PDFAnnotatorEngine {
     // Mouse drag handlers: only drag when selected, not locked, and not in view mode
     element.addEventListener('mousedown', (e) => {
       if (document.body.classList.contains('mode-view')) return;
-      if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn')) {
+      if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn') || e.target.closest('.btn-delete-note') || e.target.closest('button') || e.target.closest('textarea')) {
         return;
       }
       if (e.target.closest('.textbox-content') || e.target.isContentEditable) {
@@ -1539,7 +1684,7 @@ export class PDFAnnotatorEngine {
     // Touch drag handlers for Android and mobile
     element.addEventListener('touchstart', (e) => {
       if (document.body.classList.contains('mode-view')) return;
-      if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn')) {
+      if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn') || e.target.closest('.btn-delete-note') || e.target.closest('button') || e.target.closest('textarea')) {
         return;
       }
       if (e.target.closest('.textbox-content') || e.target.isContentEditable) return;

@@ -464,12 +464,31 @@ class PersonalPDFApp {
         return;
       }
 
-      // If active stamp is selected, Delete or Backspace key deletes it
+      // If active sticky note, text box, stamp, or selected element is active, Delete or Backspace key deletes it
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.annotator?.activeStickyNote) {
+          e.preventDefault();
+          this.annotator.deleteActiveStickyNote();
+          if (this.ui) this.ui.setStatus('Sticky note removed');
+          return;
+        }
+        if (this.annotator?.activeTextBox) {
+          e.preventDefault();
+          this.annotator.deleteActiveTextBox();
+          if (this.ui) this.ui.setStatus('Text box removed');
+          return;
+        }
         if (this.annotator?.activeStamp) {
           e.preventDefault();
           this.annotator.deleteActiveStamp();
           if (this.ui) this.ui.setStatus('Stamp removed');
+          return;
+        }
+        const selEl = document.querySelector('.element-selected');
+        if (selEl) {
+          e.preventDefault();
+          this.annotator?.deleteElement(selEl);
+          if (this.ui) this.ui.setStatus('Element removed');
           return;
         }
       }
@@ -624,10 +643,9 @@ class PersonalPDFApp {
     // Constrain max-width to available line space without overflowing across diagrams, subsequent spans, or page margins
     const wrapRect = pageWrapper.getBoundingClientRect();
     const wrapW = wrapRect.width || pageWrapper.clientWidth || 800;
-    // Keep at least 48px right margin padding so text never crosses the page border
-    const rightMarginLimit = Math.max(wrapW - 48, (span.offsetLeft || 0) + (span._originalWidth || 100));
-    let minNextLeft = rightMarginLimit;
 
+    // 1. Check for immediate horizontal sibling on the same line
+    let minNextLeft = Infinity;
     const siblingSpans = pageWrapper.querySelectorAll('.textLayer span');
     for (const sibling of siblingSpans) {
       if (sibling !== span && Math.abs(sibling.offsetTop - span.offsetTop) < 6 && sibling.offsetLeft > span.offsetLeft) {
@@ -636,9 +654,39 @@ class PersonalPDFApp {
         }
       }
     }
-    const maxAvailableSpace = Math.max((span._originalWidth || 40), minNextLeft - span.offsetLeft - 4);
-    const maxW = Math.max(60, maxAvailableSpace);
-    span.style.maxWidth = `${Math.floor(maxW)}px`;
+
+    let calculatedMaxW;
+    if (minNextLeft !== Infinity) {
+      calculatedMaxW = Math.max(span._originalWidth || 40, minNextLeft - span.offsetLeft - 4);
+    } else {
+      // 2. No same-line sibling: Detect paragraph column right margin from vertically adjacent lines
+      let maxParagraphRight = 0;
+      for (const sibling of siblingSpans) {
+        if (sibling !== span) {
+          const dy = Math.abs(sibling.offsetTop - span.offsetTop);
+          if (dy > 0 && dy < 120) {
+            const dx = Math.abs(sibling.offsetLeft - span.offsetLeft);
+            // Sibling is in same paragraph text column if left margin aligns within 25px
+            if (dx < 25) {
+              const sibRight = sibling.offsetLeft + (sibling._originalWidth || sibling.offsetWidth || 0);
+              if (sibRight > maxParagraphRight) {
+                maxParagraphRight = sibRight;
+              }
+            }
+          }
+        }
+      }
+
+      // Constrain to column right boundary, strictly avoiding stretching into page margin
+      const colRightLimit = maxParagraphRight > (span.offsetLeft + 40)
+        ? maxParagraphRight
+        : Math.min(wrapW - 54, (span.offsetLeft || 0) + (span._originalWidth || 100) + 20);
+
+      calculatedMaxW = Math.max(span._originalWidth || 40, colRightLimit - span.offsetLeft);
+    }
+
+    const maxW = Math.max(40, Math.floor(calculatedMaxW));
+    span.style.maxWidth = `${maxW}px`;
     span.style.whiteSpace = 'nowrap';
     span.style.overflow = 'hidden';
     span.style.textOverflow = 'clip';

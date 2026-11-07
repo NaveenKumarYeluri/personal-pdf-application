@@ -163,6 +163,14 @@ def run_all_tests():
          "body.annotating-active .textLayer" in viewer_css and "pointer-events: none !important;" in viewer_css and "body.annotating-active .annotation-layer" in viewer_css)
     test("pdf-annotator.js setTool toggles annotating-active class and pointer-events dynamically",
          "document.body.classList.toggle('annotating-active'" in annot_js)
+    test("pdf-annotator.js _addStickyNote automatically sets tool to select and provides displacement-based drag",
+         "this.setTool('select')" in annot_js and "setupDrag(marker)" in annot_js and "setupDrag(popup.querySelector('.sticky-note-header'))" in annot_js)
+    test("pdf-annotator.js _addStickyNote delete button wires onclick/onmousedown to noteContainer.remove",
+         "btnDel.onclick = doDelete" in annot_js and "btnDel.onmousedown" in annot_js and "noteContainer.remove()" in annot_js)
+    test("pdf-annotator.js deleteActiveTextBox and deleteActiveBox support activeStickyNote",
+         "deleteActiveStickyNote" in annot_js and "deleteActiveBox" in annot_js)
+    test("app.js Delete/Backspace shortcut deletes activeStickyNote",
+         "this.annotator?.activeStickyNote" in app_js and "this.annotator.deleteActiveStickyNote()" in app_js)
 
     # =========================================================================
     # 6. Page Organizer & Mutation Engine (pdf-organizer.js)
@@ -410,6 +418,8 @@ def run_all_tests():
          "div._pdfFontName = detectedFont;" in viewer_js and "div._pdfIsBold =" in viewer_js)
     test("app.js uses dynamic proportional scaling (down to 0.35) to prevent text truncation",
          "const fitRatio = Math.max(0.35, maxW / curW);" in app_js)
+    test("app.js detects paragraph column right margin from vertically adjacent sibling spans",
+         "maxParagraphRight" in app_js and "colRightLimit" in app_js)
     test("viewer.css locks white-space: nowrap and overflow: hidden to protect line layout and page boundaries",
          "white-space: nowrap !important;" in viewer_css and "overflow: hidden !important;" in viewer_css)
     test("Enter key commits single-line edit cleanly without inserting overlapping lines",

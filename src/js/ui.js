@@ -18,6 +18,7 @@ export class UIController {
     this._initModals();
     this._initTheme();
     this._initMaterialMobileUI();
+    if (this.app?.annotator) this.app.annotator.ui = this;
     this.setMode('view');
   }
 
@@ -2350,6 +2351,20 @@ export class UIController {
   setStatus(msg) {
     const el = document.getElementById('status-message');
     if (el) el.textContent = msg;
+  }
+
+  setAnnotationTool(toolName) {
+    const tools = ['select', 'pen', 'highlighter', 'eraser', 'note', 'text', 'rect', 'circle', 'line'];
+    tools.forEach(t => {
+      const btn = document.getElementById(`tool-${t}`);
+      if (btn) btn.classList.toggle('active', t === toolName);
+    });
+    document.querySelectorAll('[data-m3-tool]').forEach(chip => {
+      chip.classList.toggle('active', chip.dataset.m3Tool === toolName);
+    });
+    if (toolName === 'select' || toolName === 'none') {
+      this.setStatus('Text selection active: click & drag to select and copy text');
+    }
   }
 
   setZoomStatus(zoomText) {

@@ -44,6 +44,11 @@
   pointer-events: auto;
 }
 
+.sticky-note-container.active-note .sticky-note-marker {
+  box-shadow: 0 0 0 2.5px #2563eb, var(--shadow-md);
+  transform: scale(1.1);
+}
+
 .sticky-note-header {
   display: flex;
   justify-content: space-between;
@@ -53,6 +58,30 @@
   border-bottom: 1px solid rgba(245, 158, 11, 0.4);
   padding-bottom: 4px;
   margin-bottom: 6px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sticky-note-header:active {
+  cursor: grabbing;
+}
+
+.sticky-note-header .btn-delete-note {
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  color: #78350f;
+  padding: 0 4px;
+  border-radius: 3px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sticky-note-header .btn-delete-note:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #dc2626;
 }
 
 .sticky-note-popup textarea {
