@@ -339,6 +339,9 @@ export class PDFExportEngine {
 
   preparePrintContainer() {
     let container = document.getElementById('print-render-container');
+    if (container && container.children.length > 0) {
+      return container;
+    }
     if (container) container.remove();
 
     container = document.createElement('div');
@@ -455,7 +458,6 @@ export class PDFExportEngine {
 
     this.preparePrintContainer();
     window.print();
-    setTimeout(() => this.cleanupPrintContainer(), 2000);
   }
 }
 

@@ -290,11 +290,16 @@ body.mode-view .textLayer span.inline-editing {
   z-index: 25 !important;
 }
 
-/* Print Stylesheet (Clean, full-width, multi-page printing without UI chrome clipping) */
+/* Print-only container is hidden on screen */
+#print-render-container {
+  display: none !important;
+}
+
+/* Print Stylesheet (Clean, A4-conforming, multi-page printing with standard borders & padding) */
 @media print {
   @page {
-    margin: 0;
-    size: auto;
+    size: A4 portrait;
+    margin: 12mm 10mm; /* Standard A4 page borders: 12mm top/bottom, 10mm left/right */
   }
 
   /* 1. Complete Universal Isolation: Hide EVERYTHING in body except #print-render-container */
@@ -302,12 +307,21 @@ body.mode-view .textLayer span.inline-editing {
     display: none !important;
   }
 
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    width: 100% !important;
+    height: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   /* 2. Isolated full-page print container */
   #print-render-container {
     display: block !important;
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
+    position: static !important;
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -319,12 +333,17 @@ body.mode-view .textLayer span.inline-editing {
     break-after: page !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-    display: block !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
     width: 100% !important;
-    max-width: 100% !important;
-    height: auto !important;
+    height: calc(297mm - 28mm) !important;
+    max-height: calc(297mm - 28mm) !important;
+    box-sizing: border-box !important;
+    margin: 0 auto !important;
+    padding: 2mm 0 !important;
+    overflow: hidden !important;
     box-shadow: none !important;
     border: none !important;
     background: transparent !important;
@@ -337,10 +356,13 @@ body.mode-view .textLayer span.inline-editing {
 
   #print-render-container .print-page-canvas {
     display: block !important;
-    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    width: auto !important;
     height: auto !important;
-    margin: 0 auto !important;
+    margin: auto !important;
     object-fit: contain !important;
+    box-shadow: none !important;
   }
 }
 
