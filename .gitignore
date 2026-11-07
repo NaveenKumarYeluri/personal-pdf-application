@@ -52,3 +52,6 @@ desktop.ini
 *.swp
 *.swo
 
+# Local test documents (large PDF/image samples)
+test-docs/
+
