@@ -265,7 +265,11 @@ export class PDFViewerEngine {
       this.pdfBytes = data instanceof Uint8Array ? data : new Uint8Array(data);
       
       // Concurrently extract real font metadata from PDF indirect objects
-      this._extractDocumentFonts(this.pdfBytes);
+      try {
+        await this._extractDocumentFonts(this.pdfBytes);
+      } catch (err) {
+        console.warn('Font extraction notice:', err);
+      }
 
       const loadingTask = window.pdfjsLib.getDocument({ data: this.pdfBytes.slice() });
       this.pdfDoc = await loadingTask.promise;
@@ -423,14 +427,37 @@ export class PDFViewerEngine {
       textLayer.style.setProperty('--scale-factor', viewport.scale);
 
       if (window.pdfjsLib.renderTextLayer) {
+        const textDivs = [];
         const textTask = window.pdfjsLib.renderTextLayer({
           textContentSource: textContent,
           container: textLayer,
           viewport: viewport,
-          textDivs: []
+          textDivs: textDivs
         });
         if (textTask && textTask.promise) {
           await textTask.promise;
+        }
+
+        // Tag each span with its exact PDF stream font metadata for 100% native font matching
+        if (textContent && textContent.items && textDivs.length > 0) {
+          const itemsLen = textContent.items.length;
+          for (let i = 0; i < Math.min(textDivs.length, itemsLen); i++) {
+            const item = textContent.items[i];
+            const div = textDivs[i];
+            if (item && div) {
+              const fontObj = textContent.styles ? textContent.styles[item.fontName] : null;
+              let detectedFont = fontObj ? (fontObj.fontFamily || '') : '';
+              detectedFont = detectedFont.replace(/^[A-Z0-9]{6}\+/, '').trim();
+              detectedFont = detectedFont.replace(/-(?:Bold|Italic|Regular|BoldItalic|Oblique|BoldOblique)$/i, '');
+              div._pdfFontName = detectedFont;
+              div._pdfIsBold = /bold/i.test(item.fontName || '') || (fontObj && /bold/i.test(fontObj.fontFamily || ''));
+              div._pdfIsItalic = /italic|oblique/i.test(item.fontName || '') || (fontObj && /italic|oblique/i.test(fontObj.fontFamily || ''));
+              if (item.transform && item.transform.length >= 2) {
+                const fs = Math.hypot(item.transform[0], item.transform[1]);
+                if (fs > 0) div._pdfPtFontSize = fs;
+              }
+            }
+          }
         }
       }
 

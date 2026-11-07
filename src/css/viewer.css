@@ -208,10 +208,8 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
   box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgba(37, 99, 235, 0.25) !important;
   z-index: 100 !important;
   white-space: nowrap !important;
-  word-break: normal !important;
-  overflow-wrap: normal !important;
-  overflow: hidden !important;
-  text-overflow: clip !important;
+  overflow: visible !important;
+  text-overflow: clip;
   user-select: text !important;
   -webkit-user-select: text !important;
   color: #111827 !important;
@@ -221,7 +219,7 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
   margin: 0 !important;
   box-sizing: border-box !important;
   -webkit-font-smoothing: antialiased !important;
-  line-height: 1.15 !important;
+  line-height: 1.25 !important;
   caret-color: #2563eb !important;
 }
 
@@ -247,15 +245,13 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
   z-index: 50 !important;
   cursor: text !important;
   white-space: nowrap !important;
-  word-break: normal !important;
-  overflow-wrap: normal !important;
-  overflow: hidden !important;
-  text-overflow: clip !important;
+  overflow: visible !important;
+  text-overflow: clip;
   padding: 0 2px !important;
   margin: 0 !important;
   box-sizing: border-box !important;
   -webkit-font-smoothing: antialiased !important;
-  line-height: 1.15 !important;
+  line-height: 1.25 !important;
 }
 
 body.mode-edit .textLayer span.in-place-modified {

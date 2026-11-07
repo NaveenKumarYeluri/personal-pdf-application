@@ -1225,18 +1225,22 @@ export class PDFAnnotatorEngine {
             });
           }
 
-          // Render modified text using PDF's exact font, size, and styling (bounded single line fit)
+          // Render modified text using PDF's exact font, size, and styling (strictly single-line to protect adjacent lines)
           const fSize = parseFloat(cs.fontSize) * scaleY;
           const fontFamily = edit.fontFamily || span._customFontStack || cs.fontFamily || 'sans-serif';
           const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
-          const fontStyle = cs.fontStyle || 'normal';
+          const fontStyle = span._customFontStyle || cs.fontStyle || 'normal';
           const color = cs.color || '#111827';
 
           compCtx.save();
           compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
           compCtx.fillStyle = color;
           compCtx.textBaseline = 'top';
-          compCtx.fillText(textToDraw, sx, sy, maskW);
+
+          const textToRender = (span.innerText || span.textContent || textToDraw || '').replace(/[\r\n]+/g, ' ');
+          // Draw single-line text fitted to maskW using Canvas fillText maxWidth parameter
+          // This guarantees text stays strictly on its line and never collides with or erases adjacent lines below!
+          compCtx.fillText(textToRender, sx, sy, maskW);
           compCtx.restore();
         }
       }

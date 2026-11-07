@@ -127,21 +127,21 @@ def run_all_tests():
         export_js = f.read()
 
     test("app.js uses explicit isSansSerif check to avoid /serif/ matching 'sans-serif'",
-         "isSansSerif = /sans-serif|calibri|arial|helvetica" in app_js)
+         "isSansSerif" in app_js and "/sans-serif|calibri|arial|helvetica" in app_js)
     test("app.js preserves fontWeight for bold document text",
          "span._customFontWeight = isBold ? '700' : '400'" in app_js)
     test("Canvas whiteout mask strictly uses original line height (normH = span._normRect.h)",
          "const normH = span._normRect.h;" in app_js and "Math.max(span._normRect.h, (span.offsetHeight" not in app_js)
-    test("cleanSpanContent uses white-space: nowrap and auto-fitting font scale",
+    test("cleanSpanContent uses auto-fitting font scale to protect adjacent lines from being overwritten",
          "span.style.whiteSpace = 'nowrap'" in app_js and "fitRatio" in app_js)
     test("app.js protects Android soft keyboard (Gboard) composition state with compositionstart/end",
          "_isComposing" in app_js and "compositionstart" in app_js and "compositionend" in app_js)
     test("app.js detects neighboring spans on the same line to constrain max editing width",
-         "siblingSpans" in app_js and "minNextLeft" in app_js and "textOverflow = 'clip'" in app_js)
-    test("app.js and index.html include Carlito/Arimo/Tinos for exact Android font metric parity",
-         "'Carlito'" in app_js and "'Arimo'" in app_js and "Carlito" in html)
-    test("pdf-annotator.js and pdf-export.js pass maxWidth constraint to fillText to prevent overflow",
-         "compCtx.fillText(textToDraw, sx, sy, maskW)" in annot_js and "ctx.fillText(span.textContent || '', sx, sy, origW)" in export_js)
+         "siblingSpans" in app_js and "minNextLeft" in app_js)
+    test("app.js prioritizes native Calibri on desktop and Carlito/Arimo/Tinos for exact Android font parity",
+         "'Calibri', 'Carlito'" in app_js and "Carlito" in html)
+    test("pdf-annotator.js and pdf-export.js support single-line fitted maxWidth constrained text drawing",
+         "compCtx.fillText(textToRender, sx, sy, maskW)" in annot_js and "ctx.fillText(textContentVal, sx, sy, origW)" in export_js)
     test("pdf-annotator.js burnAnnotationsToPdf locks mask height to original line height",
          "const origH = span._originalHeight || spanRect.height" in annot_js and "origH * scaleY" in annot_js)
 
@@ -391,6 +391,27 @@ def run_all_tests():
             test(f"Brace balance in {fp}", False, f"Open: {c.count('{')}, Close: {c.count('}')}, Diff: {diff}")
         else:
             test(f"Brace balance in {fp}", True)
+
+    # =========================================================================
+    # 15. In-Place Text Editing, Font Priority, Non-Truncation & Line Protection
+    # =========================================================================
+    print("\n--- 15. In-Place Text Editing, Font Priority, Non-Truncation & Line Protection ---")
+    test("Desktop font stack prioritizes native 'Calibri' before 'Carlito' for exact PDF parity",
+         "fontStack = `'Calibri', 'Carlito'" in app_js)
+    test("pdf-viewer.js extracts direct PDF stream font and weight metadata",
+         "div._pdfFontName = detectedFont;" in viewer_js and "div._pdfIsBold =" in viewer_js)
+    test("app.js uses dynamic proportional scaling (down to 0.35) to prevent text truncation",
+         "const fitRatio = Math.max(0.35, maxW / curW);" in app_js)
+    test("viewer.css locks white-space: nowrap and overflow: visible to protect line layout",
+         "white-space: nowrap !important;" in viewer_css and "overflow: visible !important;" in viewer_css)
+    test("Enter key commits single-line edit cleanly without inserting overlapping lines",
+         "kEvt.key === 'Enter'" in app_js and "span.blur();" in app_js)
+    test("Canvas whiteout mask strictly covers original line height to prevent erasing line below",
+         "Math.ceil(normH * pageCanvas.height) + 4" in app_js and "totalMaskH" not in app_js)
+    test("pdf-annotator.js renders single-line fitted text onto Canvas without line collisions",
+         "compCtx.fillText(textToRender, sx, sy, maskW);" in annot_js)
+    test("pdf-export.js renders single-line fitted text onto Print Canvas without line collisions",
+         "ctx.fillText(textContentVal, sx, sy, origW);" in export_js)
 
     # =========================================================================
     # Summary

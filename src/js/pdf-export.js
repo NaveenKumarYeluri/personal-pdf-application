@@ -394,9 +394,10 @@ export class PDFExportEngine {
           const sy = span.offsetTop * scaleY;
 
           // Mask original underlying text area with white in case of active inline-editing or zoom variations
-          const origH = (span._originalHeight || span.offsetHeight || 18) * scaleY;
+          // Strictly single line height so adjacent lines below are NEVER erased!
+          const origH = (span._originalHeight || 18) * scaleY;
           const maxAllowedW = (parseFloat(span.style.maxWidth) || span.offsetWidth || span._originalWidth || 100) * scaleX;
-          const origW = Math.min(maxAllowedW, Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX);
+          const origW = Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX;
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(origW) + 4, Math.ceil(origH) + 4);
 
@@ -404,7 +405,10 @@ export class PDFExportEngine {
           ctx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
           ctx.fillStyle = color;
           ctx.textBaseline = 'top';
-          ctx.fillText(span.textContent || '', sx, sy, origW);
+
+          const textContentVal = (span.innerText || span.textContent || '').replace(/[\r\n]+/g, ' ');
+          // Draw single-line text fitted to origW using Canvas fillText maxWidth parameter
+          ctx.fillText(textContentVal, sx, sy, origW);
           ctx.restore();
         });
 
