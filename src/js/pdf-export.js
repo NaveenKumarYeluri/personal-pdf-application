@@ -339,13 +339,15 @@ export class PDFExportEngine {
 
   preparePrintContainer() {
     let container = document.getElementById('print-render-container');
-    if (container && container.children.length > 0) {
+    const currentDoc = this.app?.currentDocName || this.viewer?.currentDocName || 'default';
+    if (container && container.dataset.docName === currentDoc && container.children.length > 0) {
       return container;
     }
     if (container) container.remove();
 
     container = document.createElement('div');
     container.id = 'print-render-container';
+    container.dataset.docName = currentDoc;
 
     const viewer = this.viewer || this.app?.viewer || (typeof window !== 'undefined' ? window.app?.viewer : null);
     const totalPages = viewer?.totalPages || 1;

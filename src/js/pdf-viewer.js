@@ -246,6 +246,12 @@ export class PDFViewerEngine {
 
   async loadDocument(data, fileName = 'document.pdf') {
     try {
+      this.clearSearch();
+      const sInput = document.getElementById('search-input');
+      if (sInput) sInput.value = '';
+      const sCount = document.getElementById('search-count');
+      if (sCount) sCount.textContent = '0/0';
+
       this.documentFonts.clear();
       this.pdfBytes = data instanceof Uint8Array ? data : new Uint8Array(data);
       

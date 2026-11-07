@@ -914,6 +914,9 @@ class PersonalPDFApp {
     if (this.annotator) {
       this.annotator.clearAllEdits();
     }
+    if (this.exporter && typeof this.exporter.cleanupPrintContainer === 'function') {
+      this.exporter.cleanupPrintContainer();
+    }
     this.customBookmarks = [];
 
     // Safely toggle welcome screen and viewer
@@ -958,13 +961,19 @@ class PersonalPDFApp {
     const m3Sub = document.getElementById('m3-drawer-subtitle');
 
     if (pageCount) pageCount.textContent = meta.pages;
-    if (pageInput) pageInput.max = meta.pages;
+    if (pageInput) {
+      pageInput.value = 1;
+      pageInput.max = meta.pages;
+    }
     if (m3Page) m3Page.textContent = `1 / ${meta.pages}`;
     if (m3Sub) m3Sub.textContent = `${meta.pages} pages • Page 1`;
     document.getElementById('status-size').textContent = `${Math.round(meta.bytes / 1024)} KB`;
     this.ui.setZoomStatus(`${Math.round(this.viewer.scale * 100)}%`);
-    if (this.ui && meta.fonts && meta.fonts.length > 0) {
-      this.ui.setDocumentFonts(meta.fonts);
+    if (this.ui) {
+      if (meta.fonts && meta.fonts.length > 0) {
+        this.ui.setDocumentFonts(meta.fonts);
+      }
+      this.ui.syncBookmarks();
     }
   }
 
