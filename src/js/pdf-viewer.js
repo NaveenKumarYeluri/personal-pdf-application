@@ -328,6 +328,10 @@ export class PDFViewerEngine {
       // Overlay canvas for annotations
       const annotationLayer = document.createElement('div');
       annotationLayer.className = 'annotation-layer';
+      if (typeof document !== 'undefined' && document.body.classList.contains('annotating-active')) {
+        annotationLayer.classList.add('drawing-active');
+        annotationLayer.style.pointerEvents = 'auto';
+      }
       annotationLayer.id = `annotation-layer-${pageNum}`;
       const annotCanvas = document.createElement('canvas');
       annotCanvas.id = `annot-canvas-${pageNum}`;

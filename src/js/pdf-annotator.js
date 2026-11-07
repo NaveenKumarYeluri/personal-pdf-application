@@ -47,18 +47,22 @@ export class PDFAnnotatorEngine {
     if (props.fontSize) this.fontSize = props.fontSize;
     if (props.fontFamily) this.fontFamily = props.fontFamily;
 
-    // Toggle drawing-active class on all annotation layers
-    const layers = this.container.querySelectorAll('.annotation-layer');
+    const isAnnotating = tool !== 'none' && tool !== 'select';
+    if (typeof document !== 'undefined') {
+      document.body.classList.toggle('annotating-active', isAnnotating);
+    }
+
+    // Toggle drawing-active class and pointer-events on all annotation layers
+    const layers = this.container ? this.container.querySelectorAll('.annotation-layer') : (typeof document !== 'undefined' ? document.querySelectorAll('.annotation-layer') : []);
     layers.forEach(layer => {
-      if (this.currentTool === 'none') {
+      if (!isAnnotating) {
         layer.classList.remove('drawing-active');
         layer.style.cursor = 'default';
-      } else if (this.currentTool === 'eraser') {
-        layer.classList.add('drawing-active');
-        layer.style.cursor = 'crosshair';
+        layer.style.pointerEvents = 'none';
       } else {
         layer.classList.add('drawing-active');
-        layer.style.cursor = 'crosshair';
+        layer.style.cursor = tool === 'text' ? 'text' : 'crosshair';
+        layer.style.pointerEvents = 'auto';
       }
     });
   }
@@ -75,16 +79,16 @@ export class PDFAnnotatorEngine {
   }
 
   _getCanvasAndCoords(e) {
-    const target = e.target.closest('.annotation-layer');
-    if (!target) return null;
-
-    const pageWrapper = target.closest('.page-wrapper');
+    const pageWrapper = e.target.closest('.page-wrapper');
     if (!pageWrapper) return null;
-    const pageNum = parseInt(pageWrapper.dataset.pageNumber, 10);
-    const canvas = target.querySelector('canvas');
+
+    const pageNum = parseInt(pageWrapper.dataset.pageNumber, 10) || 1;
+    const canvas = pageWrapper.querySelector('canvas[id^="annot-canvas-"]') || pageWrapper.querySelector('.annotation-layer canvas');
     if (!canvas) return null;
 
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
@@ -94,11 +98,31 @@ export class PDFAnnotatorEngine {
     const x = (clientX - rect.left) * scaleX;
     const y = (clientY - rect.top) * scaleY;
 
-    return { canvas, pageNum, x, y, rect, rawX: clientX - rect.left, rawY: clientY - rect.top };
+    return { 
+      canvas, 
+      pageNum, 
+      x, 
+      y, 
+      rect, 
+      rawX: clientX - rect.left, 
+      rawY: clientY - rect.top,
+      pageWrapper 
+    };
   }
 
   _onMouseDown(e) {
-    if (this.currentTool === 'none') return;
+    if (this.currentTool === 'none' || this.currentTool === 'select') return;
+
+    // If clicking inside an existing active textbox editor or handle, let it interact normally
+    if (e.target.closest('.annotation-textbox, .textbox-content, .resize-handle, .element-rotate-handle, .annotation-action-bar, .sticky-note-popup')) {
+      if (this.currentTool !== 'eraser') return;
+    }
+
+    const info = this._getCanvasAndCoords(e);
+    if (!info) return;
+
+    // Prevent default browser text selection while annotating or drawing!
+    if (e.cancelable) e.preventDefault();
 
     // 1. Dedicated Eraser Tool handling
     if (this.currentTool === 'eraser') {
@@ -131,9 +155,6 @@ export class PDFAnnotatorEngine {
       return;
     }
 
-    const info = this._getCanvasAndCoords(e);
-    if (!info) return;
-
     if (this.currentTool === 'note') {
       this._addStickyNote(info.pageNum, info.rawX, info.rawY);
       return;
@@ -154,6 +175,7 @@ export class PDFAnnotatorEngine {
     if (this.isErasing && this.activePageNum) {
       const info = this._getCanvasAndCoords(e);
       if (info && info.pageNum === this.activePageNum) {
+        if (e.cancelable) e.preventDefault();
         this._eraseStrokesAt(info.pageNum, info.x, info.y);
       }
       return;
@@ -163,6 +185,7 @@ export class PDFAnnotatorEngine {
     const info = this._getCanvasAndCoords(e);
     if (!info || info.pageNum !== this.activePageNum) return;
 
+    if (e.cancelable) e.preventDefault();
     this.currentPath.push({ x: info.x, y: info.y });
     this._renderCurrentStroke();
   }

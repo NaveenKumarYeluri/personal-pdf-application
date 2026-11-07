@@ -296,13 +296,17 @@ export class UIController {
     // User can tap mobile top bar title to reveal page switcher & zoom bar briefly
     document.getElementById('m3-doc-title')?.addEventListener('click', keepMobileBarAlive);
 
-    // Immediately dismiss mobile page bar on scroll to prevent disturbing the reader
-    document.getElementById('viewer-container')?.addEventListener('scroll', () => {
+    // Immediately dismiss mobile page bar on any scroll or touch to prevent disturbing the reader
+    const hideMobileBar = () => {
       if (m3Bar && m3Bar.classList.contains('visible')) {
         m3Bar.classList.remove('visible');
         clearTimeout(m3BarHideTimer);
       }
-    }, { passive: true });
+    };
+    document.getElementById('viewer-container')?.addEventListener('scroll', hideMobileBar, { passive: true });
+    document.getElementById('viewer-container')?.addEventListener('touchmove', hideMobileBar, { passive: true });
+    window.addEventListener('scroll', hideMobileBar, { passive: true });
+    document.addEventListener('touchmove', hideMobileBar, { passive: true });
 
     document.getElementById('m3-page-prev')?.addEventListener('click', () => {
       keepMobileBarAlive();
@@ -1373,9 +1377,17 @@ export class UIController {
         if (t === 'text') {
           this.setStatus('Click anywhere on the document to place a rich text block');
         } else if (t === 'pen') {
-          this.setStatus('Freehand pen active');
+          this.setStatus('Freehand pen active: click & drag to draw');
         } else if (t === 'highlighter') {
-          this.setStatus('Highlighter brush active');
+          this.setStatus('Highlighter brush active: click & drag to highlight');
+        } else if (t === 'note') {
+          this.setStatus('Sticky Note active: click on document to place a note');
+        } else if (t === 'rect') {
+          this.setStatus('Rectangle tool active: click & drag to draw a box');
+        } else if (t === 'circle') {
+          this.setStatus('Circle tool active: click & drag to draw an oval/circle');
+        } else if (t === 'line') {
+          this.setStatus('Line tool active: click & drag to draw a line');
         }
       };
     });

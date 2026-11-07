@@ -208,8 +208,8 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
   box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgba(37, 99, 235, 0.25) !important;
   z-index: 100 !important;
   white-space: nowrap !important;
-  overflow: visible !important;
-  text-overflow: clip;
+  overflow: hidden !important;
+  text-overflow: clip !important;
   user-select: text !important;
   -webkit-user-select: text !important;
   color: #111827 !important;
@@ -245,8 +245,8 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
   z-index: 50 !important;
   cursor: text !important;
   white-space: nowrap !important;
-  overflow: visible !important;
-  text-overflow: clip;
+  overflow: hidden !important;
+  text-overflow: clip !important;
   padding: 0 2px !important;
   margin: 0 !important;
   box-sizing: border-box !important;
@@ -388,12 +388,32 @@ body.mode-view .textLayer span.inline-editing {
 }
 
 .annotation-layer.drawing-active {
-  pointer-events: auto;
+  pointer-events: auto !important;
+  z-index: 20 !important;
   cursor: crosshair;
 }
 
 .annotation-layer.drawing-active canvas {
-  pointer-events: auto;
+  pointer-events: auto !important;
+}
+
+/* When Annotating, Pen, Highlighter, Text, or Shapes are active: prioritize annotation layer and prevent accidental text selection */
+body.annotating-active .textLayer,
+body.mode-annotate:not(.annot-tool-none) .textLayer {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  pointer-events: none !important;
+}
+
+body.annotating-active .annotation-layer,
+body.mode-annotate:not(.annot-tool-none) .annotation-layer {
+  pointer-events: auto !important;
+  z-index: 20 !important;
+}
+
+body.annotating-active .annotation-layer canvas,
+body.mode-annotate:not(.annot-tool-none) .annotation-layer canvas {
+  pointer-events: auto !important;
 }
 
 /* Page Thumbnails Sidebar */

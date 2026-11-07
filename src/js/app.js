@@ -582,7 +582,7 @@ class PersonalPDFApp {
       fontStack = `'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
     } else if (isDirectArial || (matchingDocFont && /arial|helvetica/i.test(matchingDocFont))) {
       fontStack = `Arial, 'Arimo', 'Helvetica Neue', Helvetica, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
-    } else if (matchingDocFont) {
+    } else if (matchingDocFont && !/sans-serif|serif|monospace/i.test(matchingDocFont)) {
       fontStack = `'${matchingDocFont}', 'Calibri', 'Carlito', 'Arimo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
     } else {
       fontStack = `'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
@@ -601,13 +601,16 @@ class PersonalPDFApp {
     span.style.fontStyle = isItalic ? 'italic' : 'normal';
     span._customFontStyle = isItalic ? 'italic' : 'normal';
 
-    // Use dynamic scale factor so zooming maintains exact font size proportion
-    // Prefer PDF.js inline font-size over computedStyle to avoid Android mobile font booster inflation
-    const scaleFactor = (this.viewer && this.viewer.scale) || 1;
-    const inlineFs = parseFloat(span.style.fontSize) || 0;
-    const compFs = parseFloat(compStyle.fontSize) || 16;
-    const computedFontSizePx = inlineFs > 0 ? inlineFs : compFs;
-    const baseFontSize = span._baseFontSize || (span._pdfPtFontSize || (computedFontSizePx / scaleFactor));
+    // Extract exact unscaled CSS pixel base size from PDF.js style
+    let baseFontSize = 14;
+    const fsMatch = (span.style.fontSize || '').match(/([\d\.]+)\s*px/);
+    if (fsMatch) {
+      baseFontSize = parseFloat(fsMatch[1]);
+    } else {
+      const compFs = parseFloat(compStyle.fontSize) || 16;
+      const scaleFactor = (this.viewer && this.viewer.scale) || 1;
+      baseFontSize = compFs / scaleFactor;
+    }
     span._baseFontSize = baseFontSize;
     span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
     span.style.lineHeight = '1.25';
@@ -618,9 +621,13 @@ class PersonalPDFApp {
     span.style.transform = 'none';
     span.style.letterSpacing = 'normal';
 
-    // Constrain max-width to available line space without overflowing across diagrams or subsequent spans
-    const wrapW = pageWrapper.clientWidth || 800;
-    let minNextLeft = wrapW - 24;
+    // Constrain max-width to available line space without overflowing across diagrams, subsequent spans, or page margins
+    const wrapRect = pageWrapper.getBoundingClientRect();
+    const wrapW = wrapRect.width || pageWrapper.clientWidth || 800;
+    // Keep at least 48px right margin padding so text never crosses the page border
+    const rightMarginLimit = Math.max(wrapW - 48, (span.offsetLeft || 0) + (span._originalWidth || 100));
+    let minNextLeft = rightMarginLimit;
+
     const siblingSpans = pageWrapper.querySelectorAll('.textLayer span');
     for (const sibling of siblingSpans) {
       if (sibling !== span && Math.abs(sibling.offsetTop - span.offsetTop) < 6 && sibling.offsetLeft > span.offsetLeft) {
@@ -633,7 +640,7 @@ class PersonalPDFApp {
     const maxW = Math.max(60, maxAvailableSpace);
     span.style.maxWidth = `${Math.floor(maxW)}px`;
     span.style.whiteSpace = 'nowrap';
-    span.style.overflow = 'visible';
+    span.style.overflow = 'hidden';
     span.style.textOverflow = 'clip';
 
     // Set as active in-place span in annotator engine
@@ -651,6 +658,21 @@ class PersonalPDFApp {
     span._pageNum = pageNum;
     span._pageWrapper = pageWrapper;
 
+    // Helper to measure true rendered text width even when overflow: hidden is active
+    const measureTextWidth = (el) => {
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const rects = range.getClientRects();
+        if (rects && rects.length > 0) {
+          let totalW = 0;
+          for (let i = 0; i < rects.length; i++) totalW += rects[i].width;
+          if (totalW > 0) return totalW;
+        }
+      } catch (err) {}
+      return el.scrollWidth || el.offsetWidth || 0;
+    };
+
     // Helper to sanitize child HTML and auto-fit so text NEVER truncates and NEVER wraps onto line below
     const cleanSpanContent = () => {
       if (span._isComposing) return;
@@ -663,13 +685,13 @@ class PersonalPDFApp {
       span.style.transform = 'none';
       span.style.maxWidth = `${Math.floor(maxW)}px`;
       span.style.whiteSpace = 'nowrap';
-      span.style.overflow = 'visible';
+      span.style.overflow = 'hidden';
       span.style.textOverflow = 'clip';
 
       // Dynamic single-line proportional fitting:
       // If user adds words, scale font size and letter-spacing smoothly down so ALL text
-      // stays strictly within the line, NEVER truncating ("partiti") and NEVER wrapping over adjacent lines!
-      const curW = span.scrollWidth;
+      // stays strictly within the line, NEVER overflowing off the page and NEVER wrapping over adjacent lines!
+      const curW = measureTextWidth(span);
       if (curW > maxW && maxW > 0) {
         const fitRatio = Math.max(0.35, maxW / curW);
         const fittedSize = baseFontSize * fitRatio;
@@ -680,6 +702,9 @@ class PersonalPDFApp {
         span.style.letterSpacing = 'normal';
       }
     };
+
+    // Execute immediately on edit start
+    cleanSpanContent();
 
     // Sync toolbar font, size, bold, italic, color to match native PDF styling
     if (this.ui) {
@@ -738,7 +763,7 @@ class PersonalPDFApp {
           span.style.letterSpacing = span.style.letterSpacing || 'normal';
           span.style.maxWidth = `${Math.floor(maxW)}px`;
           span.style.whiteSpace = 'nowrap';
-          span.style.overflow = 'visible';
+          span.style.overflow = 'hidden';
           span.style.textOverflow = 'clip';
           span.style.width = 'auto';
           span.style.minWidth = '0';
@@ -862,12 +887,12 @@ class PersonalPDFApp {
         matchedSpan.classList.add('in-place-modified');
         matchedSpan.style.webkitTextSizeAdjust = 'none';
         matchedSpan.style.textSizeAdjust = 'none';
-        matchedSpan.style.lineHeight = '1.15';
+        matchedSpan.style.lineHeight = '1.25';
         matchedSpan.style.transform = 'none';
         matchedSpan.style.letterSpacing = 'normal';
-        matchedSpan.style.whiteSpace = 'pre-wrap';
-        matchedSpan.style.wordBreak = 'break-word';
-        matchedSpan.style.overflowWrap = 'break-word';
+        matchedSpan.style.whiteSpace = 'nowrap';
+        matchedSpan.style.overflow = 'hidden';
+        matchedSpan.style.textOverflow = 'clip';
         matchedSpan.style.width = 'auto';
         matchedSpan.style.minWidth = '0';
         matchedSpan.style.color = '#111827';
@@ -882,10 +907,11 @@ class PersonalPDFApp {
           matchedSpan.style.fontSize = `calc(var(--scale-factor, 1) * ${matchedSpan._baseFontSize.toFixed(2)}px)`;
         }
         if (pageWrapper) {
-          const maxW = Math.max(80, (pageWrapper.clientWidth || 800) - matchedSpan.offsetLeft - 24);
+          const maxW = Math.max(80, (pageWrapper.clientWidth || 800) - matchedSpan.offsetLeft - 48);
           matchedSpan.style.maxWidth = `${maxW}px`;
           matchedSpan.style.whiteSpace = 'nowrap';
-          matchedSpan.style.overflow = 'visible';
+          matchedSpan.style.overflow = 'hidden';
+          matchedSpan.style.textOverflow = 'clip';
         }
 
         const normRect = matchedSpan._normRect;

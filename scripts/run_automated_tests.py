@@ -146,15 +146,23 @@ def run_all_tests():
          "const origH = span._originalHeight || spanRect.height" in annot_js and "origH * scaleY" in annot_js)
 
     # =========================================================================
-    # 5. Document-Level Markup Annotations (Underline, Strikethrough)
+    # 5. Document-Level Markup & Annotation Interaction Safeguards
     # =========================================================================
-    print("\n--- 5. Document-Level Markup Annotations ---")
+    print("\n--- 5. Document-Level Markup & Annotation Interaction Safeguards ---")
     test("pdf-annotator.js Underline and Strikethrough support textLayer selection markup",
          "type: 'underline'" in annot_js and "type: 'strikethrough'" in annot_js and "a.type === 'underline' || a.type === 'strikethrough'" in annot_js)
     test("pdf-annotator.js renders underline markup at baseline offset",
          "a.type === 'underline'" in annot_js and "r.y + r.h - 1" in annot_js)
     test("pdf-annotator.js renders strikethrough markup at vertical midline",
          "a.type === 'strikethrough'" in annot_js and "r.y + r.h / 2" in annot_js)
+    test("pdf-annotator.js resolves canvas from .page-wrapper so clicking textLayer never aborts tools",
+         "pageWrapper = e.target.closest('.page-wrapper')" in annot_js and "annot-canvas-" in annot_js)
+    test("pdf-annotator.js calls e.preventDefault() on mousedown to defeat accidental text selection",
+         "e.cancelable) e.preventDefault()" in annot_js)
+    test("viewer.css disables textLayer and prioritizes annotationLayer during active tool usage",
+         "body.annotating-active .textLayer" in viewer_css and "pointer-events: none !important;" in viewer_css and "body.annotating-active .annotation-layer" in viewer_css)
+    test("pdf-annotator.js setTool toggles annotating-active class and pointer-events dynamically",
+         "document.body.classList.toggle('annotating-active'" in annot_js)
 
     # =========================================================================
     # 6. Page Organizer & Mutation Engine (pdf-organizer.js)
@@ -402,8 +410,8 @@ def run_all_tests():
          "div._pdfFontName = detectedFont;" in viewer_js and "div._pdfIsBold =" in viewer_js)
     test("app.js uses dynamic proportional scaling (down to 0.35) to prevent text truncation",
          "const fitRatio = Math.max(0.35, maxW / curW);" in app_js)
-    test("viewer.css locks white-space: nowrap and overflow: visible to protect line layout",
-         "white-space: nowrap !important;" in viewer_css and "overflow: visible !important;" in viewer_css)
+    test("viewer.css locks white-space: nowrap and overflow: hidden to protect line layout and page boundaries",
+         "white-space: nowrap !important;" in viewer_css and "overflow: hidden !important;" in viewer_css)
     test("Enter key commits single-line edit cleanly without inserting overlapping lines",
          "kEvt.key === 'Enter'" in app_js and "span.blur();" in app_js)
     test("Canvas whiteout mask strictly covers original line height to prevent erasing line below",
