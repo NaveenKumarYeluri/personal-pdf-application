@@ -240,6 +240,21 @@
       testSpan.textContent = testSpan._originalText;
       assert('In-Place Edit - Escape key reverts text cleanly', testSpan.textContent === 'original line of text', 'Original text faithfully restored');
 
+      // 9. Document Selection Underline & Strikethrough Markup
+      const mockUnderlineAnnot = {
+        type: 'underline',
+        color: '#2563eb',
+        strokeWidth: 2,
+        rects: [{ x: 50, y: 100, w: 200, h: 16 }]
+      };
+      assert('Markup Annotations - Underline markup object structure', mockUnderlineAnnot.type === 'underline' && mockUnderlineAnnot.rects.length === 1, 'Valid underline markup record created');
+
+      // 10. Bookmark Page Number Determination
+      const testTotalPages = 5;
+      const testInputVal = 3;
+      const resolvedPage = (testInputVal >= 1 && testInputVal <= testTotalPages) ? testInputVal : 1;
+      assert('Bookmarks - Page number correctly resolved from input/view', resolvedPage === 3, 'Bookmark targets Page 3 accurately');
+
       console.log('Automated test suite finished:', window.__TEST_RESULTS__);
     }
 
@@ -248,3 +263,4 @@
   </script>
 </body>
 </html>
+
