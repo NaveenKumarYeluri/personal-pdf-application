@@ -63,6 +63,9 @@ export function healPdfTextLigatures(text) {
   cleaned = cleaned.replace(/suf[\ufffd\u0000\u001f\u007f\?]{1,2}cent\b/gi, 'sufficient');
   cleaned = cleaned.replace(/ef[\ufffd\u0000\u001f\u007f\?]{1,2}cent\b/gi, 'efficient');
   cleaned = cleaned.replace(/dif[\ufffd\u0000\u001f\u007f\?]{1,2}erent\b/gi, 'different');
+  cleaned = cleaned.replace(/dif[\ufffd\u0000\u001f\u007f\?]{1,2}cult\b/gi, 'difficult');
+  cleaned = cleaned.replace(/dif[\ufffd\u0000\u001f\u007f\?]{1,2}culty\b/gi, 'difficulty');
+  cleaned = cleaned.replace(/dif[\ufffd\u0000\u001f\u007f\?]{1,2}culties\b/gi, 'difficulties');
   cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}cular\b/gi, 'particular');
 
   // 8. Contextual ligature repair:

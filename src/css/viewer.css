@@ -88,7 +88,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px; /* Clean, subtle 8px page separation like Adobe Acrobat DC */
+  gap: 8px; /* Clean, subtle 8px page separation */
   width: 100%;
 }
 
@@ -162,7 +162,7 @@
   top: 0;
 }
 
-/* Edit PDF Content In-Place Mode & Active Search Matches (Adobe Acrobat Style) */
+/* Edit PDF Content In-Place Mode & Active Search Matches */
 .page-wrapper.editing-content .textLayer,
 .page-wrapper.has-search-matches .textLayer,
 .textLayer.has-modifications,
@@ -267,7 +267,7 @@ body.mode-view .textLayer span.inline-editing {
   cursor: default !important;
 }
 
-/* Search Highlights (Adobe Acrobat Style - High Visibility, Substring Exact) */
+/* Search Highlights (High Visibility, Substring Exact) */
 .textLayer mark.search-highlight {
   background-color: rgba(254, 240, 138, 0.85) !important;
   color: transparent !important;

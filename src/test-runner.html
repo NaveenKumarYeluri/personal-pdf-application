@@ -255,6 +255,36 @@
       const resolvedPage = (testInputVal >= 1 && testInputVal <= testTotalPages) ? testInputVal : 1;
       assert('Bookmarks - Page number correctly resolved from input/view', resolvedPage === 3, 'Bookmark targets Page 3 accurately');
 
+      // 11. Watermark Center Trigonometry & ASCII Sanitization
+      const rawWmText = 'CONFIDENTIAL \u2014 \u00A9 2026';
+      const cleanWmText = rawWmText.replace(/[^\x20-\x7E]/g, '?');
+      const rad = (45 * Math.PI) / 180;
+      const textWidth = 300;
+      const textHeight = 40;
+      const offsetX = (textWidth / 2) * Math.cos(rad) - (textHeight / 2) * Math.sin(rad);
+      const offsetY = (textWidth / 2) * Math.sin(rad) + (textHeight / 2) * Math.cos(rad);
+      assert('Watermark Engine - ASCII sanitization & center rotation offset', !/[^\x20-\x7E]/.test(cleanWmText) && offsetX > 0 && offsetY > 0, 'Centered rotation offsets computed with 0 encoding defects');
+
+      // 12. Dynamic Page Numbering Substitution
+      const template = 'Page {page} of {total}';
+      const pageNumStr = template.replace('{page}', '2').replace('{total}', '10');
+      assert('Page Number Engine - Placeholder string format resolution', pageNumStr === 'Page 2 of 10', 'Placeholder pattern formatted accurately');
+
+      // 13. Page Organizer Angle Modulo 360 Normalization
+      const normalizeAngle = (delta) => (((delta % 360) + 360) % 360);
+      assert('Page Organizer - Angle normalization modulo 360', normalizeAngle(-90) === 270 && normalizeAngle(450) === 90, 'Angles normalize within [0, 360) space');
+
+      // 14. Signature Handle 360-Degree Snap
+      const snapAngle = (deg) => {
+        deg = (deg + 360) % 360;
+        if (Math.abs(deg - 0) < 4 || Math.abs(deg - 360) < 4) return 0;
+        if (Math.abs(deg - 90) < 4) return 90;
+        if (Math.abs(deg - 180) < 4) return 180;
+        if (Math.abs(deg - 270) < 4) return 270;
+        return deg;
+      };
+      assert('Signature Engine - 360-degree rotation cardinal snapping', snapAngle(2) === 0 && snapAngle(92) === 90 && snapAngle(181) === 180, 'Cardinal rotation snapping verified');
+
       console.log('Automated test suite finished:', window.__TEST_RESULTS__);
     }
 

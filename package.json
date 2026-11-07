@@ -1,7 +1,7 @@
 {
   "name": "personal-pdf-suite",
   "version": "1.0.0",
-  "description": "Cross-platform personal PDF application with Adobe Acrobat-level functionality",
+  "description": "Cross-platform personal PDF application with professional desktop-grade functionality",
   "scripts": {
     "tauri": "tauri",
     "serve": "python serve.py",
@@ -11,7 +11,7 @@
   },
   "keywords": [
     "pdf",
-    "acrobat",
+    "document-editor",
     "editor",
     "annotations",
     "signatures",

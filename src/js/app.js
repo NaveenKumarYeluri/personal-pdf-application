@@ -1,6 +1,6 @@
 /**
  * Personal PDF Suite - Main Application Controller
- * Adobe Acrobat-grade functionality for Windows, Arch Linux, and Android.
+ * Professional desktop-grade functionality for Windows, Arch Linux, and Android.
  */
 
 import { PDFViewerEngine, healPdfTextLigatures } from './pdf-viewer.js';
@@ -452,7 +452,7 @@ class PersonalPDFApp {
       if (res) searchCount.textContent = `${res.current}/${res.total}`;
     };
 
-    // Global Keyboard Shortcuts (Adobe Acrobat compatible)
+    // Global Keyboard Shortcuts (Desktop suite compatible)
     window.addEventListener('keydown', (e) => {
       if (
         e.target.tagName === 'INPUT' ||
@@ -1001,7 +1001,7 @@ class PersonalPDFApp {
         color: rgb(0.92, 0.18, 0.25)
       });
 
-      page1.drawText('Adobe Acrobat-Grade Cross-Platform Application', {
+      page1.drawText('Professional Cross-Platform PDF Application', {
         x: 50,
         y: 690,
         size: 14,

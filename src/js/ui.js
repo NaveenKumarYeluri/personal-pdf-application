@@ -380,7 +380,7 @@ export class UIController {
     });
     document.getElementById('m3-drawer-about')?.addEventListener('click', () => {
       closeAllSheets();
-      alert('Personal PDF Suite - Acrobat Pro Edition\nCross-platform Adobe Acrobat alternative for Windows, Linux & Android.');
+      alert('Personal PDF Suite - Professional Edition\nHigh-performance, private PDF suite for Windows, Linux & Android.');
     });
 
     // 8. Mobile Annotation Chips

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Personal PDF Suite - Main Layout & Theme (Adobe Acrobat Inspired)
+   Personal PDF Suite - Main Layout & Theme (Professional Desktop Inspired)
    ========================================================================== */
 
 :root {
@@ -8,7 +8,7 @@
   --font-sig: 'Dancing Script', cursive;
 
   /* Dynamic Multi-Color Theme Accent (Customizable by User) */
-  --accent-color: #ea2e3f;       /* Default Adobe Red accent */
+  --accent-color: #ea2e3f;       /* Default Crimson Red accent */
   --accent-color-hover: #d22333;
   --accent-red: var(--accent-color);
   --accent-red-hover: var(--accent-color-hover);
@@ -205,7 +205,7 @@ body {
   align-items: center;
 }
 
-/* Document Tab (Adobe Acrobat Style) */
+/* Document Tab (Desktop Suite Style) */
 .acrobat-doc-tab {
   display: flex;
   align-items: center;
@@ -238,7 +238,7 @@ body {
   color: var(--accent-red);
 }
 
-/* Adobe Acrobat Pro Right Tools Panel */
+/* Professional Right Tools Panel */
 .acrobat-tools-pane {
   width: 220px;
   background-color: var(--bg-secondary);
