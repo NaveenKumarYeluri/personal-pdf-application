@@ -230,6 +230,31 @@ export class UIController {
       const isI = this.app.annotator.toggleItalic();
       document.getElementById('m3-edit-italic')?.classList.toggle('active', isI);
     });
+    document.getElementById('m3-edit-underline')?.addEventListener('click', () => {
+      const isU = this.app.annotator.toggleUnderline();
+      document.getElementById('m3-edit-underline')?.classList.toggle('active', isU);
+    });
+    document.getElementById('m3-edit-strike')?.addEventListener('click', () => {
+      const isS = this.app.annotator.toggleStrikethrough();
+      document.getElementById('m3-edit-strike')?.classList.toggle('active', isS);
+    });
+    document.getElementById('m3-edit-align-left')?.addEventListener('click', () => {
+      this.app.annotator.setTextAlign('left');
+    });
+    document.getElementById('m3-edit-align-center')?.addEventListener('click', () => {
+      this.app.annotator.setTextAlign('center');
+    });
+    document.getElementById('m3-edit-align-right')?.addEventListener('click', () => {
+      this.app.annotator.setTextAlign('right');
+    });
+    document.getElementById('m3-edit-delete-box')?.addEventListener('click', () => {
+      this.app.annotator.deleteActiveBox();
+    });
+
+    document.getElementById('m3-edit-signature')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.app.signature.openModal();
+    });
 
     document.getElementById('m3-edit-insert-img')?.addEventListener('click', () => {
       document.getElementById('m3-edit-img-file')?.click();
@@ -255,7 +280,7 @@ export class UIController {
       this.setStatus('Whiteout box placed. Drag to cover text.');
     });
 
-    // 5. Mobile Floating Page Bar
+    // 5. Mobile Floating Page Bar & Zoom Controls
     document.getElementById('m3-page-prev')?.addEventListener('click', () => {
       this.app.viewer.goToPage(this.app.viewer.currentPage - 1);
     });
@@ -270,6 +295,21 @@ export class UIController {
       if (!isNaN(num) && num >= 1 && num <= this.app.viewer.totalPages) {
         this.app.viewer.goToPage(num);
       }
+    });
+
+    document.getElementById('m3-zoom-out')?.addEventListener('click', () => {
+      this.app.viewer.zoomOut();
+      this.setStatus(`Zoom: ${Math.round(this.app.viewer.scale * 100)}%`);
+    });
+
+    document.getElementById('m3-zoom-in')?.addEventListener('click', () => {
+      this.app.viewer.zoomIn();
+      this.setStatus(`Zoom: ${Math.round(this.app.viewer.scale * 100)}%`);
+    });
+
+    document.getElementById('m3-zoom-fit')?.addEventListener('click', () => {
+      this.app.viewer.setZoom('fit-width');
+      this.setStatus('Fit to width');
     });
 
     // 6. Mobile Search Bar Overlay
@@ -383,6 +423,27 @@ export class UIController {
       alert('Personal PDF Suite - Professional Edition\nHigh-performance, private PDF suite for Windows, Linux & Android.');
     });
 
+    document.getElementById('m3-btn-add-bookmark')?.addEventListener('click', () => {
+      const title = prompt('Enter bookmark title for current page:');
+      if (title && title.trim()) {
+        const pageNum = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
+        this.app.addBookmark(title.trim(), pageNum);
+        this._syncMobileDrawerContent();
+        this.showToast(`Bookmark added: "${title.trim()}" (Page ${pageNum})`, 'success');
+      }
+    });
+
+    document.querySelectorAll('#m3-drawer-accent-palette .accent-swatch').forEach(swatch => {
+      swatch.addEventListener('click', () => {
+        document.querySelectorAll('#m3-drawer-accent-palette .accent-swatch').forEach(s => s.classList.remove('active'));
+        swatch.classList.add('active');
+        const color = swatch.dataset.color;
+        const hover = swatch.dataset.hover || color;
+        document.documentElement.style.setProperty('--accent-color', color);
+        document.documentElement.style.setProperty('--accent-color-hover', hover);
+      });
+    });
+
     // 8. Mobile Annotation Chips
     const chips = document.querySelectorAll('.m3-chip[data-m3-tool]');
     chips.forEach(chip => {
@@ -390,23 +451,74 @@ export class UIController {
         chips.forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         const tool = chip.dataset.m3Tool;
+        const strokeW = parseInt(document.getElementById('m3-stroke-slider')?.value || 4, 10);
+
         if (tool === 'select') {
           this.app.annotator.setTool('none');
           this.setStatus('Text selection active: long-press text to select or copy');
         } else if (tool === 'eraser') {
           this.app.annotator.setTool('eraser');
           this.setStatus('Eraser active: tap any annotation or drag across ink to erase');
+        } else if (tool === 'underline') {
+          closeAllSheets();
+          const ok = this.app.annotator.toggleUnderline();
+          this.setStatus(ok ? 'Applied underline markup to selected text' : 'Select text on the PDF to underline');
+          return;
+        } else if (tool === 'strikethrough') {
+          closeAllSheets();
+          const ok = this.app.annotator.toggleStrikethrough();
+          this.setStatus(ok ? 'Applied strikethrough markup to selected text' : 'Select text on the PDF to strikethrough');
+          return;
+        } else if (tool === 'line') {
+          this.app.annotator.setTool('line', {
+            color: this.app.annotator.color,
+            strokeWidth: strokeW
+          });
+          this.setStatus('Line tool: drag across the page to draw a line');
         } else {
           this.app.annotator.setTool(tool, {
             color: this.app.annotator.color,
-            strokeWidth: 4
+            strokeWidth: strokeW
           });
         }
         closeAllSheets();
       };
     });
 
-    // 9. Mobile Color Palette
+    // 9. Mobile Stamps, Stroke Slider & Color Palette
+    document.querySelectorAll('.m3-chip[data-m3-stamp]').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const stampType = chip.dataset.m3Stamp;
+        closeAllSheets();
+        const target = this.app.getVisibleCenterTarget();
+        this.app.annotator.placeStamp(target.pageNum, stampType, target.x, target.y);
+        this.setStatus(`Placed ${stampType} stamp. Drag to position.`);
+      });
+    });
+
+    document.getElementById('m3-stamp-custom')?.addEventListener('click', () => {
+      const text = prompt('Enter custom stamp text (e.g. REVIEWED, URGENT):');
+      if (text && text.trim()) {
+        closeAllSheets();
+        const target = this.app.getVisibleCenterTarget();
+        this.app.annotator.placeStamp(target.pageNum, text.trim().toUpperCase(), target.x, target.y);
+        this.setStatus(`Placed custom stamp '${text.trim()}'.`);
+      }
+    });
+
+    document.getElementById('m3-stroke-slider')?.addEventListener('input', (e) => {
+      const val = e.target.value;
+      const disp = document.getElementById('m3-stroke-val');
+      if (disp) disp.textContent = `${val}px`;
+      this.app.annotator.strokeWidth = parseInt(val, 10);
+      if (this.app.annotator.currentTool) {
+        this.app.annotator.setTool(this.app.annotator.currentTool, {
+          color: this.app.annotator.color,
+          strokeWidth: parseInt(val, 10)
+        });
+      }
+    });
+
     const colorDots = document.querySelectorAll('#m3-color-palette .color-dot');
     colorDots.forEach(dot => {
       dot.onclick = () => {
@@ -416,7 +528,26 @@ export class UIController {
       };
     });
 
+    document.getElementById('m3-custom-color')?.addEventListener('input', (e) => {
+      this.app.annotator.color = e.target.value;
+      document.querySelectorAll('#m3-color-palette .color-dot').forEach(d => d.classList.remove('active'));
+    });
+
+    document.getElementById('m3-sheet-clear')?.addEventListener('click', () => {
+      if (confirm('Clear all annotations on current page?')) {
+        const pageNum = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
+        this.app.annotator.clearPage(pageNum);
+        closeAllSheets();
+        this.setStatus(`Cleared annotations on page ${pageNum}`);
+        this.showToast(`Cleared page ${pageNum} annotations`, 'info');
+      }
+    });
+
     // 10. Mobile Tools Menu Actions
+    document.getElementById('m3-tool-print')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.app.exporter.printDocument();
+    });
     document.getElementById('m3-tool-sign')?.addEventListener('click', () => {
       closeAllSheets();
       this.app.signature.openModal();
@@ -436,6 +567,11 @@ export class UIController {
     document.getElementById('m3-tool-split')?.addEventListener('click', () => {
       closeAllSheets();
       document.getElementById('modal-split')?.classList.add('open');
+    });
+    document.getElementById('m3-tool-flatten')?.addEventListener('click', () => {
+      closeAllSheets();
+      this.app.saveAsModifiedPdf();
+      this.showToast('Document flattened with all annotations baked permanently', 'success');
     });
     document.getElementById('m3-tool-protect')?.addEventListener('click', () => {
       closeAllSheets();
@@ -477,6 +613,55 @@ export class UIController {
         this.showToast(`Export failed: ${err.message}`, 'error');
       }
     });
+
+    document.getElementById('m3-tool-export-all-img')?.addEventListener('click', async () => {
+      closeAllSheets();
+      this.showToast('Exporting all pages as images...', 'info');
+      try {
+        const images = await this.app.exporter.exportAllPagesAsImages();
+        if (images && images.length > 0) {
+          const files = images.map(img => ({
+            fileName: `page-${img.pageNum}.png`,
+            data: this._dataURLtoBlob(img.dataUrl),
+            mimeType: 'image/png'
+          }));
+          const dlRes = await this.app.exporter.downloadFiles(files);
+          this.showExportResultModal({
+            title: 'All Pages Exported',
+            message: `Successfully exported ${images.length} pages as PNG images.`,
+            destination: dlRes.destination || 'Documents / Downloads folder',
+            files: dlRes.files || []
+          });
+          this.showToast(`Exported all ${images.length} pages!`, 'success');
+        }
+      } catch (err) {
+        this.showToast(`Export failed: ${err.message}`, 'error');
+      }
+    });
+
+    document.getElementById('m3-tool-extract-text')?.addEventListener('click', async () => {
+      closeAllSheets();
+      this.showToast('Extracting document text...', 'info');
+      try {
+        const text = await this.app.exporter.extractAllText();
+        const baseName = (this.app.currentDocName || 'document').replace(/\.pdf$/i, '');
+        const fileName = `${baseName}-text.txt`;
+        const blob = new Blob([text], { type: 'text/plain' });
+        const dlRes = await this.app.exporter.downloadFile(blob, fileName, 'text/plain');
+        if (dlRes && dlRes.success) {
+          this.showExportResultModal({
+            title: 'Text Extraction Complete',
+            message: `Successfully extracted full document text (${text.length} characters).`,
+            destination: dlRes.destination || 'Documents / Downloads folder',
+            files: [{ name: fileName, size: blob.size }]
+          });
+          this.showToast('Document text extracted successfully!', 'success');
+        }
+      } catch (err) {
+        this.showToast(`Text extraction failed: ${err.message}`, 'error');
+      }
+    });
+
     document.getElementById('m3-tool-save-as')?.addEventListener('click', () => {
       closeAllSheets();
       this.app.saveAsModifiedPdf();

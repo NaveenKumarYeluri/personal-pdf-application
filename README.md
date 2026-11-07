@@ -64,8 +64,9 @@ Engineered specifically for **Windows Desktop**, **Arch Linux**, and **Android (
 
 ## 🚀 Running Locally (Zero-RAM Mode)
 
-To run the application locally on Windows using standard libraries with **< 30 MB of RAM** and zero local build dependencies:
+To run the application locally on Windows or Linux using standard libraries with **< 30 MB of RAM** and zero local build dependencies:
 
+### On Windows:
 1. Double-click:
    ```cmd
    run_windows.bat
@@ -73,6 +74,17 @@ To run the application locally on Windows using standard libraries with **< 30 M
    *Or launch via command line:*
    ```cmd
    python serve.py
+   ```
+
+### On Linux (Arch Linux, Ubuntu, Fedora):
+1. Run:
+   ```bash
+   chmod +x run_linux.sh
+   ./run_linux.sh
+   ```
+   *Or launch via command line:*
+   ```bash
+   python3 serve.py
    ```
 2. The application will launch in a clean desktop application window.
 
@@ -118,7 +130,7 @@ All production builds are compiled in the cloud by **GitHub Actions** (16 GB RAM
 The repository includes a comprehensive automated test harness covering all features:
 
 ```bash
-# Run the complete feature test suite (55+ feature assertions)
+# Run the complete feature test suite (80+ cross-platform assertions for Windows, Linux, Android)
 python scripts/run_automated_tests.py
 
 # Run multi-document lifecycle & tab isolation verification
@@ -144,7 +156,8 @@ personal-pdf-application/
 │   │   ├── main.css            # Dark/light themes, ribbons, modal dialogs
 │   │   ├── viewer.css          # Continuous canvas rendering & print stylesheets
 │   │   ├── annotations.css     # Inking, sticky notes, shapes, stamps, whiteouts
-│   │   └── organizer.css       # Visual page grid & reordering
+│   │   ├── organizer.css       # Visual page grid & reordering
+│   │   └── material-mobile.css # Material 3 mobile UI & responsive modal rules
 │   ├── js/
 │   │   ├── app.js              # Central orchestrator & in-place text editing
 │   │   ├── pdf-viewer.js       # Mozilla PDF.js engine & search
@@ -153,16 +166,17 @@ personal-pdf-application/
 │   │   ├── pdf-signature.js    # Signature pad & adaptive background removal
 │   │   ├── pdf-security.js     # Watermark, page numbers, metadata
 │   │   ├── pdf-export.js       # High-res print, image export, text extraction
-│   │   └── ui.js               # Ribbons, sidebars, modal controls
+│   │   └── ui.js               # Ribbons, sidebars, modal & mobile sheet controls
 │   └── assets/
 │       └── icons/              # Branding and UI icons
 ├── scripts/
-│   ├── run_automated_tests.py  # Comprehensive automated feature test suite
+│   ├── run_automated_tests.py  # Comprehensive automated feature test suite (81 tests)
 │   └── test_multi_doc_lifecycle.py # Multi-document transition test
 ├── capacitor.config.json       # Android APK mobile configuration
 ├── package.json                # Project manifest & dependencies
 ├── serve.py                    # Zero-RAM local server
 ├── run_windows.bat             # 1-click Windows runner
+├── run_linux.sh                # 1-click Linux runner
 └── .gitignore                  # Clean repository filters
 ```
 

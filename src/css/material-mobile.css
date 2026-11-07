@@ -461,12 +461,53 @@ body.theme-light {
     border: 1px solid var(--m3-sys-outline-variant);
     box-shadow: var(--m3-elevation-2);
     border-radius: 20px;
-    padding: 4px 14px;
+    padding: 4px 10px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
     z-index: 90;
     font-size: 13px;
+    max-width: 96vw;
+  }
+
+  /* Mobile Modals (Organize, Sign, Watermark, etc.) */
+  .modal-box {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    max-height: 92vh !important;
+    padding: 14px !important;
+    margin: auto !important;
+    overflow-y: auto !important;
+  }
+
+  .modal-actions-bar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    width: 100% !important;
+  }
+
+  .modal-actions-bar .btn {
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+    flex: 1 1 auto !important;
+  }
+
+  .organizer-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .signature-tabs {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+  }
+
+  .signature-tabs .sig-tab {
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
   }
 
   /* Mobile PDF Viewport adjustments */

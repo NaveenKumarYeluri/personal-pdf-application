@@ -721,6 +721,10 @@
       <button id="m3-page-prev" class="tool-btn-sm" title="Previous page">◀</button>
       <span id="m3-page-display" style="cursor:pointer; font-weight:600; padding:0 8px;" title="Tap to jump to page">1 / 1</span>
       <button id="m3-page-next" class="tool-btn-sm" title="Next page">▶</button>
+      <div style="width:1px; height:18px; background:var(--m3-sys-outline-variant); margin:0 4px;"></div>
+      <button id="m3-zoom-out" class="tool-btn-sm" title="Zoom Out">－</button>
+      <button id="m3-zoom-fit" class="tool-btn-sm" title="Fit to Screen" style="font-size:11px; font-weight:600;">⛶ Fit</button>
+      <button id="m3-zoom-in" class="tool-btn-sm" title="Zoom In">＋</button>
     </div>
 
     <!-- Material 3 Mobile Bottom Navigation Bar (Mobile / Android) -->
@@ -788,6 +792,10 @@
           <div id="m3-drawer-thumbs" class="thumbnails-grid" style="padding:10px 0;"></div>
         </div>
         <div id="m3-drawer-tab-outline" class="m3-drawer-pane">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border-subtle);">
+            <span style="font-size:12px; font-weight:600; color:var(--text-secondary);">Bookmarks & Outline</span>
+            <button id="m3-btn-add-bookmark" class="btn btn-sm btn-outline" style="padding:2px 8px; font-size:11px;">+ Add Bookmark</button>
+          </div>
           <div id="m3-drawer-outline" class="outline-tree" style="padding:10px 0;"></div>
         </div>
         <div id="m3-drawer-tab-actions" class="m3-drawer-pane">
@@ -843,6 +851,7 @@
         <div class="m3-chip-group">
           <div class="m3-chip active" id="m3-edit-toggle-inline">📝 In-Place Text Editing</div>
           <div class="m3-chip" id="m3-edit-add-text">T Add Text Block</div>
+          <div class="m3-chip" id="m3-edit-signature">✍️ Insert Signature</div>
           <div class="m3-chip" id="m3-edit-insert-img">🖼️ Insert Image</div>
           <div class="m3-chip" id="m3-edit-whiteout">⬜ Erase / Whiteout</div>
         </div>
@@ -862,8 +871,8 @@
             <option value="'Dancing Script', cursive">Dancing Script (Handwriting)</option>
             <option value="'Impact', sans-serif">Impact (Headline)</option>
           </select>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <select id="m3-edit-font-size" class="tool-select" style="flex:1;">
+          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+            <select id="m3-edit-font-size" class="tool-select" style="width:72px;">
               <option value="12">12 pt</option>
               <option value="14">14 pt</option>
               <option value="16" selected>16 pt</option>
@@ -873,9 +882,15 @@
               <option value="32">32 pt</option>
               <option value="48">48 pt</option>
             </select>
-            <button id="m3-edit-bold" class="tool-btn" style="border:1px solid var(--border-color); width:36px; height:36px;" title="Bold"><b>B</b></button>
-            <button id="m3-edit-italic" class="tool-btn" style="border:1px solid var(--border-color); width:36px; height:36px;" title="Italic"><i>I</i></button>
-            <input type="color" id="m3-edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:44px; height:36px;">
+            <button id="m3-edit-bold" class="tool-btn" style="border:1px solid var(--border-color); width:32px; height:32px;" title="Bold"><b>B</b></button>
+            <button id="m3-edit-italic" class="tool-btn" style="border:1px solid var(--border-color); width:32px; height:32px;" title="Italic"><i>I</i></button>
+            <button id="m3-edit-underline" class="tool-btn" style="border:1px solid var(--border-color); width:32px; height:32px;" title="Underline"><u>U</u></button>
+            <button id="m3-edit-strike" class="tool-btn" style="border:1px solid var(--border-color); width:32px; height:32px;" title="Strikethrough"><s>S</s></button>
+            <button id="m3-edit-align-left" class="tool-btn" style="border:1px solid var(--border-color); width:32px; height:32px;" title="Align Left">⫷</button>
+            <button id="m3-edit-align-center" class="tool-btn" style="border:1px solid var(--border-color); width:32px; height:32px;" title="Align Center">≡</button>
+            <button id="m3-edit-align-right" class="tool-btn" style="border:1px solid var(--border-color); width:32px; height:32px;" title="Align Right">⫸</button>
+            <input type="color" id="m3-edit-font-color" value="#000000" class="tool-select" style="padding:1px; width:32px; height:32px;">
+            <button id="m3-edit-delete-box" class="tool-btn" style="border:1px solid #ef4444; color:#ef4444; padding:0 6px; height:32px; font-size:11px;" title="Delete Selected Box">🗑 Del</button>
           </div>
         </div>
       </div>
@@ -898,20 +913,45 @@
           <div class="m3-chip" data-m3-tool="highlighter">🖍️ Highlighter</div>
           <div class="m3-chip" data-m3-tool="eraser">🧼 Eraser</div>
           <div class="m3-chip" data-m3-tool="select">⌶ Select Text</div>
+          <div class="m3-chip" data-m3-tool="underline"><u>U</u> Underline</div>
+          <div class="m3-chip" data-m3-tool="strikethrough"><s>S</s> Strikethrough</div>
           <div class="m3-chip" data-m3-tool="note">💬 Sticky Note</div>
           <div class="m3-chip" data-m3-tool="text">T Add Text</div>
           <div class="m3-chip" data-m3-tool="rectangle">▢ Rectangle</div>
           <div class="m3-chip" data-m3-tool="circle">◯ Circle</div>
+          <div class="m3-chip" data-m3-tool="line">╱ Line</div>
         </div>
 
-        <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:8px;">Stroke Color</div>
-        <div class="m3-chip-group" id="m3-color-palette">
+        <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:4px;">Stamps</div>
+        <div class="m3-chip-group">
+          <div class="m3-chip" data-m3-stamp="APPROVED">✅ APPROVED</div>
+          <div class="m3-chip" data-m3-stamp="REJECTED">❌ REJECTED</div>
+          <div class="m3-chip" data-m3-stamp="CONFIDENTIAL">🔒 CONFIDENTIAL</div>
+          <div class="m3-chip" data-m3-stamp="DRAFT">📝 DRAFT</div>
+          <div class="m3-chip" data-m3-stamp="FINAL">⭐ FINAL</div>
+          <div class="m3-chip" data-m3-stamp="VOID">🚫 VOID</div>
+          <div class="m3-chip" data-m3-stamp="PAID">💵 PAID</div>
+          <div class="m3-chip" id="m3-stamp-custom">+ Custom Stamp...</div>
+        </div>
+
+        <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:4px;">Stroke Thickness (<span id="m3-stroke-val">4px</span>)</div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <input type="range" id="m3-stroke-slider" min="1" max="24" value="4" class="form-range" style="flex:1;">
+        </div>
+
+        <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:4px;">Stroke Color</div>
+        <div class="m3-chip-group" id="m3-color-palette" style="align-items:center;">
           <span class="color-dot active" style="background:#ef4444; width:28px; height:28px;" data-m3-color="#ef4444"></span>
           <span class="color-dot" style="background:#3b82f6; width:28px; height:28px;" data-m3-color="#3b82f6"></span>
           <span class="color-dot" style="background:#10b981; width:28px; height:28px;" data-m3-color="#10b981"></span>
           <span class="color-dot" style="background:#f59e0b; width:28px; height:28px;" data-m3-color="#f59e0b"></span>
           <span class="color-dot" style="background:#8b5cf6; width:28px; height:28px;" data-m3-color="#8b5cf6"></span>
           <span class="color-dot" style="background:#000000; width:28px; height:28px;" data-m3-color="#000000"></span>
+          <input type="color" id="m3-custom-color" value="#ef4444" class="tool-select" style="padding:1px; width:34px; height:28px; margin-left:6px;" title="Custom Color">
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+          <button class="btn btn-sm btn-outline" id="m3-sheet-clear" style="color:#ef4444; border-color:#ef4444;">🗑 Clear Annotations</button>
         </div>
       </div>
     </div>
@@ -924,9 +964,13 @@
         <button class="tool-btn-sm" id="m3-close-tools">&times;</button>
       </div>
       <div class="m3-sheet-body">
+        <button class="m3-list-tile" id="m3-tool-print">
+          <span class="m3-list-icon">🖨️</span>
+          <span class="m3-list-title">Print Document (A4 Multi-Page)</span>
+        </button>
         <button class="m3-list-tile" id="m3-tool-sign">
           <span class="m3-list-icon">✍️</span>
-          <span class="m3-list-title">Electronic Signature</span>
+          <span class="m3-list-title">Electronic Signature Studio</span>
         </button>
         <button class="m3-list-tile" id="m3-tool-watermark">
           <span class="m3-list-icon">🌊</span>
@@ -942,7 +986,11 @@
         </button>
         <button class="m3-list-tile" id="m3-tool-split">
           <span class="m3-list-icon">✂️</span>
-          <span class="m3-list-title">Split Document</span>
+          <span class="m3-list-title">Split Document by Pages</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-flatten">
+          <span class="m3-list-icon">📄</span>
+          <span class="m3-list-title">Flatten Document & Annotations</span>
         </button>
         <button class="m3-list-tile" id="m3-tool-protect">
           <span class="m3-list-icon">🔒</span>
@@ -954,7 +1002,15 @@
         </button>
         <button class="m3-list-tile" id="m3-tool-export-img">
           <span class="m3-list-icon">🖼️</span>
-          <span class="m3-list-title">Export Page to PNG</span>
+          <span class="m3-list-title">Export Current Page to PNG</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-export-all-img">
+          <span class="m3-list-icon">🗂️</span>
+          <span class="m3-list-title">Export All Pages as PNG Images</span>
+        </button>
+        <button class="m3-list-tile" id="m3-tool-extract-text">
+          <span class="m3-list-icon">📝</span>
+          <span class="m3-list-title">Extract Full Text (.txt)</span>
         </button>
         <button class="m3-list-tile" id="m3-tool-save-as">
           <span class="m3-list-icon">💾</span>

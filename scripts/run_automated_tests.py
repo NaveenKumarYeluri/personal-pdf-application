@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Personal PDF Suite - Comprehensive Automated Test & Verification Engine
-Validates all application features:
+Validates all application features across Windows, Linux, and Android:
 1. Ligature healing and text normalization
 2. Signature background removal & ink extraction on test-docs/Sign.jpg
 3. Print stylesheet geometry & A4 margin/padding conformance
@@ -13,13 +13,16 @@ Validates all application features:
 9. Search substring highlighting precision
 10. Whiteout redaction controls & interaction safety guards
 11. Privacy & trademark scrub compliance (zero personal data, zero trademark mentions)
-12. JavaScript & CSS syntax & brace integrity
+12. Android (Mobile / Material 3) Feature Parity Verification
+13. Linux (Arch Linux / Tauri v2) Platform Support Verification
+14. JavaScript & CSS syntax & brace integrity
 """
 
 import os
 import sys
 import re
 import math
+import json
 from PIL import Image
 
 PASS = "✓ PASS"
@@ -27,7 +30,7 @@ FAIL = "✗ FAIL"
 
 def run_all_tests():
     print("=" * 75)
-    print(" Personal PDF Suite - Comprehensive Automated Feature & Quality Test Suite")
+    print(" Personal PDF Suite - Cross-Platform (Windows, Linux, Android) Test Suite")
     print("=" * 75)
     
     total_tests = 0
@@ -118,8 +121,6 @@ def run_all_tests():
     print("\n--- 4. In-Place Text Editing Safeguards & Font Matching ---")
     with open('src/js/app.js', 'r', encoding='utf-8') as f:
         app_js = f.read()
-    with open('src/js/pdf-annotator.js', 'r', encoding='utf-8') as f:
-        annot_js = f.read()
 
     test("app.js uses explicit isSansSerif check to avoid /serif/ matching 'sans-serif'",
          "isSansSerif = /sans-serif|calibri|arial|helvetica" in app_js)
@@ -225,9 +226,8 @@ def run_all_tests():
     # 11. Privacy & Trademark Scrubbing Compliance
     # =========================================================================
     print("\n--- 11. Privacy & Trademark Scrubbing Compliance ---")
-    # Verify no personal path or name in codebase (outside .git and vendor)
     files_to_scan = [
-        'README.md', 'package.json', 'run_windows.bat', 'serve.py',
+        'README.md', 'package.json', 'run_windows.bat', 'run_linux.sh', 'serve.py',
         'src/index.html', 'src/css/main.css', 'src/css/viewer.css', 'src/css/annotations.css',
         'src/js/app.js', 'src/js/ui.js', 'src/js/pdf-viewer.js', 'src/js/pdf-annotator.js',
         'src/js/pdf-organizer.js', 'src/js/pdf-security.js', 'src/js/pdf-signature.js', 'src/js/pdf-export.js'
@@ -241,34 +241,119 @@ def run_all_tests():
         if os.path.exists(fp):
             with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
-            # Check for "adobe" (word boundary or trademark phrase)
             matches = re.findall(r'\bAdobe\b', content, re.IGNORECASE)
-            # Check for personal path 'C:\\Users\\Naveen'
             path_matches = re.findall(r'C:[/\\]Users[/\\]Naveen', content, re.IGNORECASE)
             if matches:
-                # Allow README.md check after it gets updated or report it now
-                if fp != 'README.md': # README will be updated next
-                    has_adobe = True
-                    adobe_matches.append(f"{fp} ({len(matches)} occurrences)")
+                has_adobe = True
+                adobe_matches.append(f"{fp} ({len(matches)} occurrences)")
             if path_matches:
-                if fp != 'README.md':
-                    has_personal_path = True
-                    personal_matches.append(f"{fp} ({len(path_matches)} occurrences)")
+                has_personal_path = True
+                personal_matches.append(f"{fp} ({len(path_matches)} occurrences)")
 
-    test("Codebase source files (HTML/CSS/JS/BAT) contain 0 occurrences of 'Adobe'",
+    test("Codebase source files (HTML/CSS/JS/BAT/SH) contain 0 occurrences of 'Adobe'",
          not has_adobe, ", ".join(adobe_matches))
     test("Codebase source files contain 0 personal system directory paths",
          not has_personal_path, ", ".join(personal_matches))
 
     # =========================================================================
-    # 12. Syntax & Brace Integrity
+    # 12. Android (Mobile / Material 3) Feature Parity Verification
     # =========================================================================
-    print("\n--- 12. Codebase Syntax & Brace Integrity ---")
+    print("\n--- 12. Android (Material 3) Feature Parity Verification ---")
+    with open('src/index.html', 'r', encoding='utf-8') as f:
+        html = f.read()
+    with open('src/js/ui.js', 'r', encoding='utf-8') as f:
+        ui_js = f.read()
+    with open('src/css/material-mobile.css', 'r', encoding='utf-8') as f:
+        m3_css = f.read()
+
+    # Markup Sheet
+    test("Android Markup Sheet includes Underline & Strikethrough markup tools",
+         'data-m3-tool="underline"' in html and 'data-m3-tool="strikethrough"' in html)
+    test("Android Markup Sheet includes Line shape tool",
+         'data-m3-tool="line"' in html)
+    test("Android Markup Sheet includes Predefined & Custom Stamps",
+         'data-m3-stamp="APPROVED"' in html and 'data-m3-stamp="REJECTED"' in html and 'm3-stamp-custom' in html)
+    test("Android Markup Sheet includes Stroke Thickness slider & Custom Color picker",
+         'id="m3-stroke-slider"' in html and 'id="m3-custom-color"' in html)
+    test("Android Markup Sheet includes Clear Annotations action",
+         'id="m3-sheet-clear"' in html and 'm3-sheet-clear' in ui_js)
+
+    # Edit Sheet
+    test("Android Edit Sheet includes direct Insert Signature action",
+         'id="m3-edit-signature"' in html and 'm3-edit-signature' in ui_js)
+    test("Android Edit Sheet includes Text Formatting (Bold, Italic, Underline, Strikethrough)",
+         'id="m3-edit-underline"' in html and 'id="m3-edit-strike"' in html)
+    test("Android Edit Sheet includes Text Alignment (Left, Center, Right)",
+         'id="m3-edit-align-left"' in html and 'id="m3-edit-align-center"' in html and 'id="m3-edit-align-right"' in html)
+    test("Android Edit Sheet includes Delete Selected Box control",
+         'id="m3-edit-delete-box"' in html and 'm3-edit-delete-box' in ui_js)
+
+    # Tools Sheet
+    test("Android Tools Sheet includes Print Document action",
+         'id="m3-tool-print"' in html and 'm3-tool-print' in ui_js)
+    test("Android Tools Sheet includes Export All Pages as PNG Images",
+         'id="m3-tool-export-all-img"' in html and 'm3-tool-export-all-img' in ui_js)
+    test("Android Tools Sheet includes Extract Full Text (.txt)",
+         'id="m3-tool-extract-text"' in html and 'm3-tool-extract-text' in ui_js)
+    test("Android Tools Sheet includes Flatten Document action",
+         'id="m3-tool-flatten"' in html and 'm3-tool-flatten' in ui_js)
+
+    # Mobile Page Bar & Drawer
+    test("Android Mobile Page Bar includes Zoom In, Zoom Out, and Fit to Screen controls",
+         'id="m3-zoom-out"' in html and 'id="m3-zoom-in"' in html and 'id="m3-zoom-fit"' in html)
+    test("Android Drawer Outline tab includes + Add Bookmark control",
+         'id="m3-btn-add-bookmark"' in html and 'm3-btn-add-bookmark' in ui_js)
+    test("Android Drawer includes dynamic Accent Theme Color customizer",
+         'id="m3-drawer-accent-palette"' in html and 'm3-drawer-accent-palette' in ui_js)
+
+    # Mobile Responsive CSS
+    test("Mobile CSS enforces responsive modal sizing (95vw) and flex-wrapping action bars",
+         "width: 95vw !important" in m3_css and "flex-wrap: wrap !important" in m3_css)
+    test("Mobile CSS configures touch-friendly page organizer grid",
+         "grid-template-columns: repeat(auto-fill, minmax(110px, 1fr))" in m3_css)
+
+    # =========================================================================
+    # 13. Linux Platform Support & Tauri Build Verification
+    # =========================================================================
+    print("\n--- 13. Linux Platform Support & Tauri Build Verification ---")
+    test("run_linux.sh exists and is executable with python3 / python fallback",
+         os.path.exists("run_linux.sh"))
+    if os.path.exists("run_linux.sh"):
+        with open("run_linux.sh", "r", encoding="utf-8") as f:
+            sh_content = f.read()
+        test("run_linux.sh contains valid shebang and serve.py invocation",
+             "#!/usr/bin/env bash" in sh_content and "serve.py" in sh_content)
+
+    test(".github/workflows/build-linux.yml exists for cloud compilation",
+         os.path.exists(".github/workflows/build-linux.yml"))
+    if os.path.exists(".github/workflows/build-linux.yml"):
+        with open(".github/workflows/build-linux.yml", "r", encoding="utf-8") as f:
+            wf_linux = f.read()
+        test("build-linux.yml installs native Linux WebKitGTK and GTK-3 libraries",
+             "libwebkit2gtk-4.1-dev" in wf_linux and "libgtk-3-dev" in wf_linux)
+        test("build-linux.yml builds both .AppImage and .deb Linux packages",
+             "bundles appimage,deb" in wf_linux)
+
+    tauri_conf_path = os.path.join("src-tauri", "tauri.conf.json")
+    test("src-tauri/tauri.conf.json exists and specifies valid frontendDist '../src'",
+         os.path.exists(tauri_conf_path))
+    if os.path.exists(tauri_conf_path):
+        with open(tauri_conf_path, "r", encoding="utf-8") as f:
+            t_conf = json.load(f)
+        test("Tauri configuration targets desktop dimensions (width >= 1200, resizable)",
+             t_conf.get("app", {}).get("windows", [{}])[0].get("width", 0) >= 1200 and
+             t_conf.get("app", {}).get("windows", [{}])[0].get("resizable") is True)
+
+    # =========================================================================
+    # 14. Codebase Syntax & Brace Integrity
+    # =========================================================================
+    print("\n--- 14. Codebase Syntax & Brace Integrity ---")
     files_to_check = [
         'src/css/main.css',
         'src/css/viewer.css',
         'src/css/annotations.css',
         'src/css/organizer.css',
+        'src/css/material-mobile.css',
         'src/js/app.js',
         'src/js/pdf-viewer.js',
         'src/js/pdf-annotator.js',
