@@ -395,7 +395,8 @@ export class PDFExportEngine {
 
           // Mask original underlying text area with white in case of active inline-editing or zoom variations
           const origH = (span._originalHeight || span.offsetHeight || 18) * scaleY;
-          const origW = Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX;
+          const maxAllowedW = (parseFloat(span.style.maxWidth) || span.offsetWidth || span._originalWidth || 100) * scaleX;
+          const origW = Math.min(maxAllowedW, Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX);
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(origW) + 4, Math.ceil(origH) + 4);
 
@@ -403,7 +404,7 @@ export class PDFExportEngine {
           ctx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
           ctx.fillStyle = color;
           ctx.textBaseline = 'top';
-          ctx.fillText(span.textContent || '', sx, sy);
+          ctx.fillText(span.textContent || '', sx, sy, origW);
           ctx.restore();
         });
 

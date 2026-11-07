@@ -280,16 +280,42 @@ export class UIController {
       this.setStatus('Whiteout box placed. Drag to cover text.');
     });
 
-    // 5. Mobile Floating Page Bar & Zoom Controls
+    // 5. Mobile Floating Page Bar & Zoom Controls (Unobtrusive & auto-hiding to protect reading experience)
+    const m3Bar = document.getElementById('m3-page-bar');
+    let m3BarHideTimer = null;
+    const keepMobileBarAlive = () => {
+      if (m3Bar) {
+        m3Bar.classList.add('visible');
+        clearTimeout(m3BarHideTimer);
+        m3BarHideTimer = setTimeout(() => {
+          m3Bar.classList.remove('visible');
+        }, 2500);
+      }
+    };
+
+    // User can tap mobile top bar title to reveal page switcher & zoom bar briefly
+    document.getElementById('m3-doc-title')?.addEventListener('click', keepMobileBarAlive);
+
+    // Immediately dismiss mobile page bar on scroll to prevent disturbing the reader
+    document.getElementById('viewer-container')?.addEventListener('scroll', () => {
+      if (m3Bar && m3Bar.classList.contains('visible')) {
+        m3Bar.classList.remove('visible');
+        clearTimeout(m3BarHideTimer);
+      }
+    }, { passive: true });
+
     document.getElementById('m3-page-prev')?.addEventListener('click', () => {
+      keepMobileBarAlive();
       this.app.viewer.goToPage(this.app.viewer.currentPage - 1);
     });
 
     document.getElementById('m3-page-next')?.addEventListener('click', () => {
+      keepMobileBarAlive();
       this.app.viewer.goToPage(this.app.viewer.currentPage + 1);
     });
 
     document.getElementById('m3-page-display')?.addEventListener('click', () => {
+      keepMobileBarAlive();
       const target = prompt(`Jump to page (1 - ${this.app.viewer.totalPages}):`, this.app.viewer.currentPage);
       const num = parseInt(target, 10);
       if (!isNaN(num) && num >= 1 && num <= this.app.viewer.totalPages) {
@@ -298,16 +324,19 @@ export class UIController {
     });
 
     document.getElementById('m3-zoom-out')?.addEventListener('click', () => {
+      keepMobileBarAlive();
       this.app.viewer.zoomOut();
       this.setStatus(`Zoom: ${Math.round(this.app.viewer.scale * 100)}%`);
     });
 
     document.getElementById('m3-zoom-in')?.addEventListener('click', () => {
+      keepMobileBarAlive();
       this.app.viewer.zoomIn();
       this.setStatus(`Zoom: ${Math.round(this.app.viewer.scale * 100)}%`);
     });
 
     document.getElementById('m3-zoom-fit')?.addEventListener('click', () => {
+      keepMobileBarAlive();
       this.app.viewer.setZoom('fit-width');
       this.setStatus('Fit to width');
     });

@@ -70,7 +70,6 @@ body.theme-light {
   .m3-top-app-bar,
   .m3-bottom-nav,
   .m3-fab,
-  .m3-page-bar,
   .m3-only {
     display: flex !important;
   }
@@ -450,7 +449,7 @@ body.theme-light {
     display: block;
   }
 
-  /* Floating Mobile Page Bar */
+  /* Floating Mobile Page Bar (Auto-hides to avoid disturbing reading while scrolling) */
   .m3-page-bar {
     position: fixed;
     bottom: 92px;
@@ -468,6 +467,16 @@ body.theme-light {
     z-index: 90;
     font-size: 13px;
     max-width: 96vw;
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity 0.25s ease, visibility 0.25s ease, transform 0.25s ease;
+  }
+
+  .m3-page-bar.visible {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
   }
 
   /* Mobile Modals (Organize, Sign, Watermark, etc.) */

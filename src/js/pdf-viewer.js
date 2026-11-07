@@ -181,6 +181,12 @@ export class PDFViewerEngine {
     // 1. Dual strategy: Continuous scroll listener with requestAnimationFrame for instant, accurate page tracking
     let ticking = false;
     this.container.addEventListener('scroll', () => {
+      // Auto-dismiss floating mobile page indicator while scrolling to avoid disturbing reading
+      const m3Bar = document.getElementById('m3-page-bar');
+      if (m3Bar && m3Bar.classList.contains('visible')) {
+        m3Bar.classList.remove('visible');
+      }
+
       if (!ticking) {
         requestAnimationFrame(() => {
           const visiblePage = this.getCurrentVisiblePage();
@@ -560,7 +566,6 @@ export class PDFViewerEngine {
         if (dx < 10 && dy < 10) {
           const span = e.target.closest('span');
           if (span) {
-            e.preventDefault();
             e.stopPropagation();
             this.onContentEdited({
               span,

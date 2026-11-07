@@ -121,6 +121,10 @@ def run_all_tests():
     print("\n--- 4. In-Place Text Editing Safeguards & Font Matching ---")
     with open('src/js/app.js', 'r', encoding='utf-8') as f:
         app_js = f.read()
+    with open('src/index.html', 'r', encoding='utf-8') as f:
+        html = f.read()
+    with open('src/js/pdf-export.js', 'r', encoding='utf-8') as f:
+        export_js = f.read()
 
     test("app.js uses explicit isSansSerif check to avoid /serif/ matching 'sans-serif'",
          "isSansSerif = /sans-serif|calibri|arial|helvetica" in app_js)
@@ -130,6 +134,14 @@ def run_all_tests():
          "const normH = span._normRect.h;" in app_js and "Math.max(span._normRect.h, (span.offsetHeight" not in app_js)
     test("cleanSpanContent uses white-space: nowrap and auto-fitting font scale",
          "span.style.whiteSpace = 'nowrap'" in app_js and "fitRatio" in app_js)
+    test("app.js protects Android soft keyboard (Gboard) composition state with compositionstart/end",
+         "_isComposing" in app_js and "compositionstart" in app_js and "compositionend" in app_js)
+    test("app.js detects neighboring spans on the same line to constrain max editing width",
+         "siblingSpans" in app_js and "minNextLeft" in app_js and "textOverflow = 'clip'" in app_js)
+    test("app.js and index.html include Carlito/Arimo/Tinos for exact Android font metric parity",
+         "'Carlito'" in app_js and "'Arimo'" in app_js and "Carlito" in html)
+    test("pdf-annotator.js and pdf-export.js pass maxWidth constraint to fillText to prevent overflow",
+         "compCtx.fillText(textToDraw, sx, sy, maskW)" in annot_js and "ctx.fillText(span.textContent || '', sx, sy, origW)" in export_js)
     test("pdf-annotator.js burnAnnotationsToPdf locks mask height to original line height",
          "const origH = span._originalHeight || spanRect.height" in annot_js and "origH * scaleY" in annot_js)
 
@@ -301,6 +313,12 @@ def run_all_tests():
     # Mobile Page Bar & Drawer
     test("Android Mobile Page Bar includes Zoom In, Zoom Out, and Fit to Screen controls",
          'id="m3-zoom-out"' in html and 'id="m3-zoom-in"' in html and 'id="m3-zoom-fit"' in html)
+    test("pdf-viewer.js and ui.js immediately auto-hide mobile page bar on scroll to prevent disturbance",
+         "m3Bar.classList.remove('visible')" in viewer_js and "m3Bar.classList.remove('visible')" in ui_js)
+    test("material-mobile.css hides .m3-page-bar by default and shows only with .visible class",
+         "opacity: 0" in m3_css and ".m3-page-bar.visible" in m3_css)
+    test("viewer.css locks text-size-adjust to 100% globally to defeat mobile browser font autosizer",
+         "text-size-adjust: 100% !important;" in viewer_css)
     test("Android Drawer Outline tab includes + Add Bookmark control",
          'id="m3-btn-add-bookmark"' in html and 'm3-btn-add-bookmark' in ui_js)
     test("Android Drawer includes dynamic Accent Theme Color customizer",

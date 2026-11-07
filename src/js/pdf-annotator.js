@@ -1198,7 +1198,8 @@ export class PDFAnnotatorEngine {
           const sw = spanRect.width * scaleX;
           const sh = spanRect.height * scaleY;
 
-          const maskW = Math.max(span._originalWidth || 0, spanRect.width) * scaleX;
+          const maxAllowedW = (parseFloat(span.style.maxWidth) || spanRect.width || span._originalWidth || 100) * scaleX;
+          const maskW = Math.min(maxAllowedW, Math.max(span._originalWidth || 0, spanRect.width) * scaleX);
           const origH = span._originalHeight || spanRect.height || 18;
           const maskH = origH * scaleY; // Strictly original line height, never mask line below!
 
@@ -1211,7 +1212,8 @@ export class PDFAnnotatorEngine {
             const pdfScaleX = width / wrapper.clientWidth;
             const pdfScaleY = height / wrapper.clientHeight;
             const pdfX = (spanRect.left - wrapperRect.left) * pdfScaleX;
-            const pdfW = Math.max(span._originalWidth || 0, spanRect.width) * pdfScaleX;
+            const maxAllowedPdfW = (parseFloat(span.style.maxWidth) || spanRect.width || span._originalWidth || 100) * pdfScaleX;
+            const pdfW = Math.min(maxAllowedPdfW, Math.max(span._originalWidth || 0, spanRect.width) * pdfScaleX);
             const pdfH = origH * pdfScaleY;
             const pdfY = height - ((spanRect.top - wrapperRect.top + origH) * pdfScaleY);
             page.drawRectangle({
@@ -1223,7 +1225,7 @@ export class PDFAnnotatorEngine {
             });
           }
 
-          // Render modified text using PDF's exact font, size, and styling (single line fit)
+          // Render modified text using PDF's exact font, size, and styling (bounded single line fit)
           const fSize = parseFloat(cs.fontSize) * scaleY;
           const fontFamily = edit.fontFamily || span._customFontStack || cs.fontFamily || 'sans-serif';
           const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
@@ -1234,7 +1236,7 @@ export class PDFAnnotatorEngine {
           compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
           compCtx.fillStyle = color;
           compCtx.textBaseline = 'top';
-          compCtx.fillText(textToDraw, sx, sy);
+          compCtx.fillText(textToDraw, sx, sy, maskW);
           compCtx.restore();
         }
       }
