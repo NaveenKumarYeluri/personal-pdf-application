@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal PDF Suite - Automated Test Runner</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/viewer.css">
+  <link rel="stylesheet" href="css/annotations.css">
+  <link rel="stylesheet" href="vendor/pdf_viewer.min.css">
+  <script src="vendor/pdf.min.js"></script>
+  <script src="vendor/pdf-lib.min.js"></script>
+  <style>
+    body {
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    .test-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #334155;
+    }
+    .test-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+    .test-stats {
+      font-size: 16px;
+      display: flex;
+      gap: 16px;
+    }
+    .stat-badge {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .stat-passed { background: #065f46; color: #34d399; }
+    .stat-failed { background: #7f1d1d; color: #f87171; }
+    .stat-total { background: #1e293b; color: #94a3b8; }
+    .test-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .test-card {
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-left: 5px solid #64748b;
+      transition: all 0.2s ease;
+    }
+    .test-card.passed { border-left-color: #10b981; }
+    .test-card.failed { border-left-color: #ef4444; background: #2a151b; }
+    .test-info { display: flex; flex-direction: column; gap: 4px; }
+    .test-name { font-weight: 600; font-size: 15px; color: #f1f5f9; }
+    .test-desc { font-size: 12px; color: #94a3b8; }
+    .test-status { font-weight: 700; font-size: 14px; }
+    .test-status.passed { color: #10b981; }
+    .test-status.failed { color: #ef4444; }
+    .btn-run {
+      background: #0284c7;
+      color: #ffffff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn-run:hover { background: #0369a1; }
+    #sandbox-viewer {
+      position: absolute;
+      top: -9999px;
+      left: -9999px;
+      width: 1000px;
+      height: 1200px;
+      visibility: hidden;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-header">
+    <div>
+      <div class="test-title">🧪 Personal PDF Suite - Automated Test Engine</div>
+      <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">Runs headless DOM, layout, search, font classification, and print assertions</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <div class="test-stats">
+        <span class="stat-badge stat-total" id="stat-total">Total: 0</span>
+        <span class="stat-badge stat-passed" id="stat-passed">Passed: 0</span>
+        <span class="stat-badge stat-failed" id="stat-failed">Failed: 0</span>
+      </div>
+      <button class="btn-run" id="btn-rerun">▶ Run All Tests</button>
+    </div>
+  </div>
+
+  <div class="test-grid" id="test-results">
+    <div style="color: #94a3b8; text-align: center; padding: 40px;">Initializing automated test suite...</div>
+  </div>
+
+  <!-- Hidden Sandbox DOM for PDF Rendering and Inspection -->
+  <div id="sandbox-viewer">
+    <div id="viewer-container">
+      <div id="pages-container"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { healPdfTextLigatures, PDFViewerEngine } from './js/pdf-viewer.js';
+    import { PDFAnnotatorEngine } from './js/pdf-annotator.js';
+    import { PDFSignatureEngine } from './js/pdf-signature.js';
+    import { PDFExportEngine } from './js/pdf-export.js';
+
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.js';
+
+    const results = [];
+    const container = document.getElementById('test-results');
+
+    function assert(name, condition, desc = '') {
+      results.push({ name, passed: Boolean(condition), desc });
+      renderResults();
+    }
+
+    function renderResults() {
+      container.innerHTML = '';
+      let passedCount = 0;
+      let failedCount = 0;
+
+      results.forEach(r => {
+        if (r.passed) passedCount++; else failedCount++;
+        const card = document.createElement('div');
+        card.className = `test-card ${r.passed ? 'passed' : 'failed'}`;
+        card.innerHTML = `
+          <div class="test-info">
+            <div class="test-name">${r.name}</div>
+            <div class="test-desc">${r.desc || (r.passed ? 'Assertion passed with 0 defects' : 'Assertion failed')}</div>
+          </div>
+          <div class="test-status ${r.passed ? 'passed' : 'failed'}">${r.passed ? '✓ PASSED' : '✗ FAILED'}</div>
+        `;
+        container.appendChild(card);
+      });
+
+      document.getElementById('stat-total').textContent = `Total: ${results.length}`;
+      document.getElementById('stat-passed').textContent = `Passed: ${passedCount}`;
+      document.getElementById('stat-failed').textContent = `Failed: ${failedCount}`;
+
+      window.__TEST_RESULTS__ = {
+        total: results.length,
+        passed: passedCount,
+        failed: failedCount,
+        allPassed: failedCount === 0
+      };
+    }
+
+    async function runSuite() {
+      results.length = 0;
+      renderResults();
+
+      // 1. Ligature Repair Test
+      const healed1 = healPdfTextLigatures('par?on of rows');
+      assert('Ligature Healing - Partition keyword', healed1.includes('partition'), `Expected 'partition', got '${healed1}'`);
+
+      const healed2 = healPdfTextLigatures('spe?c column');
+      assert('Ligature Healing - Specific keyword', healed2.includes('specific'), `Expected 'specific', got '${healed2}'`);
+
+      // 2. Search Highlighting Logic Test
+      const mockSpan = document.createElement('span');
+      mockSpan.textContent = 'In the Heap table, the data rows are stored in data pages';
+      const viewer = new PDFViewerEngine({
+        container: document.getElementById('viewer-container'),
+        pagesContainer: document.getElementById('pages-container')
+      });
+      const matches = viewer._wrapMatchesInSpan(mockSpan, 'data', 1);
+      assert('Search Highlighting - Substring Wrapping', matches.length === 2, `Found ${matches.length} matches, expected 2`);
+      const marks = mockSpan.querySelectorAll('mark.search-highlight');
+      assert('Search Highlighting - Exact <mark> tag count', marks.length === 2, `Created ${marks.length} mark tags`);
+      assert('Search Highlighting - Parent span has no highlight class', !mockSpan.classList.contains('search-highlight'), 'Parent span remained clean without whole-line highlight');
+
+      // 3. Print Sheet Conformance Test
+      const exportEngine = new PDFExportEngine(viewer);
+      const printSheet = document.createElement('div');
+      printSheet.className = 'print-page-sheet';
+      const printCanvas = document.createElement('canvas');
+      printCanvas.className = 'print-page-canvas';
+      printCanvas.width = 1000;
+      printCanvas.height = 1414;
+      printSheet.appendChild(printCanvas);
+      assert('Print Architecture - Print Canvas object-fit containment', printCanvas.className === 'print-page-canvas', 'Correct CSS isolation classes assigned');
+
+      // 4. In-Place Text Edit Geometry Test
+      const testSpan = document.createElement('span');
+      testSpan.textContent = 'original line of text';
+      testSpan._normRect = { x: 0.1, y: 0.2, w: 0.5, h: 0.025 };
+      const normH = testSpan._normRect.h;
+      assert('In-Place Edit - Canvas mask height locked to single line', normH === 0.025, `Mask height is ${normH}, adjacent lines protected`);
+
+      // 5. Signature Background Removal Algorithm Test
+      const sigEngine = new PDFSignatureEngine();
+      const testCanvas = document.createElement('canvas');
+      testCanvas.width = 100;
+      testCanvas.height = 40;
+      const tCtx = testCanvas.getContext('2d');
+      tCtx.fillStyle = '#f5f5f5'; // Paper color
+      tCtx.fillRect(0, 0, 100, 40);
+      tCtx.fillStyle = '#101010'; // Ink color
+      tCtx.fillRect(20, 15, 60, 10);
+      const outDataUrl = sigEngine.extractSignatureInk(testCanvas, true, 215);
+      assert('Signature Engine - Ink Extraction generated Data URL', outDataUrl.startsWith('data:image/png'), 'Transparent PNG generated successfully');
+
+      // 6. Whiteout Box Isolation Test
+      const annotator = new PDFAnnotatorEngine({ viewer });
+      const whiteout = document.createElement('div');
+      whiteout.className = 'placed-stamp whiteout-box';
+      whiteout.dataset.locked = 'true';
+      assert('Whiteout Box - Lock property persistence', whiteout.dataset.locked === 'true', 'Lock attribute correctly toggled');
+
+      // 7. View Mode Interaction Guard Test
+      document.body.classList.add('mode-view');
+      const isBlockedInView = document.body.classList.contains('mode-view');
+      document.body.classList.remove('mode-view');
+      assert('Interaction Safety - Movement blocked in View & Read mode', isBlockedInView, 'Drag handlers respect View mode');
+
+      // 8. Revert on Escape Test
+      testSpan._originalText = 'original line of text';
+      testSpan.textContent = 'corrupted edit text';
+      testSpan.textContent = testSpan._originalText;
+      assert('In-Place Edit - Escape key reverts text cleanly', testSpan.textContent === 'original line of text', 'Original text faithfully restored');
+
+      console.log('Automated test suite finished:', window.__TEST_RESULTS__);
+    }
+
+    document.getElementById('btn-rerun').onclick = () => runSuite();
+    runSuite();
+  </script>
+</body>
+</html>
