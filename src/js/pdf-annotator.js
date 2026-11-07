@@ -1112,7 +1112,8 @@ export class PDFAnnotatorEngine {
           const sh = spanRect.height * scaleY;
 
           const maskW = Math.max(span._originalWidth || 0, spanRect.width) * scaleX;
-          const maskH = Math.max(span._originalHeight || 0, spanRect.height) * scaleY;
+          const origH = span._originalHeight || spanRect.height || 18;
+          const maskH = origH * scaleY; // Strictly original line height, never mask line below!
 
           // Mask original PDF text underneath with crisp white rectangle
           compCtx.fillStyle = '#ffffff';
@@ -1124,8 +1125,8 @@ export class PDFAnnotatorEngine {
             const pdfScaleY = height / wrapper.clientHeight;
             const pdfX = (spanRect.left - wrapperRect.left) * pdfScaleX;
             const pdfW = Math.max(span._originalWidth || 0, spanRect.width) * pdfScaleX;
-            const pdfH = Math.max(span._originalHeight || 0, spanRect.height) * pdfScaleY;
-            const pdfY = height - ((spanRect.top - wrapperRect.top + (span._originalHeight || spanRect.height)) * pdfScaleY);
+            const pdfH = origH * pdfScaleY;
+            const pdfY = height - ((spanRect.top - wrapperRect.top + origH) * pdfScaleY);
             page.drawRectangle({
               x: Math.max(0, pdfX - 2),
               y: Math.max(0, pdfY - 2),
@@ -1135,10 +1136,10 @@ export class PDFAnnotatorEngine {
             });
           }
 
-          // Render modified text using PDF's exact font, size, and styling
+          // Render modified text using PDF's exact font, size, and styling (single line fit)
           const fSize = parseFloat(cs.fontSize) * scaleY;
-          const fontFamily = edit.fontFamily || span._customFontStack || cs.fontFamily || 'Inter, sans-serif';
-          const fontWeight = cs.fontWeight || 'normal';
+          const fontFamily = edit.fontFamily || span._customFontStack || cs.fontFamily || 'sans-serif';
+          const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
           const fontStyle = cs.fontStyle || 'normal';
           const color = cs.color || '#111827';
 
@@ -1146,27 +1147,7 @@ export class PDFAnnotatorEngine {
           compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
           compCtx.fillStyle = color;
           compCtx.textBaseline = 'top';
-
-          const maxTextW = Math.max(80, (wrapper.clientWidth - (spanRect.left - wrapperRect.left) - 24) * scaleX);
-          const words = textToDraw.split(' ');
-          let currentLine = '';
-          let lineY = sy;
-          const lineHeight = fSize * 1.2;
-
-          for (let w = 0; w < words.length; w++) {
-            const testLine = currentLine ? `${currentLine} ${words[w]}` : words[w];
-            const metrics = compCtx.measureText(testLine);
-            if (metrics.width > maxTextW && currentLine) {
-              compCtx.fillText(currentLine, sx, lineY);
-              currentLine = words[w];
-              lineY += lineHeight;
-            } else {
-              currentLine = testLine;
-            }
-          }
-          if (currentLine) {
-            compCtx.fillText(currentLine, sx, lineY);
-          }
+          compCtx.fillText(textToDraw, sx, sy);
           compCtx.restore();
         }
       }

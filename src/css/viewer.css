@@ -200,9 +200,10 @@
   background-color: #ffffff !important;
   box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgba(37, 99, 235, 0.25) !important;
   z-index: 100 !important;
-  white-space: pre-wrap !important;
-  word-break: break-word !important;
-  overflow-wrap: break-word !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  overflow: visible !important;
   user-select: text !important;
   -webkit-user-select: text !important;
   color: #111827 !important;
@@ -239,9 +240,10 @@
   box-shadow: 0 0 0 2px #ffffff !important;
   z-index: 50 !important;
   cursor: text !important;
-  white-space: pre-wrap !important;
-  word-break: break-word !important;
-  overflow-wrap: break-word !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  overflow: visible !important;
   padding: 0 2px !important;
   margin: 0 !important;
   box-sizing: border-box !important;
@@ -266,8 +268,7 @@ body.mode-view .textLayer span.inline-editing {
 }
 
 /* Search Highlights (Adobe Acrobat Style - High Visibility, Substring Exact) */
-.textLayer mark.search-highlight,
-.textLayer .search-highlight {
+.textLayer mark.search-highlight {
   background-color: rgba(254, 240, 138, 0.85) !important;
   color: transparent !important;
   border-radius: 2px !important;
@@ -282,9 +283,7 @@ body.mode-view .textLayer span.inline-editing {
   font: inherit !important;
 }
 
-.textLayer mark.search-highlight.active-match,
-.textLayer .search-highlight.active-match,
-.textLayer .highlight.selected {
+.textLayer mark.search-highlight.active-match {
   background-color: rgba(251, 146, 60, 0.95) !important;
   color: transparent !important;
   box-shadow: 0 0 0 2px #ea580c, 0 2px 6px rgba(234, 88, 12, 0.4) !important;
@@ -298,100 +297,50 @@ body.mode-view .textLayer span.inline-editing {
     size: auto;
   }
 
-  /* 1. Hide all application bars, headers, ribbons, toolbars, sidebars, modals, mobile controls */
-  .app-header,
-  .mode-ribbon,
-  .sub-toolbar,
-  .sidebar,
-  .inspector,
-  .app-statusbar,
-  .modal-backdrop,
-  .app-toast-container,
-  .m3-top-app-bar,
-  .m3-bottom-nav,
-  .m3-drawer,
-  .m3-search-bar,
-  .m3-sheet,
-  #welcome-screen,
-  .textLayer,
-  .tab-close,
-  .acrobat-doc-tab,
-  .stamp-resize-handle,
-  .element-resize-handle,
-  .element-rotate-handle,
-  .element-rotate-line,
-  .element-floating-bar,
-  .textbox-delete-btn,
-  .bookmark-delete-btn,
-  .desktop-only,
-  .m3-only {
+  /* 1. Complete Universal Isolation: Hide EVERYTHING in body except #print-render-container */
+  body > *:not(#print-render-container) {
     display: none !important;
   }
 
-  /* 2. Expand all outer layout wrappers to full 100% width, unconstrained height, visible overflow */
-  html,
-  body,
-  #app,
-  .app-layout,
-  .app-body,
-  #viewer-container,
-  .viewer-container,
-  #pdf-viewer,
-  .pdf-viewer {
-    width: 100% !important;
-    max-width: 100% !important;
-    height: auto !important;
-    min-height: auto !important;
-    overflow: visible !important;
+  /* 2. Isolated full-page print container */
+  #print-render-container {
     display: block !important;
-    position: static !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     background: transparent !important;
-    box-shadow: none !important;
-    border: none !important;
   }
 
-  /* 3. Each PDF page breaks cleanly onto a printed sheet */
-  .page-wrapper {
+  #print-render-container .print-page-sheet {
     page-break-after: always !important;
     break-after: page !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
     display: block !important;
-    position: relative !important;
     margin: 0 auto !important;
     padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
     width: 100% !important;
     max-width: 100% !important;
     height: auto !important;
-    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
     background: transparent !important;
   }
 
-  /* 4. Canvas takes full page width */
-  .page-wrapper canvas,
-  .pdf-canvas {
-    width: 100% !important;
-    height: auto !important;
-    max-width: 100% !important;
-    display: block !important;
-    margin: 0 auto !important;
-    box-shadow: none !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+  #print-render-container .print-page-sheet:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
   }
 
-  /* 5. Annotation canvas layers overlay properly */
-  .annotation-layer,
-  .annotation-layer canvas {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
+  #print-render-container .print-page-canvas {
+    display: block !important;
     width: 100% !important;
-    height: 100% !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    object-fit: contain !important;
   }
 }
 

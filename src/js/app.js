@@ -135,6 +135,18 @@ class PersonalPDFApp {
     if (btnSaveAsPdf) btnSaveAsPdf.onclick = () => this.saveAsDocument();
     btnPrint.onclick = () => this.exporter.printDocument();
 
+    // Universal print lifecycle hooks (handles Ctrl+P, browser print menu, and button print)
+    window.addEventListener('beforeprint', () => {
+      if (this.exporter && typeof this.exporter.preparePrintContainer === 'function') {
+        this.exporter.preparePrintContainer();
+      }
+    });
+    window.addEventListener('afterprint', () => {
+      if (this.exporter && typeof this.exporter.cleanupPrintContainer === 'function') {
+        this.exporter.cleanupPrintContainer();
+      }
+    });
+
     // Deselect annotations, stamps, images, signatures, and whiteouts when clicking outside
     document.addEventListener('pointerdown', (e) => {
       if (e.target.closest('.placed-stamp, .placed-image-box, .placed-signature-box, .whiteout-box, .element-floating-bar, .element-resize-handle, .element-rotate-handle, .element-rotate-line, .textbox-delete-btn')) {
@@ -538,33 +550,45 @@ class PersonalPDFApp {
 
     // Resolve native PDF font family and size with cross-platform fallback stack
     const compStyle = window.getComputedStyle(span);
-    const existingFont = span.style.fontFamily || compStyle.fontFamily || '';
-    const isMonospace = /mono|courier|consolas|code/i.test(existingFont);
-    const isSerif = /serif|times|georgia|cambria/i.test(existingFont);
+    const existingFont = (span.style.fontFamily || compStyle.fontFamily || '').toLowerCase();
+    
+    // 1. Precise font classification: Avoid false positive where "sans-serif" matched /serif/
+    const isSansSerif = /sans-serif|calibri|arial|helvetica|segoe|roboto|tahoma|verdana|carlito/i.test(existingFont) ||
+                        (!/times|georgia|cambria|garamond|serif/i.test(existingFont) && !/mono|courier|consolas/i.test(existingFont));
+    const isMonospace = !isSansSerif && /mono|courier|consolas|code/i.test(existingFont);
+    const isSerif = !isSansSerif && !isMonospace && /(?<!sans-)serif|times|georgia|cambria|garamond/i.test(existingFont);
 
     const docFonts = Array.from(this.viewer.documentFonts || []);
     const matchingDocFont = docFonts.find(f => {
       const fl = f.toLowerCase();
       if (isMonospace) return fl.includes('consolas') || fl.includes('courier') || fl.includes('mono');
-      if (isSerif) return fl.includes('times') || fl.includes('cambria') || fl.includes('serif');
-      return fl.includes('calibri') || fl.includes('arial') || fl.includes('sans');
+      if (isSerif) return fl.includes('times') || fl.includes('cambria') || (fl.includes('serif') && !fl.includes('sans'));
+      return fl.includes('calibri') || fl.includes('arial') || fl.includes('helvetica') || fl.includes('sans');
     }) || docFonts[0];
 
     let fontStack = '';
-    if (isMonospace || (matchingDocFont && /consolas|courier|mono/i.test(matchingDocFont))) {
+    if (isMonospace) {
       fontStack = `'Consolas', 'Courier New', 'Liberation Mono', Menlo, Monaco, monospace`;
-    } else if (isSerif || (matchingDocFont && /times|cambria|serif/i.test(matchingDocFont))) {
+    } else if (isSerif) {
       fontStack = `'Cambria', 'Times New Roman', 'Liberation Serif', Georgia, serif`;
     } else if (matchingDocFont && /calibri/i.test(matchingDocFont)) {
       fontStack = `'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
+    } else if (matchingDocFont && /arial|helvetica/i.test(matchingDocFont)) {
+      fontStack = `Arial, 'Helvetica Neue', Helvetica, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
     } else if (matchingDocFont) {
-      fontStack = `'${matchingDocFont}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+      fontStack = `'${matchingDocFont}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
     } else {
       fontStack = `'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
     }
 
     span.style.fontFamily = fontStack;
     span._customFontStack = fontStack;
+
+    // Preserve font weight and style
+    const fontWeight = compStyle.fontWeight || 'normal';
+    const isBold = parseInt(fontWeight, 10) >= 600 || /bold/i.test(fontWeight);
+    span.style.fontWeight = isBold ? '700' : '400';
+    span._customFontWeight = isBold ? '700' : '400';
 
     // Use dynamic scale factor so zooming maintains exact font size proportion
     const scaleFactor = (this.viewer && this.viewer.scale) || 1;
@@ -584,9 +608,8 @@ class PersonalPDFApp {
     const wrapW = pageWrapper.clientWidth || 800;
     const maxW = Math.max(80, wrapW - span.offsetLeft - 24);
     span.style.maxWidth = `${maxW}px`;
-    span.style.whiteSpace = 'pre-wrap';
-    span.style.wordBreak = 'break-word';
-    span.style.overflowWrap = 'break-word';
+    span.style.whiteSpace = 'nowrap';
+    span.style.overflow = 'visible';
 
     // Set as active in-place span in annotator engine
     this.annotator.setActiveInPlaceSpan(span);
@@ -603,23 +626,37 @@ class PersonalPDFApp {
     span._pageNum = pageNum;
     span._pageWrapper = pageWrapper;
 
-    // Helper to sanitize child HTML injected by Android Gboard/IME (e.g. <font face="Roboto" size="3">)
+    // Helper to sanitize child HTML injected by Android Gboard/IME and auto-fit to stay on line
     const cleanSpanContent = () => {
       if (span.children && span.children.length > 0) {
         const text = (span.innerText || span.textContent || '').replace(/[\r\n]+/g, ' ');
         span.textContent = text;
       }
       span.style.fontFamily = fontStack;
-      span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
+      span.style.fontWeight = span._customFontWeight || 'normal';
       span.style.lineHeight = '1.15';
       span.style.webkitTextSizeAdjust = 'none';
       span.style.textSizeAdjust = 'none';
       span.style.transform = 'none';
       span.style.letterSpacing = 'normal';
       span.style.maxWidth = `${maxW}px`;
-      span.style.whiteSpace = 'pre-wrap';
-      span.style.wordBreak = 'break-word';
-      span.style.overflowWrap = 'break-word';
+      span.style.whiteSpace = 'nowrap';
+      span.style.overflow = 'visible';
+
+      // Dynamic line fitting: slightly scale font size if typed text exceeds line width
+      // so it never wraps into adjacent lines or corrupts paragraph line breaks
+      const curW = span.scrollWidth;
+      if (curW > maxW && maxW > 0) {
+        const fitRatio = Math.max(0.70, maxW / curW);
+        const fittedSize = baseFontSize * fitRatio;
+        span.style.fontSize = `calc(var(--scale-factor, 1) * ${fittedSize.toFixed(2)}px)`;
+        if (fitRatio < 0.85) {
+          span.style.letterSpacing = '-0.25px';
+        }
+      } else {
+        span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
+        span.style.letterSpacing = 'normal';
+      }
     };
 
     // Sync toolbar font, size, bold, italic, color to match native PDF styling
@@ -657,13 +694,12 @@ class PersonalPDFApp {
           span.classList.add('in-place-modified');
           if (tLayer) tLayer.classList.add('has-modifications');
 
-          // Explicitly ensure solid text visibility and natural wrapping
+          // Explicitly ensure solid text visibility and single-line fitting
           span.style.transform = 'none';
           span.style.letterSpacing = 'normal';
           span.style.maxWidth = `${maxW}px`;
-          span.style.whiteSpace = 'pre-wrap';
-          span.style.wordBreak = 'break-word';
-          span.style.overflowWrap = 'break-word';
+          span.style.whiteSpace = 'nowrap';
+          span.style.overflow = 'visible';
           span.style.width = 'auto';
           span.style.minWidth = '0';
           span.style.color = '#111827';
@@ -672,6 +708,7 @@ class PersonalPDFApp {
           span.style.visibility = 'visible';
 
           // Directly erase original text pixels from underlying PDF canvas using normalized coordinates
+          // Strictly mask only the original line's bounding height so adjacent lines below are never overwritten!
           const pageCanvas = pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
           if (pageCanvas && span._normRect) {
             const canvasCtx = pageCanvas.getContext('2d');
@@ -680,7 +717,7 @@ class PersonalPDFApp {
             const normX = span._normRect.x;
             const normY = span._normRect.y;
             const normW = Math.max(span._normRect.w, (span.offsetWidth || 0) / (pageWrapper.clientWidth || 1));
-            const normH = Math.max(span._normRect.h, (span.offsetHeight || 0) / (pageWrapper.clientHeight || 1));
+            const normH = span._normRect.h; // STRICTLY original line height! Never erase adjacent lines below!
             canvasCtx.fillStyle = '#ffffff';
             canvasCtx.fillRect(
               Math.floor(normX * pageCanvas.width) - 2,
@@ -806,6 +843,8 @@ class PersonalPDFApp {
         if (pageWrapper) {
           const maxW = Math.max(80, (pageWrapper.clientWidth || 800) - matchedSpan.offsetLeft - 24);
           matchedSpan.style.maxWidth = `${maxW}px`;
+          matchedSpan.style.whiteSpace = 'nowrap';
+          matchedSpan.style.overflow = 'visible';
         }
 
         const normRect = matchedSpan._normRect;
@@ -816,7 +855,7 @@ class PersonalPDFApp {
           const normX = normRect.x;
           const normY = normRect.y;
           const normW = Math.max(normRect.w, (matchedSpan.offsetWidth || 0) / (pageWrapper.clientWidth || 1));
-          const normH = Math.max(normRect.h, (matchedSpan.offsetHeight || 0) / (pageWrapper.clientHeight || 1));
+          const normH = normRect.h; // Strictly original line height, never mask lines below!
           canvasCtx.fillStyle = '#ffffff';
           canvasCtx.fillRect(
             Math.floor(normX * pageCanvas.width) - 2,

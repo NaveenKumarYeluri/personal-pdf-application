@@ -337,6 +337,110 @@ export class PDFExportEngine {
     };
   }
 
+  preparePrintContainer() {
+    let container = document.getElementById('print-render-container');
+    if (container) container.remove();
+
+    container = document.createElement('div');
+    container.id = 'print-render-container';
+
+    const viewer = this.viewer || this.app?.viewer || (typeof window !== 'undefined' ? window.app?.viewer : null);
+    const totalPages = viewer?.totalPages || 1;
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+      const origCanvas = wrapper?.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
+      if (!origCanvas || origCanvas.width === 0 || origCanvas.height === 0) continue;
+
+      const printCanvas = document.createElement('canvas');
+      printCanvas.className = 'print-page-canvas';
+      printCanvas.width = origCanvas.width;
+      printCanvas.height = origCanvas.height;
+      const ctx = printCanvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, printCanvas.width, printCanvas.height);
+      ctx.drawImage(origCanvas, 0, 0);
+
+      // Composite annotation ink canvas if present
+      const annotCanvas = document.getElementById(`annot-canvas-${pageNum}`);
+      if (annotCanvas) {
+        ctx.drawImage(annotCanvas, 0, 0, printCanvas.width, printCanvas.height);
+      }
+
+      if (wrapper) {
+        const scaleX = printCanvas.width / (wrapper.clientWidth || 1);
+        const scaleY = printCanvas.height / (wrapper.clientHeight || 1);
+
+        // Composite whiteouts
+        wrapper.querySelectorAll('.whiteout-box').forEach(wb => {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(wb.offsetLeft * scaleX, wb.offsetTop * scaleY, wb.offsetWidth * scaleX, wb.offsetHeight * scaleY);
+        });
+
+        // Composite in-place modified spans
+        wrapper.querySelectorAll('.textLayer span.in-place-modified, .textLayer span.inline-editing').forEach(span => {
+          const cs = window.getComputedStyle(span);
+          const fSize = parseFloat(cs.fontSize) * scaleY;
+          const fontFamily = span._customFontStack || cs.fontFamily || 'sans-serif';
+          const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
+          const fontStyle = cs.fontStyle || 'normal';
+          const color = cs.color || '#111827';
+          const sx = span.offsetLeft * scaleX;
+          const sy = span.offsetTop * scaleY;
+
+          // Mask original underlying text area with white in case of active inline-editing or zoom variations
+          const origH = (span._originalHeight || span.offsetHeight || 18) * scaleY;
+          const origW = Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(origW) + 4, Math.ceil(origH) + 4);
+
+          ctx.save();
+          ctx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
+          ctx.fillStyle = color;
+          ctx.textBaseline = 'top';
+          ctx.fillText(span.textContent || '', sx, sy);
+          ctx.restore();
+        });
+
+        // Composite stamps, signatures, images
+        wrapper.querySelectorAll('.placed-stamp').forEach(stamp => {
+          if (stamp.classList.contains('whiteout-box')) return;
+          const img = stamp.querySelector('img');
+          const sx = stamp.offsetLeft * scaleX;
+          const sy = stamp.offsetTop * scaleY;
+          const sw = stamp.offsetWidth * scaleX;
+          const sh = stamp.offsetHeight * scaleY;
+          const rotDeg = parseFloat(stamp.dataset.rotation || 0);
+
+          if (img && img.complete) {
+            ctx.save();
+            if (rotDeg !== 0) {
+              ctx.translate(sx + sw / 2, sy + sh / 2);
+              ctx.rotate(rotDeg * Math.PI / 180);
+              ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+            } else {
+              ctx.drawImage(img, sx, sy, sw, sh);
+            }
+            ctx.restore();
+          }
+        });
+      }
+
+      const sheet = document.createElement('div');
+      sheet.className = 'print-page-sheet';
+      sheet.appendChild(printCanvas);
+      container.appendChild(sheet);
+    }
+
+    document.body.appendChild(container);
+    return container;
+  }
+
+  cleanupPrintContainer() {
+    const container = document.getElementById('print-render-container');
+    if (container) container.remove();
+  }
+
   printDocument() {
     const viewer = this.viewer || this.app?.viewer || (typeof window !== 'undefined' ? window.app?.viewer : null);
     if (!viewer || !viewer.pdfDoc) {
@@ -348,7 +452,10 @@ export class PDFExportEngine {
       }
       return;
     }
+
+    this.preparePrintContainer();
     window.print();
+    setTimeout(() => this.cleanupPrintContainer(), 2000);
   }
 }
 
