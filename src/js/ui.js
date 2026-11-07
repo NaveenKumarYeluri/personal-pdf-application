@@ -569,7 +569,12 @@ export class UIController {
     const btnAddBm = document.getElementById('btn-add-bookmark');
     if (btnAddBm) {
       btnAddBm.onclick = () => {
-        const pageNum = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
+        const pageNumInput = document.getElementById('page-num-input');
+        const inputVal = pageNumInput ? parseInt(pageNumInput.value, 10) : 0;
+        const visiblePage = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
+        const totalPages = this.app.viewer.totalPages || 1;
+        const pageNum = (inputVal >= 1 && inputVal <= totalPages) ? inputVal : Math.max(1, Math.min(visiblePage, totalPages));
+
         const defaultTitle = `Page ${pageNum} Bookmark`;
         const title = prompt(`Enter bookmark title for Page ${pageNum}:`, defaultTitle);
         if (title && title.trim()) {

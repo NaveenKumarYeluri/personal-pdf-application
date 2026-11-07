@@ -351,6 +351,18 @@ export class PDFAnnotatorEngine {
         ctx.moveTo(start.x, start.y);
         ctx.lineTo(end.x, end.y);
         ctx.stroke();
+      } else if (a.type === 'underline' || a.type === 'strikethrough') {
+        if (!a.rects) return;
+        ctx.strokeStyle = a.color || '#2563eb';
+        ctx.lineWidth = a.strokeWidth || 2;
+        ctx.lineCap = 'butt';
+        a.rects.forEach(r => {
+          ctx.beginPath();
+          const y = (a.type === 'underline') ? Math.round(r.y + r.h - 1) : Math.round(r.y + r.h / 2);
+          ctx.moveTo(r.x, y);
+          ctx.lineTo(r.x + r.w, y);
+          ctx.stroke();
+        });
       }
     });
   }
@@ -768,13 +780,59 @@ export class PDFAnnotatorEngine {
   toggleUnderline() {
     const el = this._getTargetElement();
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
-    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
+
+    // 1. If currently inside active textbox, apply rich-text underline
+    if (el && sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) {
       document.execCommand('underline', false, null);
       try {
         const state = document.queryCommandState('underline');
         return Boolean(state);
       } catch (_) {}
     }
+
+    // 2. If text is selected in native document textLayer, apply Acrobat-style markup underline!
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+      const range = sel.getRangeAt(0);
+      const startNode = range.startContainer;
+      const span = startNode.nodeType === 3 ? startNode.parentNode : startNode;
+      const pageWrapper = span.closest ? span.closest('.page-wrapper') : null;
+      if (pageWrapper) {
+        const pageNum = parseInt(pageWrapper.dataset.pageNumber, 10);
+        const wRect = pageWrapper.getBoundingClientRect();
+        const clientRects = Array.from(range.getClientRects());
+        const rects = clientRects.map(cr => ({
+          x: cr.left - wRect.left,
+          y: cr.top - wRect.top,
+          w: cr.width,
+          h: cr.height
+        })).filter(r => r.w > 0 && r.h > 0);
+
+        if (rects.length > 0) {
+          const annots = this.annotations.get(pageNum) || [];
+          const annotObj = {
+            type: 'underline',
+            color: this.color || '#2563eb',
+            strokeWidth: 2,
+            opacity: 1,
+            rects
+          };
+          annots.push(annotObj);
+          this.annotations.set(pageNum, annots);
+          this._redrawAnnotations(pageNum);
+
+          this.undoStack.push({
+            type: 'draw',
+            pageNum,
+            annotation: annotObj
+          });
+          this.redoStack = [];
+
+          sel.removeAllRanges();
+          return false;
+        }
+      }
+    }
+
     const currentDec = (el ? el.style.textDecoration : this.textDecoration) || '';
     const hasUnder = currentDec.includes('underline');
     const newDec = hasUnder
@@ -790,13 +848,59 @@ export class PDFAnnotatorEngine {
   toggleStrikethrough() {
     const el = this._getTargetElement();
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
-    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
+
+    // 1. If currently inside active textbox, apply rich-text strikethrough
+    if (el && sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) {
       document.execCommand('strikeThrough', false, null);
       try {
         const state = document.queryCommandState('strikeThrough');
         return Boolean(state);
       } catch (_) {}
     }
+
+    // 2. If text is selected in native document textLayer, apply Acrobat-style markup strikethrough!
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+      const range = sel.getRangeAt(0);
+      const startNode = range.startContainer;
+      const span = startNode.nodeType === 3 ? startNode.parentNode : startNode;
+      const pageWrapper = span.closest ? span.closest('.page-wrapper') : null;
+      if (pageWrapper) {
+        const pageNum = parseInt(pageWrapper.dataset.pageNumber, 10);
+        const wRect = pageWrapper.getBoundingClientRect();
+        const clientRects = Array.from(range.getClientRects());
+        const rects = clientRects.map(cr => ({
+          x: cr.left - wRect.left,
+          y: cr.top - wRect.top,
+          w: cr.width,
+          h: cr.height
+        })).filter(r => r.w > 0 && r.h > 0);
+
+        if (rects.length > 0) {
+          const annots = this.annotations.get(pageNum) || [];
+          const annotObj = {
+            type: 'strikethrough',
+            color: this.color || '#ef4444',
+            strokeWidth: 2,
+            opacity: 1,
+            rects
+          };
+          annots.push(annotObj);
+          this.annotations.set(pageNum, annots);
+          this._redrawAnnotations(pageNum);
+
+          this.undoStack.push({
+            type: 'draw',
+            pageNum,
+            annotation: annotObj
+          });
+          this.redoStack = [];
+
+          sel.removeAllRanges();
+          return false;
+        }
+      }
+    }
+
     const currentDec = (el ? el.style.textDecoration : this.textDecoration) || '';
     const hasStrike = currentDec.includes('line-through');
     const newDec = hasStrike
@@ -811,27 +915,10 @@ export class PDFAnnotatorEngine {
 
   setTextAlign(align) {
     this.textAlign = align;
-    const el = this._getTargetElement();
-    if (!el) return;
-
-    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
-    let handled = false;
-    if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
-      const cmdMap = {
-        left: 'justifyLeft',
-        center: 'justifyCenter',
-        right: 'justifyRight',
-        justify: 'justifyFull'
-      };
-      const cmd = cmdMap[align];
-      if (cmd) {
-        try {
-          handled = document.execCommand(cmd, false, null);
-        } catch (_) {}
-      }
-    }
-    if (!handled) {
-      el.style.textAlign = align;
+    // Align only applies to multi-line typewriter textboxes to prevent shifting fixed-layout PDF spans
+    if (this.activeTextBox) {
+      const contentEl = this.activeTextBox.querySelector('.textbox-content') || this.activeTextBox;
+      contentEl.style.textAlign = align;
     }
   }
 

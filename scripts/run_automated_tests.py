@@ -116,6 +116,8 @@ def run_all_tests():
          "span.style.whiteSpace = 'nowrap'" in app_js and "fitRatio" in app_js)
     test("pdf-annotator.js burnAnnotationsToPdf locks mask height to original line height",
          "const origH = span._originalHeight || spanRect.height" in annot_js and "origH * scaleY" in annot_js)
+    test("pdf-annotator.js Underline and Strikethrough support textLayer selection markup",
+         "type: 'underline'" in annot_js and "type: 'strikethrough'" in annot_js and "a.type === 'underline' || a.type === 'strikethrough'" in annot_js)
 
     # =========================================================================
     # 5. Search Highlighting Precision
@@ -163,3 +165,4 @@ def run_all_tests():
 if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1)
+
