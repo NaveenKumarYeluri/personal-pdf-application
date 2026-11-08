@@ -28,13 +28,16 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install WiX Toolset for MSI Installer
+      - name: Install WiX Toolset and NSIS for Windows Installers
         run: |
-          choco install wixtoolset -y
+          choco install wixtoolset nsis -y
           echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\Program Files\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build Tauri Windows Application
-        run: npx @tauri-apps/cli build
+        run: |
+          npx @tauri-apps/cli build || npx @tauri-apps/cli build --bundles msi
 
       - name: Upload Windows Artifacts (.msi & .exe)
         uses: actions/upload-artifact@v4

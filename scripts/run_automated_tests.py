@@ -372,7 +372,19 @@ def run_all_tests():
         test("build-linux.yml installs native Linux WebKitGTK and GTK-3 libraries",
              "libwebkit2gtk-4.1-dev" in wf_linux and "libgtk-3-dev" in wf_linux)
         test("build-linux.yml builds both .AppImage and .deb Linux packages",
-             "bundles appimage,deb" in wf_linux)
+             "bundles appimage,deb" in wf_linux or "--bundles appimage,deb" in wf_linux)
+
+    if os.path.exists(".github/workflows/build-windows.yml"):
+        with open(".github/workflows/build-windows.yml", "r", encoding="utf-8") as f:
+            wf_win = f.read()
+        test("build-windows.yml installs NSIS & WiX to eliminate cloud download timeouts",
+             "nsis" in wf_win and "wixtoolset" in wf_win)
+
+    if os.path.exists(".github/workflows/build-android.yml"):
+        with open(".github/workflows/build-android.yml", "r", encoding="utf-8") as f:
+            wf_android = f.read()
+        test("build-android.yml configures setup-gradle and 120s socketTimeout to defeat network drops",
+             "setup-gradle" in wf_android and "socketTimeout=120000" in wf_android)
 
     tauri_conf_path = os.path.join("src-tauri", "tauri.conf.json")
     test("src-tauri/tauri.conf.json exists and specifies valid frontendDist '../src'",
