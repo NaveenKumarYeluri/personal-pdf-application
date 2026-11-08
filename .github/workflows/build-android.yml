@@ -28,10 +28,8 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Gradle
+      - name: Setup Gradle Cache
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.2.1'
 
       - name: Install dependencies
         run: npm install
@@ -41,9 +39,9 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
-      - name: Configure Gradle Environment and Extended Timeouts
+      - name: Provision Gradle Distribution and Configure Extended Timeouts
         run: |
-          mkdir -p ~/.gradle
+          mkdir -p ~/.gradle /tmp
           printf "%s\n" \
             "org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m" \
             "org.gradle.parallel=true" \
@@ -52,8 +50,17 @@ jobs:
             "systemProp.org.gradle.internal.http.socketTimeout=120000" \
             "systemProp.http.socketTimeout=120000" \
             "systemProp.http.connectionTimeout=120000" > ~/.gradle/gradle.properties
+          echo "Fetching Gradle distribution with multi-mirror fallback..."
+          curl -fSL --retry 3 --connect-timeout 15 -o /tmp/gradle-8.2.1-bin.zip https://services.gradle.org/distributions/gradle-8.2.1-bin.zip || \
+          curl -fSL --retry 3 --connect-timeout 15 -o /tmp/gradle-8.2.1-bin.zip https://mirrors.cloud.tencent.com/gradle/gradle-8.2.1-bin.zip || true
           if [ -f "android/gradle/wrapper/gradle-wrapper.properties" ]; then
-            sed -i 's/gradle-8.2.1-all.zip/gradle-8.2.1-bin.zip/g' android/gradle/wrapper/gradle-wrapper.properties
+            if [ -s "/tmp/gradle-8.2.1-bin.zip" ]; then
+              echo "Using downloaded local file /tmp/gradle-8.2.1-bin.zip"
+              sed -i 's#distributionUrl=.*#distributionUrl=file\\:///tmp/gradle-8.2.1-bin.zip#g' android/gradle/wrapper/gradle-wrapper.properties
+            else
+              echo "Using high-speed cloud mirror distributionUrl"
+              sed -i 's#distributionUrl=.*#distributionUrl=https\\://mirrors.cloud.tencent.com/gradle/gradle-8.2.1-bin.zip#g' android/gradle/wrapper/gradle-wrapper.properties
+            fi
           fi
 
       - name: Setup Persistent Signing Keystore
