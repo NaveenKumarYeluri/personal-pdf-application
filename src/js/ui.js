@@ -1343,8 +1343,17 @@ export class UIController {
         btn.classList.add('active');
         
         if (t === 'select') {
-          this.app.annotator.setTool('none');
-          this.setStatus('Text selection active: click & drag to select and copy text');
+          this.setAnnotationTool('select');
+          this.app.annotator.setTool('select');
+          const container = document.getElementById('viewer-container');
+          if (container) {
+            container.classList.remove('hand-tool');
+            container.style.cursor = 'default';
+          }
+          document.querySelectorAll('.textLayer').forEach(tl => {
+            tl.style.pointerEvents = 'auto';
+            tl.style.userSelect = 'text';
+          });
           return;
         }
 
@@ -2363,6 +2372,15 @@ export class UIController {
       chip.classList.toggle('active', chip.dataset.m3Tool === toolName);
     });
     if (toolName === 'select' || toolName === 'none') {
+      const container = document.getElementById('viewer-container');
+      if (container) {
+        container.classList.remove('hand-tool');
+        container.style.cursor = 'default';
+      }
+      document.querySelectorAll('.textLayer').forEach(tl => {
+        tl.style.pointerEvents = 'auto';
+        tl.style.userSelect = 'text';
+      });
       this.setStatus('Text selection active: click & drag to select and copy text');
     }
   }

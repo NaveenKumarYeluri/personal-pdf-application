@@ -52,6 +52,7 @@ export class PDFAnnotatorEngine {
     const isAnnotating = tool !== 'none' && tool !== 'select';
     if (typeof document !== 'undefined') {
       document.body.classList.toggle('annotating-active', isAnnotating);
+      document.body.classList.toggle('annot-tool-none', !isAnnotating);
     }
 
     // Toggle drawing-active class and pointer-events on all annotation layers
@@ -61,12 +62,24 @@ export class PDFAnnotatorEngine {
         layer.classList.remove('drawing-active');
         layer.style.cursor = 'default';
         layer.style.pointerEvents = 'none';
+        const c = layer.querySelector('canvas');
+        if (c) c.style.pointerEvents = 'none';
       } else {
         layer.classList.add('drawing-active');
         layer.style.cursor = tool === 'text' ? 'text' : 'crosshair';
         layer.style.pointerEvents = 'auto';
+        const c = layer.querySelector('canvas');
+        if (c) c.style.pointerEvents = 'auto';
       }
     });
+
+    if (!isAnnotating && typeof document !== 'undefined') {
+      document.querySelectorAll('.textLayer').forEach(tl => {
+        tl.style.pointerEvents = 'auto';
+        tl.style.userSelect = 'text';
+        tl.style.webkitUserSelect = 'text';
+      });
+    }
   }
 
   _bindEvents() {
@@ -457,80 +470,99 @@ export class PDFAnnotatorEngine {
       noteContainer.classList.add('active-note');
     };
 
-    noteContainer.onmousedown = setActiveNote;
-    marker.onmousedown = setActiveNote;
-    popup.onmousedown = setActiveNote;
+    // Unified drag handler attached directly to noteContainer
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let initialLeft = 0, initialTop = 0;
+    let hasMoved = false;
+    let activeWrapper = wrapper;
 
-    // Displacement-based drag handling for marker & header
-    const setupDrag = (handleEl) => {
-      let isDragging = false;
-      let startX = 0, startY = 0;
-      let initLeft = 0, initTop = 0;
-      let hasMoved = false;
+    const onPointerDown = (e) => {
+      // Don't drag when interacting with the textarea or close button
+      if (e.target.closest('.btn-delete-note, textarea, button, input')) return;
 
-      const onPointerDown = (e) => {
-        if (e.target.closest('.btn-delete-note, textarea, button')) return;
-        e.stopPropagation();
-        setActiveNote(e);
-        isDragging = true;
-        hasMoved = false;
-        const pt = e.touches ? e.touches[0] : e;
-        startX = pt.clientX;
-        startY = pt.clientY;
-        initLeft = parseFloat(noteContainer.style.left) || 0;
-        initTop = parseFloat(noteContainer.style.top) || 0;
+      e.stopPropagation();
+      setActiveNote(e);
 
-        const onPointerMove = (mEvt) => {
-          if (!isDragging) return;
-          const mPt = mEvt.touches ? mEvt.touches[0] : mEvt;
-          const dx = mPt.clientX - startX;
-          const dy = mPt.clientY - startY;
-          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-            hasMoved = true;
-            const wrapRect = wrapper.getBoundingClientRect();
-            const maxL = Math.max(0, (wrapRect.width || 800) - 32);
-            const maxT = Math.max(0, (wrapRect.height || 1000) - 32);
-            const newL = Math.min(maxL, Math.max(0, initLeft + dx));
-            const newT = Math.min(maxT, Math.max(0, initTop + dy));
-            noteContainer.style.left = `${Math.round(newL)}px`;
-            noteContainer.style.top = `${Math.round(newT)}px`;
+      // Prevent native browser text selection/drag ghost image from taking over
+      if (e.cancelable) e.preventDefault();
+
+      isDragging = true;
+      hasMoved = false;
+      const pt = e.touches ? e.touches[0] : e;
+      startX = pt.clientX;
+      startY = pt.clientY;
+      initialLeft = noteContainer.offsetLeft;
+      initialTop = noteContainer.offsetTop;
+
+      const onPointerMove = (mEvt) => {
+        if (!isDragging) return;
+        const mPt = mEvt.touches ? mEvt.touches[0] : mEvt;
+        const dx = mPt.clientX - startX;
+        const dy = mPt.clientY - startY;
+
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+          hasMoved = true;
+          if (mEvt.cancelable) mEvt.preventDefault();
+
+          // Live cross-page reparenting if dragged over another page
+          const elementsAtPoint = document.elementsFromPoint(mPt.clientX, mPt.clientY);
+          const targetWrapper = elementsAtPoint.find(el => el.classList && el.classList.contains('page-wrapper'));
+          if (targetWrapper && targetWrapper !== noteContainer.parentNode) {
+            const elRect = noteContainer.getBoundingClientRect();
+            const targetRect = targetWrapper.getBoundingClientRect();
+            targetWrapper.appendChild(noteContainer);
+            activeWrapper = targetWrapper;
+            initialLeft = elRect.left - targetRect.left - dx;
+            initialTop = elRect.top - targetRect.top - dy;
           }
-        };
 
-        const onPointerUp = () => {
-          if (!isDragging) return;
-          isDragging = false;
-          window.removeEventListener('mousemove', onPointerMove);
-          window.removeEventListener('mouseup', onPointerUp);
-          window.removeEventListener('touchmove', onPointerMove);
-          window.removeEventListener('touchend', onPointerUp);
+          const wrapW = activeWrapper.clientWidth || 800;
+          const wrapH = activeWrapper.clientHeight || 1000;
+          const newL = Math.min(wrapW - 24, Math.max(0, initialLeft + dx));
+          const newT = Math.min(wrapH - 24, Math.max(0, initialTop + dy));
 
-          if (!hasMoved && handleEl === marker) {
-            // Click toggle on marker
-            popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
-            if (popup.style.display !== 'none') textarea.focus();
-          }
-        };
-
-        window.addEventListener('mousemove', onPointerMove);
-        window.addEventListener('mouseup', onPointerUp);
-        window.addEventListener('touchmove', onPointerMove, { passive: false });
-        window.addEventListener('touchend', onPointerUp);
+          noteContainer.style.left = `${Math.round(newL)}px`;
+          noteContainer.style.top = `${Math.round(newT)}px`;
+        }
       };
 
-      handleEl.addEventListener('mousedown', onPointerDown);
-      handleEl.addEventListener('touchstart', onPointerDown, { passive: false });
+      const onPointerUp = () => {
+        if (!isDragging) return;
+        isDragging = false;
+
+        window.removeEventListener('mousemove', onPointerMove, true);
+        window.removeEventListener('mouseup', onPointerUp, true);
+        window.removeEventListener('touchmove', onPointerMove, true);
+        window.removeEventListener('touchend', onPointerUp, true);
+
+        // If mouse/finger didn't move, treat as click toggle on marker
+        if (!hasMoved) {
+          const clickTarget = e.target;
+          if (clickTarget && clickTarget.closest('.sticky-note-marker')) {
+            popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+            if (popup.style.display !== 'none') {
+              setTimeout(() => textarea.focus(), 50);
+            }
+          }
+        }
+      };
+
+      window.addEventListener('mousemove', onPointerMove, true);
+      window.addEventListener('mouseup', onPointerUp, true);
+      window.addEventListener('touchmove', onPointerMove, { passive: false, capture: true });
+      window.addEventListener('touchend', onPointerUp, true);
     };
 
-    setupDrag(marker);
-    setupDrag(popup.querySelector('.sticky-note-header'));
+    noteContainer.addEventListener('mousedown', onPointerDown);
+    noteContainer.addEventListener('touchstart', onPointerDown, { passive: false });
 
     noteContainer.appendChild(marker);
     noteContainer.appendChild(popup);
     wrapper.appendChild(noteContainer);
 
     this.activeStickyNote = noteContainer;
-    textarea.focus();
+    setTimeout(() => textarea.focus(), 50);
 
     this.undoStack.push({
       type: 'element',

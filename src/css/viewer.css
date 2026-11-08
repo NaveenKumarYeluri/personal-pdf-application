@@ -398,22 +398,37 @@ body.mode-view .textLayer span.inline-editing {
 }
 
 /* When Annotating, Pen, Highlighter, Text, or Shapes are active: prioritize annotation layer and prevent accidental text selection */
-body.annotating-active .textLayer,
-body.mode-annotate:not(.annot-tool-none) .textLayer {
+body.annotating-active:not(.annot-tool-none) .textLayer {
   user-select: none !important;
   -webkit-user-select: none !important;
   pointer-events: none !important;
 }
 
-body.annotating-active .annotation-layer,
-body.mode-annotate:not(.annot-tool-none) .annotation-layer {
+body.annotating-active:not(.annot-tool-none) .annotation-layer {
   pointer-events: auto !important;
   z-index: 20 !important;
 }
 
-body.annotating-active .annotation-layer canvas,
-body.mode-annotate:not(.annot-tool-none) .annotation-layer canvas {
+body.annotating-active:not(.annot-tool-none) .annotation-layer canvas {
   pointer-events: auto !important;
+}
+
+/* When Select tool is active in Annotate mode or View mode: textLayer is interactive and annotationLayer does not block */
+body.annot-tool-none .textLayer,
+body:not(.annotating-active) .textLayer {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  pointer-events: auto !important;
+}
+
+body.annot-tool-none .annotation-layer:not(.drawing-active),
+body:not(.annotating-active) .annotation-layer:not(.drawing-active) {
+  pointer-events: none !important;
+}
+
+body.annot-tool-none .annotation-layer:not(.drawing-active) canvas,
+body:not(.annotating-active) .annotation-layer:not(.drawing-active) canvas {
+  pointer-events: none !important;
 }
 
 /* Page Thumbnails Sidebar */

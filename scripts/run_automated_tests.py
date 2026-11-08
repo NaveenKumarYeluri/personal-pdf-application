@@ -92,6 +92,8 @@ def run_all_tests():
          "borderThickness" in sig_js and "bgLum" in sig_js)
     with open('src/js/pdf-annotator.js', 'r', encoding='utf-8') as f:
         annot_js = f.read()
+    with open('src/js/ui.js', 'r', encoding='utf-8') as f:
+        ui_js = f.read()
     test("pdf-annotator.js supports 360-degree signature rotation & handle transform",
          "element.dataset.rotation = deg" in annot_js and "Math.atan2" in annot_js)
 
@@ -160,11 +162,15 @@ def run_all_tests():
     test("pdf-annotator.js calls e.preventDefault() on mousedown to defeat accidental text selection",
          "e.cancelable) e.preventDefault()" in annot_js)
     test("viewer.css disables textLayer and prioritizes annotationLayer during active tool usage",
-         "body.annotating-active .textLayer" in viewer_css and "pointer-events: none !important;" in viewer_css and "body.annotating-active .annotation-layer" in viewer_css)
+         "body.annotating-active:not(.annot-tool-none) .textLayer" in viewer_css and "pointer-events: none !important;" in viewer_css and "body.annotating-active:not(.annot-tool-none) .annotation-layer" in viewer_css)
+    test("viewer.css restores textLayer pointer-events and selection when Select tool is active",
+         "body.annot-tool-none .textLayer" in viewer_css and "user-select: text !important;" in viewer_css and "pointer-events: auto !important;" in viewer_css)
     test("pdf-annotator.js setTool toggles annotating-active class and pointer-events dynamically",
-         "document.body.classList.toggle('annotating-active'" in annot_js)
+         "document.body.classList.toggle('annotating-active'" in annot_js and "document.body.classList.toggle('annot-tool-none'" in annot_js)
+    test("ui.js Select button activates select tool and restores textLayer interaction",
+         "this.setAnnotationTool('select')" in ui_js and "this.app.annotator.setTool('select')" in ui_js)
     test("pdf-annotator.js _addStickyNote automatically sets tool to select and provides displacement-based drag",
-         "this.setTool('select')" in annot_js and "setupDrag(marker)" in annot_js and "setupDrag(popup.querySelector('.sticky-note-header'))" in annot_js)
+         "this.setTool('select')" in annot_js and "noteContainer.addEventListener('mousedown', onPointerDown)" in annot_js and "hasMoved" in annot_js)
     test("pdf-annotator.js _addStickyNote delete button wires onclick/onmousedown to noteContainer.remove",
          "btnDel.onclick = doDelete" in annot_js and "btnDel.onmousedown" in annot_js and "noteContainer.remove()" in annot_js)
     test("pdf-annotator.js deleteActiveTextBox and deleteActiveBox support activeStickyNote",
