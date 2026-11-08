@@ -664,11 +664,12 @@ class PersonalPDFApp {
       for (const sibling of siblingSpans) {
         if (sibling !== span) {
           const dy = Math.abs(sibling.offsetTop - span.offsetTop);
-          if (dy > 0 && dy < 120) {
+          if (dy > 0 && dy < 140) {
             const dx = Math.abs(sibling.offsetLeft - span.offsetLeft);
             // Sibling is in same paragraph text column if left margin aligns within 25px
             if (dx < 25) {
-              const sibRight = sibling.offsetLeft + (sibling._originalWidth || sibling.offsetWidth || 0);
+              const sibW = sibling.getBoundingClientRect().width || sibling._originalWidth || sibling.offsetWidth || 0;
+              const sibRight = sibling.offsetLeft + sibW;
               if (sibRight > maxParagraphRight) {
                 maxParagraphRight = sibRight;
               }
@@ -678,9 +679,10 @@ class PersonalPDFApp {
       }
 
       // Constrain to column right boundary, strictly avoiding stretching into page margin
+      const rightMarginPad = 48;
       const colRightLimit = maxParagraphRight > (span.offsetLeft + 40)
-        ? maxParagraphRight
-        : Math.min(wrapW - 54, (span.offsetLeft || 0) + (span._originalWidth || 100) + 20);
+        ? Math.min(maxParagraphRight, wrapW - rightMarginPad)
+        : Math.min(wrapW - rightMarginPad, (span.offsetLeft || 0) + (span._originalWidth || 100) + 20);
 
       calculatedMaxW = Math.max(span._originalWidth || 40, colRightLimit - span.offsetLeft);
     }

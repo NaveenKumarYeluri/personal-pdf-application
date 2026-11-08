@@ -101,9 +101,9 @@
 .annotation-textbox {
   position: absolute;
   padding: 0;
-  border: 1.5px dashed transparent;
+  border: 1.5px dashed rgba(37, 99, 235, 0.45);
   color: #111827;
-  cursor: move;
+  cursor: default;
   z-index: 25;
   pointer-events: auto;
   min-width: 80px;
@@ -111,17 +111,72 @@
   outline: none;
   overflow: visible !important;
   border-radius: 4px;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  box-sizing: border-box !important;
+  background-color: rgba(255, 255, 255, 0.95);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.annotation-textbox:hover,
+.annotation-textbox.element-selected,
+.annotation-textbox.active {
+  border-color: var(--accent-blue) !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.22) !important;
+}
+
+/* Dedicated Text Box Drag Bar */
+.textbox-drag-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  padding: 0 8px;
+  background: rgba(37, 99, 235, 0.08);
+  border-bottom: 1px dashed rgba(37, 99, 235, 0.25);
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.textbox-drag-bar:hover {
+  background: rgba(37, 99, 235, 0.15);
+}
+
+.textbox-drag-bar:active,
+.annotation-textbox.is-dragging .textbox-drag-bar {
+  cursor: grabbing;
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.textbox-drag-grip {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--accent-blue);
+  opacity: 0.85;
+}
+
+.textbox-drag-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  pointer-events: none;
 }
 
 .annotation-textbox .textbox-content {
+  width: 100% !important;
+  box-sizing: border-box !important;
   padding: 6px 10px;
   min-width: 70px;
   min-height: 24px;
   outline: none;
   cursor: text;
-  word-break: break-word;
-  white-space: pre-wrap;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
   user-select: text !important;
   -webkit-user-select: text !important;
 }
@@ -130,14 +185,6 @@
   content: attr(data-placeholder);
   color: #94a3b8;
   pointer-events: none;
-}
-
-.annotation-textbox:hover,
-.annotation-textbox:focus,
-.annotation-textbox.active {
-  border-color: var(--accent-blue) !important;
-  background-color: rgba(255, 255, 255, 0.95) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
 
 /* Precise In-Place PDF Content Editor (Matches exact font metrics with zero displacement) */
@@ -225,6 +272,11 @@ body.mode-view .in-place-editor {
   cursor: default !important;
   resize: none !important;
   box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+body.mode-view .textbox-drag-bar {
+  display: none !important;
 }
 
 /* Placed Signatures, Stamps, Images & Whiteout Blocks */

@@ -582,10 +582,35 @@ export class PDFAnnotatorEngine {
     const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
     if (!wrapper) return;
 
+    const wrapW = wrapper.clientWidth || 800;
+    const wrapH = wrapper.clientHeight || 1100;
+
+    // Constrain placement inside page boundaries
+    const safeX = Math.max(12, Math.min(x, wrapW - 140));
+    const safeY = Math.max(12, Math.min(y, wrapH - 50));
+
     const box = document.createElement('div');
     box.className = 'annotation-textbox';
-    box.style.left = `${x}px`;
-    box.style.top = `${y}px`;
+    box.style.left = `${Math.round(safeX)}px`;
+    box.style.top = `${Math.round(safeY)}px`;
+
+    // Maximum available width from x to right page margin (leaving at least 20px margin)
+    const maxAvailableW = Math.max(120, wrapW - safeX - 24);
+    // Explicit initial width (~260px or bounded to available page space)
+    const initialWidth = Math.min(260, maxAvailableW);
+    box.style.width = `${Math.round(initialWidth)}px`;
+    box.style.maxWidth = `${Math.round(wrapW - safeX - 16)}px`;
+    box.style.minWidth = '80px';
+    box.style.boxSizing = 'border-box';
+
+    // Top Move Grip / Drag Bar - 100% reliable drag handle that never conflicts with text typing
+    const dragBar = document.createElement('div');
+    dragBar.className = 'textbox-drag-bar';
+    dragBar.title = 'Drag to move text box';
+    dragBar.innerHTML = `
+      <span class="textbox-drag-grip">⠿</span>
+      <span class="textbox-drag-label">Text</span>
+    `;
 
     const contentArea = document.createElement('div');
     contentArea.className = 'textbox-content';
@@ -616,6 +641,7 @@ export class PDFAnnotatorEngine {
         elements: [box]
       });
       box._savedParent = box.parentNode;
+      if (box._floatingBar) box._floatingBar.remove();
       box.remove();
       if (this.activeTextBox === box) {
         this.activeTextBox = null;
@@ -623,19 +649,21 @@ export class PDFAnnotatorEngine {
       }
     };
 
+    box.appendChild(dragBar);
     box.appendChild(contentArea);
     box.appendChild(btnDel);
 
     const selectThisBox = (e) => {
       e?.stopPropagation();
       this.setActiveTextBox(box);
+      this._selectElement(box);
     };
 
     box.onclick = selectThisBox;
     contentArea.onfocus = selectThisBox;
     contentArea.onclick = (e) => {
       e.stopPropagation();
-      selectThisBox();
+      selectThisBox(e);
     };
 
     contentArea.addEventListener('keydown', (e) => {
@@ -647,6 +675,7 @@ export class PDFAnnotatorEngine {
 
     contentArea.onblur = () => {
       if (!contentArea.innerText.trim()) {
+        if (box._floatingBar) box._floatingBar.remove();
         box.remove();
         if (this.activeTextBox === box) {
           this.activeTextBox = null;
@@ -655,7 +684,9 @@ export class PDFAnnotatorEngine {
       }
     };
 
+    // Attach drag handlers and 8-point resize handles!
     this._makeDraggable(box, wrapper);
+    this._makeResizable(box, wrapper, { keepAspectRatio: false, isTextBox: true });
     wrapper.appendChild(box);
 
     contentArea.focus();
@@ -1529,19 +1560,44 @@ export class PDFAnnotatorEngine {
         compCtx.fillStyle = color;
         compCtx.textBaseline = 'top';
 
-        const lines = textContent.split(/\r?\n/);
-        lines.forEach((line, lineIdx) => {
-          let lineX = tx;
+        const rawLines = textContent.split(/\r?\n/);
+        const wrappedLines = [];
+        const maxLineWidth = Math.max(40, tw - 16 * scaleX);
+
+        rawLines.forEach(rawLine => {
+          if (!rawLine) {
+            wrappedLines.push('');
+            return;
+          }
+          const words = rawLine.split(' ');
+          let currentLine = '';
+          for (let w = 0; w < words.length; w++) {
+            const word = words[w];
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            if (compCtx.measureText(testLine).width > maxLineWidth && currentLine) {
+              wrappedLines.push(currentLine);
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          }
+          if (currentLine) {
+            wrappedLines.push(currentLine);
+          }
+        });
+
+        wrappedLines.forEach((line, lineIdx) => {
+          let lineX = tx + 8 * scaleX;
           if (textAlign === 'center') {
             lineX = tx + tw / 2;
             compCtx.textAlign = 'center';
           } else if (textAlign === 'right') {
-            lineX = tx + tw;
+            lineX = tx + tw - 8 * scaleX;
             compCtx.textAlign = 'right';
           } else {
             compCtx.textAlign = 'left';
           }
-          compCtx.fillText(line, lineX, ty + lineIdx * lineHeight);
+          compCtx.fillText(line, lineX, ty + 6 * scaleY + lineIdx * lineHeight);
         });
         compCtx.restore();
       }
@@ -1631,8 +1687,18 @@ export class PDFAnnotatorEngine {
       currentClientY = clientY;
       const dx = clientX - startX;
       const dy = clientY - startY;
-      element.style.left = `${initialX + dx}px`;
-      element.style.top = `${initialY + dy}px`;
+
+      // Constrain position within the parent page bounds so element NEVER overflows off-page
+      const pW = parent.clientWidth || 800;
+      const pH = parent.clientHeight || 1100;
+      const elW = element.offsetWidth || 50;
+      const elH = element.offsetHeight || 30;
+
+      const boundedX = Math.max(0, Math.min(initialX + dx, pW - elW));
+      const boundedY = Math.max(0, Math.min(initialY + dy, pH - elH));
+
+      element.style.left = `${Math.round(boundedX)}px`;
+      element.style.top = `${Math.round(boundedY)}px`;
 
       if (typeof element._updateBar === 'function') {
         element._updateBar();
@@ -1686,7 +1752,9 @@ export class PDFAnnotatorEngine {
       if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn') || e.target.closest('.btn-delete-note') || e.target.closest('button') || e.target.closest('textarea')) {
         return;
       }
-      if (e.target.closest('.textbox-content') || e.target.isContentEditable) {
+      if (e.target.closest('.textbox-drag-bar')) {
+        if (e.cancelable) e.preventDefault();
+      } else if (e.target.closest('.textbox-content') || e.target.isContentEditable) {
         return;
       }
       e.stopPropagation();
@@ -1719,7 +1787,11 @@ export class PDFAnnotatorEngine {
       if (e.target.closest('.element-floating-bar') || e.target.classList.contains('element-resize-handle') || e.target.classList.contains('element-rotate-handle') || e.target.classList.contains('textbox-delete-btn') || e.target.closest('.btn-delete-note') || e.target.closest('button') || e.target.closest('textarea')) {
         return;
       }
-      if (e.target.closest('.textbox-content') || e.target.isContentEditable) return;
+      if (e.target.closest('.textbox-drag-bar')) {
+        // Drag bar explicitly starts touch drag
+      } else if (e.target.closest('.textbox-content') || e.target.isContentEditable) {
+        return;
+      }
       if (e.touches.length === 1) {
         if (!element.classList.contains('element-selected')) {
           this._selectElement(element);
@@ -1746,7 +1818,7 @@ export class PDFAnnotatorEngine {
     });
   }
 
-  _makeResizable(element, parent, { keepAspectRatio = false, isWhiteout = false } = {}) {
+  _makeResizable(element, parent, { keepAspectRatio = false, isWhiteout = false, isTextBox = false } = {}) {
     // 1. Create 8 resize handles
     const handlePositions = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
     handlePositions.forEach(pos => {
@@ -1759,8 +1831,8 @@ export class PDFAnnotatorEngine {
       this._bindResizeHandle(h, element, parent, keepAspectRatio);
     });
 
-    // 2. Rotation handle (for non-whiteout elements)
-    if (!isWhiteout) {
+    // 2. Rotation handle (for non-whiteout and non-textbox elements)
+    if (!isWhiteout && !isTextBox) {
       const rotLine = document.createElement('div');
       rotLine.className = 'element-rotate-line';
       element.appendChild(rotLine);
@@ -1805,6 +1877,11 @@ export class PDFAnnotatorEngine {
       const label = document.createElement('span');
       label.className = 'element-bar-label';
       label.textContent = '⬜ Whiteout Mask';
+      bar.appendChild(label);
+    } else if (isTextBox) {
+      const label = document.createElement('span');
+      label.className = 'element-bar-label';
+      label.textContent = '🔤 Text Box';
       bar.appendChild(label);
     } else {
       // Rotate 90° CCW
@@ -1922,44 +1999,59 @@ export class PDFAnnotatorEngine {
       const isCorner = ['nw', 'ne', 'se', 'sw'].includes(handleType);
       const shouldKeepRatio = keepAspectRatio && isCorner;
 
+      const parentW = parent.clientWidth || 800;
+      const parentH = parent.clientHeight || 1100;
+      const maxWFromLeft = Math.max(40, parentW - element.offsetLeft - 16);
+      const maxHFromTop = Math.max(18, parentH - element.offsetTop - 16);
+
       if (handleType === 'se') {
-        const newW = Math.max(20, startWidth + dx);
-        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.max(12, startHeight + dy);
-        element.style.width = `${newW}px`;
-        element.style.height = `${newH}px`;
+        const newW = Math.min(maxWFromLeft, Math.max(40, startWidth + dx));
+        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.min(maxHFromTop, Math.max(18, startHeight + dy));
+        element.style.width = `${Math.round(newW)}px`;
+        element.style.height = `${Math.round(newH)}px`;
       } else if (handleType === 'e') {
-        const newW = Math.max(20, startWidth + dx);
-        element.style.width = `${newW}px`;
+        const newW = Math.min(maxWFromLeft, Math.max(40, startWidth + dx));
+        element.style.width = `${Math.round(newW)}px`;
       } else if (handleType === 's') {
-        const newH = Math.max(12, startHeight + dy);
-        element.style.height = `${newH}px`;
+        const newH = Math.min(maxHFromTop, Math.max(18, startHeight + dy));
+        element.style.height = `${Math.round(newH)}px`;
       } else if (handleType === 'w') {
-        const newW = Math.max(20, startWidth - dx);
-        element.style.width = `${newW}px`;
-        element.style.left = `${startLeft + (startWidth - newW)}px`;
+        const maxExpandLeft = startLeft;
+        const newW = Math.min(startWidth + maxExpandLeft, Math.max(40, startWidth - dx));
+        element.style.width = `${Math.round(newW)}px`;
+        element.style.left = `${Math.max(0, Math.round(startLeft + (startWidth - newW)))}px`;
       } else if (handleType === 'n') {
-        const newH = Math.max(12, startHeight - dy);
-        element.style.height = `${newH}px`;
-        element.style.top = `${startTop + (startHeight - newH)}px`;
+        const maxExpandTop = startTop;
+        const newH = Math.min(startHeight + maxExpandTop, Math.max(18, startHeight - dy));
+        element.style.height = `${Math.round(newH)}px`;
+        element.style.top = `${Math.max(0, Math.round(startTop + (startHeight - newH)))}px`;
       } else if (handleType === 'ne') {
-        const newW = Math.max(20, startWidth + dx);
-        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.max(12, startHeight - dy);
-        element.style.width = `${newW}px`;
-        element.style.height = `${newH}px`;
-        element.style.top = `${startTop + (startHeight - newH)}px`;
+        const newW = Math.min(maxWFromLeft, Math.max(40, startWidth + dx));
+        const maxExpandTop = startTop;
+        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.min(startHeight + maxExpandTop, Math.max(18, startHeight - dy));
+        element.style.width = `${Math.round(newW)}px`;
+        element.style.height = `${Math.round(newH)}px`;
+        element.style.top = `${Math.max(0, Math.round(startTop + (startHeight - newH)))}px`;
       } else if (handleType === 'sw') {
-        const newW = Math.max(20, startWidth - dx);
-        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.max(12, startHeight + dy);
-        element.style.width = `${newW}px`;
-        element.style.height = `${newH}px`;
-        element.style.left = `${startLeft + (startWidth - newW)}px`;
+        const maxExpandLeft = startLeft;
+        const newW = Math.min(startWidth + maxExpandLeft, Math.max(40, startWidth - dx));
+        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.min(maxHFromTop, Math.max(18, startHeight + dy));
+        element.style.width = `${Math.round(newW)}px`;
+        element.style.height = `${Math.round(newH)}px`;
+        element.style.left = `${Math.max(0, Math.round(startLeft + (startWidth - newW)))}px`;
       } else if (handleType === 'nw') {
-        const newW = Math.max(20, startWidth - dx);
-        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.max(12, startHeight - dy);
-        element.style.width = `${newW}px`;
-        element.style.height = `${newH}px`;
-        element.style.left = `${startLeft + (startWidth - newW)}px`;
-        element.style.top = `${startTop + (startHeight - newH)}px`;
+        const maxExpandLeft = startLeft;
+        const maxExpandTop = startTop;
+        const newW = Math.min(startWidth + maxExpandLeft, Math.max(40, startWidth - dx));
+        const newH = shouldKeepRatio ? Math.max(15, Math.round(newW / aspectRatio)) : Math.min(startHeight + maxExpandTop, Math.max(18, startHeight - dy));
+        element.style.width = `${Math.round(newW)}px`;
+        element.style.height = `${Math.round(newH)}px`;
+        element.style.left = `${Math.max(0, Math.round(startLeft + (startWidth - newW)))}px`;
+        element.style.top = `${Math.max(0, Math.round(startTop + (startHeight - newH)))}px`;
+      }
+
+      if (element.classList.contains('annotation-textbox')) {
+        element.style.maxWidth = `${Math.max(40, parentW - element.offsetLeft - 16)}px`;
       }
 
       if (typeof element._updateBar === 'function') {

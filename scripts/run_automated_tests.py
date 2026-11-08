@@ -438,6 +438,29 @@ def run_all_tests():
          "ctx.fillText(textContentVal, sx, sy, origW);" in export_js)
 
     # =========================================================================
+    # 16. Annotate Text Box Bounds, Resize Handles & Dedicated Drag Bar Verification
+    # =========================================================================
+    print("\n--- 16. Annotate Text Box Bounds, Resize Handles & Dedicated Drag Bar Verification ---")
+    test("pdf-annotator.js _addTextBox bounds width and maxWidth to remaining page width (wrapW - safeX)",
+         "const initialWidth = Math.min(260, maxAvailableW);" in annot_js and "box.style.maxWidth = `${Math.round(wrapW - safeX - 16)}px`;" in annot_js)
+    test("pdf-annotator.js _addTextBox attaches dedicated .textbox-drag-bar with grip icon",
+         "dragBar.className = 'textbox-drag-bar';" in annot_js and "textbox-drag-grip" in annot_js)
+    test("pdf-annotator.js _addTextBox invokes _makeResizable to provide 8-point resize handles",
+         "this._makeResizable(box, wrapper, { keepAspectRatio: false, isTextBox: true });" in annot_js)
+    test("pdf-annotator.js _makeDraggable prioritizes .textbox-drag-bar so clicks initiate drag smoothly",
+         "if (e.target.closest('.textbox-drag-bar'))" in annot_js)
+    test("pdf-annotator.js _makeDraggable clamps moving coordinates within parent page bounds",
+         "const boundedX = Math.max(0, Math.min(initialX + dx, pW - elW));" in annot_js)
+    test("pdf-annotator.js _bindResizeHandle clamps resize handles so text box cannot exceed page width",
+         "const maxWFromLeft = Math.max(40, parentW - element.offsetLeft - 16);" in annot_js)
+    test("annotations.css enforces box-sizing: border-box on .annotation-textbox",
+         "box-sizing: border-box !important;" in annot_css)
+    test("annotations.css enforces word-break and overflow-wrap on .textbox-content to prevent A4 overflow",
+         "word-break: break-word !important;" in annot_css and "overflow-wrap: break-word !important;" in annot_css and "white-space: pre-wrap !important;" in annot_css)
+    test("pdf-annotator.js burnAnnotationsToPdf wraps multi-line text box content when drawing to PDF canvas",
+         "compCtx.measureText(testLine).width > maxLineWidth" in annot_js)
+
+    # =========================================================================
     # Summary
     # =========================================================================
     print("\n" + "=" * 75)
