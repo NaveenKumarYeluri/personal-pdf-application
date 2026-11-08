@@ -1478,8 +1478,13 @@ export class UIController {
     };
 
     document.getElementById('btn-text-delete').onclick = () => {
+      if (this.app.annotator.activeStickyNote || document.querySelector('.sticky-note-container.active-note')) {
+        this.app.annotator.deleteActiveStickyNote();
+        this.setStatus('Sticky note removed');
+        return;
+      }
       this.app.annotator.deleteActiveTextBox();
-      this.setStatus('Text box removed');
+      this.setStatus('Item removed');
     };
 
     // Stamp controls wiring

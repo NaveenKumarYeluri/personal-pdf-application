@@ -454,7 +454,7 @@ export class PDFAnnotatorEngine {
     };
     btnDel.onclick = doDelete;
     btnDel.onmousedown = (e) => { e.stopPropagation(); doDelete(e); };
-    btnDel.onpointerdown = (e) => { e.stopPropagation(); };
+    btnDel.onpointerdown = (e) => { e.stopPropagation(); e.preventDefault(); doDelete(e); };
 
     const textarea = popup.querySelector('textarea');
     ['mousedown', 'click', 'keydown', 'touchstart', 'pointerdown'].forEach(evt => {
@@ -1123,15 +1123,15 @@ export class PDFAnnotatorEngine {
   }
 
   deleteActiveTextBox() {
-    if (this.activeInPlaceSpan) {
+    if (this.activeStickyNote || document.querySelector('.sticky-note-container.active-note')) {
+      this.deleteActiveStickyNote();
+      return;
+    }
+    if (this.activeInPlaceSpan && document.body.classList.contains('mode-edit')) {
       const span = this.activeInPlaceSpan;
       const pageNum = span._pageNum || 1;
       this.revertInPlaceEdit(span, pageNum);
       this.clearActiveEditing();
-      return;
-    }
-    if (this.activeStickyNote) {
-      this.deleteActiveStickyNote();
       return;
     }
     if (this.activeTextBox) {
@@ -1145,6 +1145,7 @@ export class PDFAnnotatorEngine {
         elements: [box]
       });
       box._savedParent = box.parentNode;
+      if (box._floatingBar) box._floatingBar.remove();
       box.remove();
       this.activeTextBox = null;
       this.onActiveTextBoxChange(null);
@@ -1156,6 +1157,11 @@ export class PDFAnnotatorEngine {
     }
     const selEl = document.querySelector('.element-selected');
     if (selEl) {
+      if (selEl.classList.contains('sticky-note-container')) {
+        this.activeStickyNote = selEl;
+        this.deleteActiveStickyNote();
+        return;
+      }
       const pWrap = selEl.closest('.page-wrapper');
       const pNum = pWrap ? parseInt(pWrap.dataset.pageNumber, 10) : 1;
       this.undoStack.push({
@@ -1163,6 +1169,7 @@ export class PDFAnnotatorEngine {
         pageNum: pNum,
         elements: [selEl]
       });
+      if (selEl._floatingBar) selEl._floatingBar.remove();
       selEl.remove();
       return;
     }
@@ -1173,8 +1180,8 @@ export class PDFAnnotatorEngine {
   }
 
   deleteActiveStickyNote() {
-    if (!this.activeStickyNote) return;
-    const note = this.activeStickyNote;
+    const note = this.activeStickyNote || document.querySelector('.sticky-note-container.active-note') || document.querySelector('.sticky-note-container.element-selected');
+    if (!note) return;
     const pageWrapper = note.closest('.page-wrapper');
     const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
     this.undoStack.push({
@@ -1182,6 +1189,7 @@ export class PDFAnnotatorEngine {
       pageNum,
       elements: [note]
     });
+    if (note._floatingBar) note._floatingBar.remove();
     note.remove();
     this.activeStickyNote = null;
   }
