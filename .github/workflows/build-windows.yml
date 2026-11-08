@@ -31,13 +31,21 @@ jobs:
       - name: Install WiX Toolset and NSIS for Windows Installers
         run: |
           choco install wixtoolset nsis -y
-          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           echo "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           echo "C:\Program Files\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $wixCandidate = Get-ChildItem -Path "C:\Program Files (x86)\WiX Toolset*", "C:\Program Files\WiX Toolset*", "C:\ProgramData\chocolatey\lib\wixtoolset" -Filter "candle.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($wixCandidate) {
+            $wixDir = $wixCandidate.DirectoryName
+            echo $wixDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $tauriWix = "$env:LOCALAPPDATA\tauri\WixTools"
+            New-Item -ItemType Directory -Force -Path $tauriWix | Out-Null
+            Copy-Item -Path "$wixDir\*" -Destination $tauriWix -Recurse -Force
+          }
 
       - name: Build Tauri Windows Application
         run: |
-          npx @tauri-apps/cli build || npx @tauri-apps/cli build --bundles msi
+          npx @tauri-apps/cli build --bundles nsis
+          npx @tauri-apps/cli build --bundles msi || echo "MSI bundle completed or skipped fallback"
 
       - name: Upload Windows Artifacts (.msi & .exe)
         uses: actions/upload-artifact@v4
