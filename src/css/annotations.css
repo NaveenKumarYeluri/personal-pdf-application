@@ -176,6 +176,7 @@
   cursor: text;
   word-break: break-word !important;
   overflow-wrap: break-word !important;
+  overflow-wrap: anywhere !important;
   white-space: pre-wrap !important;
   user-select: text !important;
   -webkit-user-select: text !important;

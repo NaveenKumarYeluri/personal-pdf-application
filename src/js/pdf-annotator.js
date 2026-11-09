@@ -84,12 +84,12 @@ export class PDFAnnotatorEngine {
 
   _bindEvents() {
     this.container.addEventListener('mousedown', (e) => this._onMouseDown(e));
-    this.container.addEventListener('mousemove', (e) => this._onMouseMove(e));
+    window.addEventListener('mousemove', (e) => this._onMouseMove(e));
     window.addEventListener('mouseup', (e) => this._onMouseUp(e));
 
     // Touch events for tablet/stylus/Android
     this.container.addEventListener('touchstart', (e) => this._onTouchStart(e), { passive: false });
-    this.container.addEventListener('touchmove', (e) => this._onTouchMove(e), { passive: false });
+    window.addEventListener('touchmove', (e) => this._onTouchMove(e), { passive: false });
     window.addEventListener('touchend', (e) => this._onTouchEnd(e));
   }
 
@@ -136,8 +136,9 @@ export class PDFAnnotatorEngine {
     const info = this._getCanvasAndCoords(e);
     if (!info) return;
 
-    // Prevent default browser text selection while annotating or drawing!
+    // Prevent default browser text selection or panning while annotating or drawing!
     if (e.cancelable) e.preventDefault();
+    e.stopPropagation();
 
     // 1. Dedicated Eraser Tool handling
     if (this.currentTool === 'eraser') {
@@ -201,11 +202,29 @@ export class PDFAnnotatorEngine {
     }
 
     if (!this.isDrawing || !this.activeCanvas) return;
-    const info = this._getCanvasAndCoords(e);
-    if (!info || info.pageNum !== this.activePageNum) return;
 
     if (e.cancelable) e.preventDefault();
-    this.currentPath.push({ x: info.x, y: info.y });
+    e.stopPropagation();
+
+    // Compute coordinates relative to the activeCanvas where the drawing started
+    const rect = this.activeCanvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    const scaleX = this.activeCanvas.width / rect.width;
+    const scaleY = this.activeCanvas.height / rect.height;
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    const rawX = clientX - rect.left;
+    const rawY = clientY - rect.top;
+
+    // Constrain points within the active page dimensions so dragging past the page margin
+    // or onto adjacent pages cleanly completes the shape right up to the page edge without breaking!
+    const clampedX = Math.max(0, Math.min(this.activeCanvas.width, rawX * scaleX));
+    const clampedY = Math.max(0, Math.min(this.activeCanvas.height, rawY * scaleY));
+
+    this.currentPath.push({ x: clampedX, y: clampedY });
     this._renderCurrentStroke();
   }
 
@@ -222,11 +241,13 @@ export class PDFAnnotatorEngine {
 
     if (this.currentPath.length > 1 && this.activePageNum) {
       const isHighlighter = this.currentTool === 'highlighter';
+      const isShape = this.currentTool === 'rectangle' || this.currentTool === 'circle' || this.currentTool === 'line';
+      const strokeW = isHighlighter ? 24 : (isShape ? this.strokeWidth * 2 : this.strokeWidth * 2);
       const annot = {
         type: this.currentTool,
         points: [...this.currentPath],
         color: this.color,
-        strokeWidth: isHighlighter ? 24 : this.strokeWidth * 2,
+        strokeWidth: strokeW,
         opacity: isHighlighter ? 0.35 : this.opacity
       };
 
@@ -234,6 +255,9 @@ export class PDFAnnotatorEngine {
         this.annotations.set(this.activePageNum, []);
       }
       this.annotations.get(this.activePageNum).push(annot);
+
+      // Immediately redraw page to lock in the completed shape with its stored properties
+      this._redrawPageAnnotations(this.activePageNum);
 
       // Record to undo stack
       this.undoStack.push({
@@ -322,14 +346,29 @@ export class PDFAnnotatorEngine {
       ctx.lineTo(this.currentPath[len - 1].x, this.currentPath[len - 1].y);
       ctx.stroke();
     } else if (this.currentTool === 'rectangle') {
-      // Clear and redraw for shape preview
+      // Clear and redraw existing annotations first with their own stored properties
       this._redrawPageAnnotations(this.activePageNum);
+
+      // Re-apply CURRENT tool's styling for the live shape preview!
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = this.strokeWidth * 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = this.opacity;
+
       const start = this.currentPath[0];
       const curr = this.currentPath[this.currentPath.length - 1];
       ctx.beginPath();
       ctx.strokeRect(start.x, start.y, curr.x - start.x, curr.y - start.y);
     } else if (this.currentTool === 'circle') {
       this._redrawPageAnnotations(this.activePageNum);
+
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = this.strokeWidth * 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = this.opacity;
+
       const start = this.currentPath[0];
       const curr = this.currentPath[this.currentPath.length - 1];
       const rx = Math.abs(curr.x - start.x) / 2;
@@ -341,6 +380,13 @@ export class PDFAnnotatorEngine {
       ctx.stroke();
     } else if (this.currentTool === 'line') {
       this._redrawPageAnnotations(this.activePageNum);
+
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = this.strokeWidth * 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = this.opacity;
+
       const start = this.currentPath[0];
       const curr = this.currentPath[this.currentPath.length - 1];
       ctx.beginPath();

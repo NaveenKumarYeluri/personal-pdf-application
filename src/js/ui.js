@@ -980,9 +980,31 @@ export class UIController {
     }
   }
 
+  _disablePanning() {
+    const container = document.getElementById('viewer-container');
+    if (container) {
+      container.classList.remove('hand-tool');
+      if (this._onPanMouseDown) {
+        container.removeEventListener('mousedown', this._onPanMouseDown);
+      }
+      if (this._onPanMouseMove) {
+        window.removeEventListener('mousemove', this._onPanMouseMove);
+      }
+      if (this._onPanMouseUp) {
+        window.removeEventListener('mouseup', this._onPanMouseUp);
+      }
+      this._isPanning = false;
+    }
+  }
+
   setMode(mode) {
     this.currentMode = mode;
     this.dynamicToolsContainer.innerHTML = '';
+
+    // Always disable panning when entering any mode other than view
+    if (mode !== 'view') {
+      this._disablePanning();
+    }
 
     // Clear any active text selection highlight when switching modes
     if (window.getSelection) {
@@ -1077,15 +1099,16 @@ export class UIController {
     const btnCopy = document.getElementById('btn-copy-selection');
     const container = document.getElementById('viewer-container');
 
-    let isPanning = false;
+    this._isPanning = false;
     let startX = 0, startY = 0, startScrollLeft = 0, startScrollTop = 0;
 
-    const onPanMouseDown = (e) => {
+    this._onPanMouseDown = (e) => {
+      if (this.currentMode !== 'view') return;
       if (e.target.closest('button, input, select, textarea, .annotation-textbox, .sticky-note-popup')) return;
       if (window.getSelection) {
         window.getSelection().removeAllRanges();
       }
-      isPanning = true;
+      this._isPanning = true;
       startX = e.clientX;
       startY = e.clientY;
       startScrollLeft = container.scrollLeft;
@@ -1094,17 +1117,17 @@ export class UIController {
       e.preventDefault();
     };
 
-    const onPanMouseMove = (e) => {
-      if (!isPanning) return;
+    this._onPanMouseMove = (e) => {
+      if (!this._isPanning || this.currentMode !== 'view') return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
       container.scrollLeft = startScrollLeft - dx;
       container.scrollTop = startScrollTop - dy;
     };
 
-    const onPanMouseUp = () => {
-      if (isPanning) {
-        isPanning = false;
+    this._onPanMouseUp = () => {
+      if (this._isPanning) {
+        this._isPanning = false;
         container.style.cursor = 'grab';
       }
     };
@@ -1124,20 +1147,16 @@ export class UIController {
         tl.style.pointerEvents = 'none';
         tl.style.userSelect = 'none';
       });
-      container.addEventListener('mousedown', onPanMouseDown);
-      window.addEventListener('mousemove', onPanMouseMove);
-      window.addEventListener('mouseup', onPanMouseUp);
+      container.addEventListener('mousedown', this._onPanMouseDown);
+      window.addEventListener('mousemove', this._onPanMouseMove);
+      window.addEventListener('mouseup', this._onPanMouseUp);
       this.setStatus('Hand / Pan Tool active: click and drag anywhere to move pages');
     };
 
     btnSelect.onclick = () => {
       btnSelect.classList.add('active');
       btnHand.classList.remove('active');
-      container.classList.remove('hand-tool');
-      container.style.cursor = 'default';
-      container.removeEventListener('mousedown', onPanMouseDown);
-      window.removeEventListener('mousemove', onPanMouseMove);
-      window.removeEventListener('mouseup', onPanMouseUp);
+      this._disablePanning();
       document.querySelectorAll('.textLayer').forEach(tl => {
         tl.style.pointerEvents = 'auto';
         tl.style.userSelect = 'text';
@@ -1222,6 +1241,7 @@ export class UIController {
   }
 
   _renderAnnotateTools() {
+    this._disablePanning();
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
         <button id="tool-select" class="tool-btn" title="Text Selection Tool (Select & copy text)">
@@ -1408,11 +1428,16 @@ export class UIController {
       strokeWidth: parseInt(document.getElementById('annot-size').value, 10) || 4
     });
 
-    document.getElementById('annot-color').onchange = (e) => {
+    const colorInput = document.getElementById('annot-color');
+    const onColorUpdate = (e) => {
       const c = e.target.value;
       this.app.annotator.setColor(c);
       swatches.forEach(s => s.classList.toggle('active', s.dataset.color === c));
     };
+    if (colorInput) {
+      colorInput.oninput = onColorUpdate;
+      colorInput.onchange = onColorUpdate;
+    }
 
     document.getElementById('annot-size').oninput = (e) => {
       const val = parseInt(e.target.value, 10);
