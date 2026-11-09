@@ -128,8 +128,8 @@ export class PDFAnnotatorEngine {
   _onMouseDown(e) {
     if (this.currentTool === 'none' || this.currentTool === 'select') return;
 
-    // If clicking inside an existing active textbox editor or handle, let it interact normally
-    if (e.target.closest('.annotation-textbox, .textbox-content, .resize-handle, .element-rotate-handle, .annotation-action-bar, .sticky-note-popup, .sticky-note-marker, .sticky-note-container')) {
+    // If clicking inside an existing active element, editor, or handle, let it interact normally
+    if (e.target.closest('.annotation-textbox, .textbox-content, .placed-stamp, .stamp-badge, .placed-image-box, .placed-signature-box, .whiteout-box, .element-resize-handle, .element-rotate-handle, .element-rotate-line, .element-floating-bar, .resize-handle, .annotation-action-bar, .sticky-note-popup, .sticky-note-marker, .sticky-note-container, .textbox-delete-btn, .btn-delete-note')) {
       if (this.currentTool !== 'eraser') return;
     }
 
@@ -827,23 +827,27 @@ export class PDFAnnotatorEngine {
 
   setActiveStamp(stamp) {
     if (this.activeStamp && this.activeStamp !== stamp) {
-      this.activeStamp.classList.remove('selected');
+      this.activeStamp.classList.remove('selected', 'element-selected');
     }
     this.activeStamp = stamp;
     if (stamp) {
       stamp.classList.add('selected');
       if (this.activeTextBox) {
-        this.activeTextBox.classList.remove('active');
+        this.activeTextBox.classList.remove('active', 'element-selected');
         this.activeTextBox = null;
         this.onActiveTextBoxChange(null);
       }
+      this._selectElement(stamp);
     }
     this.onActiveStampChange(stamp);
+    if (this.ui && typeof this.ui.syncActiveStamp === 'function') {
+      this.ui.syncActiveStamp(stamp);
+    }
   }
 
   deleteActiveStamp() {
-    if (!this.activeStamp) return;
-    const stamp = this.activeStamp;
+    const stamp = this.activeStamp || document.querySelector('.placed-stamp.element-selected') || document.querySelector('.placed-stamp.selected');
+    if (!stamp) return;
     const pageWrapper = stamp.closest('.page-wrapper');
     const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
     this.undoStack.push({
@@ -851,8 +855,11 @@ export class PDFAnnotatorEngine {
       pageNum,
       elements: [stamp]
     });
+    if (stamp._floatingBar) stamp._floatingBar.remove();
     stamp.remove();
-    this.setActiveStamp(null);
+    if (this.activeStamp === stamp) {
+      this.setActiveStamp(null);
+    }
   }
 
   setStampText(text) {
@@ -1169,10 +1176,6 @@ export class PDFAnnotatorEngine {
   }
 
   deleteActiveTextBox() {
-    if (this.activeStickyNote || document.querySelector('.sticky-note-container.active-note')) {
-      this.deleteActiveStickyNote();
-      return;
-    }
     if (this.activeInPlaceSpan && document.body.classList.contains('mode-edit')) {
       const span = this.activeInPlaceSpan;
       const pageNum = span._pageNum || 1;
@@ -1180,8 +1183,8 @@ export class PDFAnnotatorEngine {
       this.clearActiveEditing();
       return;
     }
-    if (this.activeTextBox) {
-      const box = this.activeTextBox;
+    const box = this.activeTextBox || document.querySelector('.annotation-textbox.element-selected') || document.querySelector('.annotation-textbox.active');
+    if (box) {
       const pageWrapper = box.closest('.page-wrapper');
       const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
       
@@ -1193,36 +1196,59 @@ export class PDFAnnotatorEngine {
       box._savedParent = box.parentNode;
       if (box._floatingBar) box._floatingBar.remove();
       box.remove();
-      this.activeTextBox = null;
-      this.onActiveTextBoxChange(null);
-      return;
-    }
-    if (this.activeStamp) {
-      this.deleteActiveStamp();
-      return;
-    }
-    const selEl = document.querySelector('.element-selected');
-    if (selEl) {
-      if (selEl.classList.contains('sticky-note-container')) {
-        this.activeStickyNote = selEl;
-        this.deleteActiveStickyNote();
-        return;
+      if (this.activeTextBox === box) {
+        this.activeTextBox = null;
+        this.onActiveTextBoxChange(null);
       }
-      const pWrap = selEl.closest('.page-wrapper');
-      const pNum = pWrap ? parseInt(pWrap.dataset.pageNumber, 10) : 1;
-      this.undoStack.push({
-        type: 'element',
-        pageNum: pNum,
-        elements: [selEl]
-      });
-      if (selEl._floatingBar) selEl._floatingBar.remove();
-      selEl.remove();
       return;
     }
   }
 
   deleteActiveBox() {
-    this.deleteActiveTextBox();
+    if (this.activeTextBox || document.querySelector('.annotation-textbox.element-selected')) {
+      this.deleteActiveTextBox();
+      return;
+    }
+    if (this.activeStickyNote || document.querySelector('.sticky-note-container.active-note') || document.querySelector('.sticky-note-container.element-selected')) {
+      this.deleteActiveStickyNote();
+      return;
+    }
+    if (this.activeStamp || document.querySelector('.placed-stamp.element-selected')) {
+      this.deleteActiveStamp();
+      return;
+    }
+    const selEl = document.querySelector('.element-selected');
+    if (selEl) {
+      this.deleteElement(selEl);
+    }
+  }
+
+  deleteElement(element) {
+    if (!element) return;
+    if (element.classList.contains('annotation-textbox')) {
+      this.activeTextBox = element;
+      this.deleteActiveTextBox();
+      return;
+    }
+    if (element.classList.contains('placed-stamp')) {
+      this.activeStamp = element;
+      this.deleteActiveStamp();
+      return;
+    }
+    if (element.classList.contains('sticky-note-container')) {
+      this.activeStickyNote = element;
+      this.deleteActiveStickyNote();
+      return;
+    }
+    const pageWrapper = element.closest('.page-wrapper');
+    const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+    this.undoStack.push({
+      type: 'element',
+      pageNum,
+      elements: [element]
+    });
+    if (element._floatingBar) element._floatingBar.remove();
+    element.remove();
   }
 
   deleteActiveStickyNote() {
@@ -1296,6 +1322,7 @@ export class PDFAnnotatorEngine {
     stamp.addEventListener('click', (e) => {
       e.stopPropagation();
       this.setActiveStamp(stamp);
+      this._selectElement(stamp);
     });
 
     // Make draggable & resizable
@@ -1304,6 +1331,13 @@ export class PDFAnnotatorEngine {
     wrapper.appendChild(stamp);
 
     this.setActiveStamp(stamp);
+    this._selectElement(stamp);
+
+    // Auto-switch tool to select mode so subsequent clicks move/resize the stamp rather than drawing shapes!
+    this.setTool('select');
+    if (this.ui && typeof this.ui.setAnnotationTool === 'function') {
+      this.ui.setAnnotationTool('select');
+    }
 
     this.undoStack.push({
       type: 'element',
@@ -1700,6 +1734,9 @@ export class PDFAnnotatorEngine {
     document.querySelectorAll('.element-floating-bar').forEach(bar => {
       bar.style.display = 'none';
     });
+    if (this.activeStamp && !this.activeStamp.classList.contains('element-selected')) {
+      this.setActiveStamp(null);
+    }
   }
 
   _makeDraggable(element, parent) {
@@ -1818,6 +1855,13 @@ export class PDFAnnotatorEngine {
       if (!wasSelected) {
         this._selectElement(element);
       }
+      if (element.classList.contains('placed-stamp')) {
+        this.setActiveStamp(element);
+      } else if (element.classList.contains('annotation-textbox')) {
+        this.setActiveTextBox(element);
+      } else if (element.classList.contains('sticky-note-container')) {
+        this.activeStickyNote = element;
+      }
 
       // If locked, prevent movement but leave element selected
       if (element.dataset.locked === 'true') return;
@@ -1849,6 +1893,13 @@ export class PDFAnnotatorEngine {
       if (e.touches.length === 1) {
         if (!element.classList.contains('element-selected')) {
           this._selectElement(element);
+        }
+        if (element.classList.contains('placed-stamp')) {
+          this.setActiveStamp(element);
+        } else if (element.classList.contains('annotation-textbox')) {
+          this.setActiveTextBox(element);
+        } else if (element.classList.contains('sticky-note-container')) {
+          this.activeStickyNote = element;
         }
         if (element.dataset.locked === 'true') return;
         const touch = e.touches[0];

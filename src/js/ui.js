@@ -1503,13 +1503,12 @@ export class UIController {
     };
 
     document.getElementById('btn-text-delete').onclick = () => {
-      if (this.app.annotator.activeStickyNote || document.querySelector('.sticky-note-container.active-note')) {
-        this.app.annotator.deleteActiveStickyNote();
-        this.setStatus('Sticky note removed');
-        return;
+      if (this.app.annotator.activeTextBox || document.querySelector('.annotation-textbox.element-selected') || document.querySelector('.annotation-textbox.active')) {
+        this.app.annotator.deleteActiveTextBox();
+        this.setStatus('Text box removed');
+      } else {
+        this.setStatus('No active text box to delete');
       }
-      this.app.annotator.deleteActiveTextBox();
-      this.setStatus('Item removed');
     };
 
     // Stamp controls wiring
@@ -1536,6 +1535,8 @@ export class UIController {
           if (stampRotationInput.value) this.app.annotator.setStampRotation(parseFloat(stampRotationInput.value));
         }
         e.target.value = '';
+        this.setAnnotationTool('select');
+        this.setStatus('Stamp placed. Click and drag to move, use handles to resize/rotate.');
       }
     };
 

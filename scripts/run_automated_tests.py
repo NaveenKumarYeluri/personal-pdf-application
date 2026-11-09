@@ -471,6 +471,12 @@ def run_all_tests():
          "word-break: break-word !important;" in annot_css and "overflow-wrap: break-word !important;" in annot_css and "white-space: pre-wrap !important;" in annot_css)
     test("pdf-annotator.js burnAnnotationsToPdf wraps multi-line text box content when drawing to PDF canvas",
          "compCtx.measureText(testLine).width > maxLineWidth" in annot_js)
+    test("pdf-annotator.js deleteActiveTextBox strictly isolates text boxes and never deletes stamps",
+         "this.activeStamp" not in annot_js[annot_js.find("deleteActiveTextBox()"):annot_js.find("deleteActiveBox()")])
+    test("pdf-annotator.js placeStamp switches tool to select and activates transform handles",
+         "this.setTool('select');" in annot_js[annot_js.find("placeStamp("):annot_js.find("undo()")] and "this._selectElement(stamp);" in annot_js)
+    test("pdf-annotator.js _onMouseDown protects .placed-stamp from accidental drawing",
+         ".placed-stamp" in annot_js[annot_js.find("_onMouseDown(e) {"):annot_js.find("_onMouseMove(e) {")])
 
     # =========================================================================
     # Summary
