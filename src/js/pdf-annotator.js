@@ -298,33 +298,94 @@ export class PDFAnnotatorEngine {
     }
   }
 
+  _distanceToSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  }
+
+  /**
+   * True when (x, y) is within `threshold` Canvas pixels of the annotation's
+   * visible stroke. Shapes are tested against their actual outline (not just
+   * the two drag corners) so clicking an edge erases them.
+   */
+  _hitTestAnnotation(annot, canvas, x, y, threshold = 35) {
+    if (!annot || !annot.points || annot.points.length === 0 || !canvas) return false;
+    const delta = this._annotationRotationDelta(annot, canvas);
+    const pts = annot.points.map(pt => this._mapAnnotationPoint(annot, pt, canvas, delta));
+    const limit = Math.max(threshold, (annot.strokeWidth || 2) / 2 + 6);
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+
+    if (annot.type === 'rectangle') {
+      const left = Math.min(first.x, last.x);
+      const right = Math.max(first.x, last.x);
+      const top = Math.min(first.y, last.y);
+      const bottom = Math.max(first.y, last.y);
+      return (
+        this._distanceToSegment(x, y, left, top, right, top) <= limit ||
+        this._distanceToSegment(x, y, right, top, right, bottom) <= limit ||
+        this._distanceToSegment(x, y, right, bottom, left, bottom) <= limit ||
+        this._distanceToSegment(x, y, left, bottom, left, top) <= limit
+      );
+    }
+
+    if (annot.type === 'circle') {
+      const rx = Math.abs(last.x - first.x) / 2;
+      const ry = Math.abs(last.y - first.y) / 2;
+      if (rx < 1 || ry < 1) return false;
+      const cx = Math.min(first.x, last.x) + rx;
+      const cy = Math.min(first.y, last.y) + ry;
+      // Approximate the ellipse with 64 short segments and hit-test those.
+      const steps = 64;
+      let prevX = cx + rx;
+      let prevY = cy;
+      for (let i = 1; i <= steps; i++) {
+        const angle = (i * 2 * Math.PI) / steps;
+        const px = cx + rx * Math.cos(angle);
+        const py = cy + ry * Math.sin(angle);
+        if (this._distanceToSegment(x, y, prevX, prevY, px, py) <= limit) return true;
+        prevX = px;
+        prevY = py;
+      }
+      return false;
+    }
+
+    if (annot.type === 'line') {
+      return this._distanceToSegment(x, y, first.x, first.y, last.x, last.y) <= limit;
+    }
+
+    // Pen / highlighter: test every segment so the full stroke is erasable.
+    if (pts.length === 1) return Math.hypot(x - first.x, y - first.y) <= limit;
+    for (let i = 1; i < pts.length; i++) {
+      if (this._distanceToSegment(x, y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= limit) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   _eraseStrokesAt(pageNum, x, y) {
     const list = this.annotations.get(pageNum);
     if (!list || list.length === 0) return;
 
     const canvas = document.getElementById(`annot-canvas-${pageNum}`);
+    if (!canvas) return;
     const threshold = 35; // Hit radius (current canvas pixels)
     let changed = false;
 
     for (let i = list.length - 1; i >= 0; i--) {
       const annot = list[i];
-      let hit = false;
-      if (annot.points && annot.points.length && canvas) {
-        const delta = this._annotationRotationDelta(annot, canvas);
-        for (const pt of annot.points) {
-          const mapped = this._mapAnnotationPoint(annot, pt, canvas, delta);
-          const dist = Math.hypot(mapped.x - x, mapped.y - y);
-          if (dist <= threshold) {
-            hit = true;
-            break;
-          }
-        }
-      }
-      if (hit) {
+      if (this._hitTestAnnotation(annot, canvas, x, y, threshold)) {
         const removed = list.splice(i, 1)[0];
         this.undoStack.push({
-          type: 'stroke',
+          type: 'stroke-erase',
           pageNum,
+          index: i,
           data: removed
         });
         changed = true;
@@ -1413,11 +1474,20 @@ export class PDFAnnotatorEngine {
         const idx = pageAnnots.lastIndexOf(annot);
         if (idx !== -1) {
           pageAnnots.splice(idx, 1);
-        } else if (action.type === 'stroke') {
-          pageAnnots.pop();
+          this._redrawPageAnnotations(action.pageNum);
         }
-        this._redrawPageAnnotations(action.pageNum);
       }
+    } else if (action.type === 'stroke-erase') {
+      // Undo an erasure: re-insert the stroke at its previous position.
+      if (!this.annotations.has(action.pageNum)) {
+        this.annotations.set(action.pageNum, []);
+      }
+      const pageAnnots = this.annotations.get(action.pageNum);
+      const idx = Number.isInteger(action.index)
+        ? Math.max(0, Math.min(action.index, pageAnnots.length))
+        : pageAnnots.length;
+      pageAnnots.splice(idx, 0, action.data);
+      this._redrawPageAnnotations(action.pageNum);
     } else if (action.type === 'in-place-edit') {
       if (action.span) {
         action.span.textContent = action.prevText;
@@ -1479,6 +1549,16 @@ export class PDFAnnotatorEngine {
       }
       this.annotations.get(action.pageNum).push(annot);
       this._redrawPageAnnotations(action.pageNum);
+    } else if (action.type === 'stroke-erase') {
+      // Redo an erasure: remove the stroke again.
+      const pageAnnots = this.annotations.get(action.pageNum);
+      if (pageAnnots) {
+        const idx = pageAnnots.lastIndexOf(action.data);
+        if (idx !== -1) {
+          pageAnnots.splice(idx, 1);
+          this._redrawPageAnnotations(action.pageNum);
+        }
+      }
     } else if (action.type === 'in-place-edit') {
       if (action.span) {
         action.span.textContent = action.newText;

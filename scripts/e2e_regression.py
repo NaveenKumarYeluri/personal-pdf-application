@@ -103,6 +103,43 @@ def main():
         page.wait_for_timeout(300)
         record("redo restores stroke", page.evaluate("() => (window.app.annotator.annotations.get(1) || []).length") == 1)
 
+        # ---------------- Shapes can be erased from their outline ----------------
+        def draw_shape(tool, x1, y1, x2, y2):
+            page.click(f"#tool-{tool}")
+            page.wait_for_timeout(200)
+            page.mouse.move(box["x"] + x1, box["y"] + y1)
+            page.mouse.down()
+            page.mouse.move(box["x"] + x2, box["y"] + y2, steps=6)
+            page.mouse.up()
+            page.wait_for_timeout(250)
+
+        def count_annots():
+            return page.evaluate("() => (window.app.annotator.annotations.get(1) || []).length")
+
+        draw_shape("rect", 60, 420, 160, 480)
+        draw_shape("circle", 200, 420, 300, 500)
+        draw_shape("line", 340, 420, 440, 500)
+        record("rectangle, circle and line recorded", count_annots() == 4, count_annots())
+
+        page.click("#tool-eraser")
+        page.wait_for_timeout(200)
+        page.mouse.click(box["x"] + 110, box["y"] + 420)  # rectangle top edge
+        page.wait_for_timeout(250)
+        record("eraser removes rectangle by its outline", count_annots() == 3, count_annots())
+        page.mouse.click(box["x"] + 200, box["y"] + 460)  # circle left edge
+        page.wait_for_timeout(250)
+        record("eraser removes circle by its outline", count_annots() == 2, count_annots())
+        page.mouse.click(box["x"] + 390, box["y"] + 460)  # line midpoint
+        page.wait_for_timeout(250)
+        record("eraser removes line by its midpoint", count_annots() == 1, count_annots())
+
+        page.click("#btn-undo")
+        page.wait_for_timeout(300)
+        record("undo restores erased line", count_annots() == 2, count_annots())
+        page.click("#btn-redo")
+        page.wait_for_timeout(300)
+        record("redo re-erases line", count_annots() == 1, count_annots())
+
         # ---------------- Sticky note ----------------
         page.click("#tool-note")
         page.wait_for_timeout(200)

@@ -1249,7 +1249,7 @@ export class UIController {
         </button>
         <button id="tool-pen" class="tool-btn active" title="Freehand Pen">✏️ Pen</button>
         <button id="tool-highlighter" class="tool-btn" title="Highlighter Brush">🖍️ Highl.</button>
-        <button id="tool-eraser" class="tool-btn" title="Eraser Tool (Click/drag to erase ink, textboxes, stamps)">🧼 Eraser</button>
+        <button id="tool-eraser" class="tool-btn" title="Eraser Tool (Click/drag to erase ink, shapes, textboxes, stamps)">🧼 Eraser</button>
         <button id="tool-note" class="tool-btn" title="Sticky Note">💬 Note</button>
         <button id="tool-text" class="tool-btn" title="Typewriter Text Block">T Text</button>
         <button id="tool-rect" class="tool-btn" title="Draw Rectangle">▢</button>
