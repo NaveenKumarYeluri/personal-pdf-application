@@ -25,6 +25,7 @@ class PersonalPDFApp {
     this._bindCoreEvents();
     this._bindOrganizerEvents();
     this._bindWatermarkEvents();
+    this._bindProtectEvents();
     this._setupElectronBridge();
     this._initBackButton();
     this._initAppStatePersistence();
@@ -2076,6 +2077,87 @@ class PersonalPDFApp {
         }
       };
     }
+  }
+
+  _bindProtectEvents() {
+    const btnApplyProtect = document.getElementById('btn-apply-protect');
+    if (!btnApplyProtect) return;
+
+    btnApplyProtect.onclick = async () => {
+      if (!this.currentPdfBytes) {
+        this.ui.showToast('Please open a PDF document first', 'warning');
+        return;
+      }
+
+      const passwordInput = document.getElementById('protect-password');
+      const confirmInput = document.getElementById('protect-password-confirm');
+      const password = (passwordInput?.value || '').trim();
+      const confirm = (confirmInput?.value || '').trim();
+
+      if (!password) {
+        this.ui.showToast('Enter a password to protect the document', 'warning');
+        passwordInput?.focus();
+        return;
+      }
+      if (password !== confirm) {
+        this.ui.showToast('Passwords do not match', 'error');
+        confirmInput?.focus();
+        return;
+      }
+
+      // PDF permission flags (/P): default -4 permits everything. Clear the
+      // print (bit 3) and copy/extract (bits 5 and 10) bits when unchecked.
+      let permissions = -4;
+      if (!document.getElementById('protect-allow-print')?.checked) permissions &= ~4;
+      if (!document.getElementById('protect-allow-copy')?.checked) {
+        permissions &= ~16;
+        permissions &= ~512;
+      }
+
+      const originalText = btnApplyProtect.textContent;
+      btnApplyProtect.disabled = true;
+      btnApplyProtect.textContent = 'Encrypting...';
+      this.ui.setStatus('Encrypting document with AES-256...');
+
+      try {
+        // Bake pending annotations first so nothing is lost in the exported copy.
+        let bytes = this.currentPdfBytes;
+        if (this.annotator) {
+          try {
+            bytes = await this.annotator.burnAnnotationsToPdf(bytes);
+          } catch (burnErr) {
+            console.warn('Could not composite annotations before encryption:', burnErr);
+          }
+        }
+
+        const encrypted = await this.security.encryptPdf(bytes, {
+          userPassword: password,
+          permissions
+        });
+
+        const baseName = (this.currentDocName || 'document.pdf').replace(/\.pdf$/i, '');
+        const fileName = `${baseName}_protected.pdf`;
+        const result = await this.exporter.downloadFile(encrypted, fileName, 'application/pdf');
+
+        document.getElementById('modal-protect')?.classList.remove('open');
+        if (passwordInput) passwordInput.value = '';
+        if (confirmInput) confirmInput.value = '';
+
+        const destination = result?.destination || 'your device';
+        this.ui.setStatus(`Encrypted document saved to ${destination}`);
+        this.ui.showToast(`Password-protected PDF saved: ${fileName}`, 'success');
+      } catch (err) {
+        console.error('Password encryption failed:', err);
+        const msg = err?.code === 'NO_SUBTLE'
+          ? 'AES-256 encryption needs a secure (HTTPS) context or the desktop/mobile app.'
+          : `Encryption failed: ${err.message}`;
+        this.ui.setStatus(msg);
+        this.ui.showToast(msg, 'error');
+      } finally {
+        btnApplyProtect.disabled = false;
+        btnApplyProtect.textContent = originalText;
+      }
+    };
   }
 
   _bindWatermarkEvents() {

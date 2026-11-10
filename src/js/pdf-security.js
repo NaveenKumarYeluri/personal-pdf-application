@@ -3,6 +3,8 @@
  * Watermarking, Page numbering, Redaction, and Encryption.
  */
 
+import { lock as encryptPdfBytes } from '../vendor/pdf-lib-encrypt.js';
+
 export class PDFSecurityEngine {
   constructor() {
     const lib = window.PDFLib || window.pdfLib;
@@ -23,6 +25,25 @@ export class PDFSecurityEngine {
     if (!this.PDFDocument) {
       throw new Error('PDF-lib library not loaded.');
     }
+  }
+
+  /**
+   * Password-protect a PDF with AES-256 (standard security handler).
+   * The owner password is set to the same value as the user password, which is
+   * the expected behaviour for an "open password" workflow.
+   *
+   * @param {Uint8Array|ArrayBuffer} pdfBytes
+   * @param {{userPassword: string, permissions?: number}} options
+   * @returns {Promise<Uint8Array>} encrypted PDF bytes
+   */
+  async encryptPdf(pdfBytes, options = {}) {
+    this._checkLib();
+    const password = (options.userPassword || '').trim();
+    if (!password) throw new Error('A password is required to encrypt this document.');
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const opts = {};
+    if (Number.isInteger(options.permissions)) opts.permissions = options.permissions;
+    return await encryptPdfBytes(rawBytes, password, opts);
   }
 
   async applyWatermark(pdfBytes, options = {}) {
