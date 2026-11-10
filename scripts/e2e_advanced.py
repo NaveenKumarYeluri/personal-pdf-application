@@ -42,12 +42,33 @@ def main():
         page.wait_for_timeout(400)
         editable = span.evaluate("s => s.contentEditable")
         record("in-place edit activates contenteditable", editable == "true", editable)
+        before_type = span.evaluate("""s => {
+          const cs = getComputedStyle(s);
+          const r = s.getBoundingClientRect();
+          return { font: cs.fontSize, height: r.height, width: r.width };
+        }""")
         page.keyboard.press("Control+A")
-        page.keyboard.type("Edited Subtitle Text")
+        page.keyboard.type("Edited Subtitle Text with extra words that must wrap onto another line")
         page.keyboard.press("Enter")
+        page.keyboard.type("SECOND-PARAGRAPH-LINE")
         page.wait_for_timeout(500)
-        txt = span.inner_text()
-        record("in-place edit commits typed text", "Edited Subtitle Text" in txt, txt)
+        during = span.evaluate("""s => {
+          const cs = getComputedStyle(s);
+          const r = s.getBoundingClientRect();
+          return { font: cs.fontSize, height: r.height, editable: s.contentEditable,
+                   whiteSpace: cs.whiteSpace, text: s.innerText };
+        }""")
+        txt = during["text"]
+        record("in-place edit keeps the PDF font size", during["font"] == before_type["font"],
+               f"{before_type['font']} -> {during['font']}")
+        record("in-place edit paragraph grows vertically", during["height"] > before_type["height"],
+               f"{before_type['height']:.0f} -> {during['height']:.0f}")
+        record("Enter inserts a paragraph line break", "\n" in txt and during["editable"] == "true", txt)
+        record("edited text contains the typed words", "Edited Subtitle Text" in txt and "SECOND-PARAGRAPH-LINE" in txt, txt)
+        page.evaluate("() => document.activeElement.blur()")
+        page.wait_for_timeout(400)
+        committed = span.evaluate("s => ({ editable: s.contentEditable, cls: s.className })")
+        record("in-place edit commits on blur", committed["editable"] == "false" and "in-place-modified" in committed["cls"], committed)
         edit_count = page.evaluate("() => (window.app.annotator.inPlaceEdits.get(1)||new Map()).size")
         record("in-place edit recorded for save", edit_count >= 1, edit_count)
         page.screenshot(path=str(OUT / "06-inplace.png"))

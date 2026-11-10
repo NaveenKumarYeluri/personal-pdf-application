@@ -51,10 +51,33 @@ def main():
         # ---------- Organizer apply: rotate page 1 and delete page 2 ----------
         page.click(".mode-tab[data-mode='organize']")
         page.wait_for_timeout(300)
+        page.evaluate("""() => {
+          const modal = document.getElementById('modal-organizer');
+          window.__organizerOpenMs = null;
+          const t0 = performance.now();
+          const obs = new MutationObserver(() => {
+            if (modal.classList.contains('open') && window.__organizerOpenMs === null) {
+              window.__organizerOpenMs = performance.now() - t0;
+              obs.disconnect();
+            }
+          });
+          obs.observe(modal, { attributes: true, attributeFilter: ['class'] });
+        }""")
         page.click("#btn-open-organizer-modal")
-        page.wait_for_timeout(2200)
+        page.wait_for_selector("#modal-organizer.open", timeout=3000)
+        open_ms = page.evaluate("() => window.__organizerOpenMs")
+        record("organizer dialog opens immediately", open_ms is not None and open_ms < 500,
+               f"{open_ms:.0f} ms" if open_ms is not None else "no open event")
         cards = page.locator(".organizer-card")
         record("organizer grid renders cards", cards.count() > 0, cards.count())
+        page.wait_for_function("() => document.querySelectorAll('.organizer-thumb-loading').length === 0", timeout=20000)
+        thumbs = page.evaluate("""() => ({
+          cards: document.querySelectorAll('.organizer-card').length,
+          loaded: document.querySelectorAll('.organizer-thumb:not(.organizer-thumb-loading)').length,
+          sized: [...document.querySelectorAll('.organizer-thumb canvas')].filter(c => c.width > 1 && c.height > 1).length
+        })""")
+        record("organizer thumbnails finish loading progressively",
+               thumbs["loaded"] == thumbs["cards"] and thumbs["sized"] == thumbs["cards"], thumbs)
         cards.nth(0).click()
         page.click("#btn-org-rotate-right")
         page.wait_for_timeout(200)

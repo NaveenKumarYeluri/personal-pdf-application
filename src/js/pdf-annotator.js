@@ -1046,21 +1046,27 @@ export class PDFAnnotatorEngine {
     }
     const pageMap = this.inPlaceEdits.get(pageNum);
     const prevText = pageMap.has(span) ? pageMap.get(span).newText : (span._originalText !== undefined ? span._originalText : '');
-    pageMap.set(span, {
+    const newText = span.innerText !== undefined ? span.innerText : span.textContent;
+    const edit = {
       span,
       originalText: span._originalText,
-      newText: span.textContent,
+      newText,
       normRect: span._normRect,
       fontFamily: span._customFontStack || span.style.fontFamily,
       baseFontSize: span._baseFontSize,
+      lineHeightRatio: span._lineHeightRatio,
+      maxWidth: parseFloat(span.style.maxWidth) || span.offsetWidth,
+      color: span.style.color || span._originalColor || '#111827',
       pageNum
-    });
+    };
+    pageMap.set(span, edit);
     this.undoStack.push({
       type: 'in-place-edit',
       pageNum,
       span,
       prevText,
-      newText: span.textContent
+      newText,
+      edit
     });
     this.redoStack = [];
   }
@@ -1071,6 +1077,9 @@ export class PDFAnnotatorEngine {
     }
     span.textContent = span._originalText !== undefined ? span._originalText : span.textContent;
     span.classList.remove('inline-editing', 'in-place-modified');
+    if (span._originalInlineStyle !== undefined) {
+      span.setAttribute('style', span._originalInlineStyle);
+    }
   }
 
   clearAllEdits() {
@@ -1507,10 +1516,14 @@ export class PDFAnnotatorEngine {
           if (this.inPlaceEdits.has(action.pageNum)) {
             this.inPlaceEdits.get(action.pageNum).delete(action.span);
           }
+          if (action.span._originalInlineStyle !== undefined) {
+            action.span.setAttribute('style', action.span._originalInlineStyle);
+          }
         } else {
           action.span.classList.add('in-place-modified');
           if (this.inPlaceEdits.has(action.pageNum)) {
             this.inPlaceEdits.get(action.pageNum).set(action.span, {
+              ...(action.edit || {}),
               span: action.span,
               originalText: action.span._originalText,
               newText: action.prevText,
@@ -1582,6 +1595,7 @@ export class PDFAnnotatorEngine {
           this.inPlaceEdits.set(action.pageNum, new Map());
         }
         this.inPlaceEdits.get(action.pageNum).set(action.span, {
+          ...(action.edit || {}),
           span: action.span,
           originalText: action.span._originalText,
           newText: action.newText,
@@ -1602,6 +1616,34 @@ export class PDFAnnotatorEngine {
       });
     }
     return true;
+  }
+
+  /**
+   * Wraps plain text into lines that fit maxWidth using the current canvas font.
+   * Preserves explicit newlines from multi-line in-place edits.
+   */
+  _wrapCanvasText(ctx, text, maxWidth) {
+    const paragraphs = String(text).replace(/\r\n?/g, '\n').split('\n');
+    const lines = [];
+    for (const para of paragraphs) {
+      if (!para) {
+        lines.push('');
+        continue;
+      }
+      const words = para.split(/\s+/);
+      let current = '';
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (current && ctx.measureText(candidate).width > maxWidth) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) lines.push(current);
+    }
+    return lines.length > 0 ? lines : [''];
   }
 
   /**
@@ -1679,7 +1721,7 @@ export class PDFAnnotatorEngine {
       // 2b. Draw In-Place Text Edits (Mask original canvas text with white and render new text using PDF's exact font)
       if (hasInPlaceEdits) {
         for (const [span, edit] of pageInPlaceEdits.entries()) {
-          const textToDraw = span.textContent;
+          const textToDraw = span.innerText !== undefined ? span.innerText : span.textContent;
           if (textToDraw === undefined || textToDraw === null) continue;
 
           const cs = window.getComputedStyle(span);
@@ -1688,17 +1730,36 @@ export class PDFAnnotatorEngine {
 
           const sx = (spanRect.left - wrapperRect.left) * scaleX;
           const sy = (spanRect.top - wrapperRect.top) * scaleY;
-          const sw = spanRect.width * scaleX;
-          const sh = spanRect.height * scaleY;
 
           const maxAllowedW = (parseFloat(span.style.maxWidth) || spanRect.width || span._originalWidth || 100) * scaleX;
           const maskW = Math.min(maxAllowedW, Math.max(span._originalWidth || 0, spanRect.width) * scaleX);
           const origH = span._originalHeight || spanRect.height || 18;
-          const maskH = origH * scaleY; // Strictly original line height, never mask line below!
+
+          const fSize = parseFloat(cs.fontSize) * scaleY;
+          const fontFamily = edit.fontFamily || span._customFontStack || cs.fontFamily || 'sans-serif';
+          const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
+          const fontStyle = span._customFontStyle || cs.fontStyle || 'normal';
+          const color = cs.color || edit.color || '#111827';
+          const csFontPx = parseFloat(cs.fontSize) || 1;
+          const csLinePx = parseFloat(cs.lineHeight);
+          const lineRatio = edit.lineHeightRatio || span._lineHeightRatio ||
+            (csLinePx && !isNaN(csLinePx) ? csLinePx / csFontPx : 1.2);
+          const lineHeight = fSize * lineRatio;
+
+          compCtx.save();
+          compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
+          compCtx.fillStyle = color;
+          compCtx.textBaseline = 'top';
+
+          // Wrap exactly like the on-screen editable block so the exported PDF
+          // keeps the same paragraph layout instead of shrinking the text.
+          const textToRender = String(textToDraw).replace(/\r\n?/g, '\n');
+          const lines = this._wrapCanvasText(compCtx, textToRender, Math.max(1, maskW));
+          const blockH = Math.max(origH * scaleY, lines.length * lineHeight);
 
           // Mask original PDF text underneath with crisp white rectangle
           compCtx.fillStyle = '#ffffff';
-          compCtx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(maskW) + 4, Math.ceil(maskH) + 4);
+          compCtx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(maskW) + 4, Math.ceil(blockH) + 4);
 
           // Vector mask on PDF page stream directly
           if (typeof page.drawRectangle === 'function' && typeof rgb === 'function') {
@@ -1707,8 +1768,9 @@ export class PDFAnnotatorEngine {
             const pdfX = (spanRect.left - wrapperRect.left) * pdfScaleX;
             const maxAllowedPdfW = (parseFloat(span.style.maxWidth) || spanRect.width || span._originalWidth || 100) * pdfScaleX;
             const pdfW = Math.min(maxAllowedPdfW, Math.max(span._originalWidth || 0, spanRect.width) * pdfScaleX);
-            const pdfH = origH * pdfScaleY;
-            const pdfY = height - ((spanRect.top - wrapperRect.top + origH) * pdfScaleY);
+            const blockCssH = blockH / scaleY;
+            const pdfH = blockCssH * pdfScaleY;
+            const pdfY = height - ((spanRect.top - wrapperRect.top + blockCssH) * pdfScaleY);
             page.drawRectangle({
               x: Math.max(0, pdfX - 2),
               y: Math.max(0, pdfY - 2),
@@ -1718,22 +1780,10 @@ export class PDFAnnotatorEngine {
             });
           }
 
-          // Render modified text using PDF's exact font, size, and styling (strictly single-line to protect adjacent lines)
-          const fSize = parseFloat(cs.fontSize) * scaleY;
-          const fontFamily = edit.fontFamily || span._customFontStack || cs.fontFamily || 'sans-serif';
-          const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
-          const fontStyle = span._customFontStyle || cs.fontStyle || 'normal';
-          const color = cs.color || '#111827';
-
-          compCtx.save();
-          compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
           compCtx.fillStyle = color;
-          compCtx.textBaseline = 'top';
-
-          const textToRender = (span.innerText || span.textContent || textToDraw || '').replace(/[\r\n]+/g, ' ');
-          // Draw single-line text fitted to maskW using Canvas fillText maxWidth parameter
-          // This guarantees text stays strictly on its line and never collides with or erases adjacent lines below!
-          compCtx.fillText(textToRender, sx, sy, maskW);
+          lines.forEach((line, idx) => {
+            if (line) compCtx.fillText(line, sx, sy + idx * lineHeight);
+          });
           compCtx.restore();
         }
       }

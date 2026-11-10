@@ -830,7 +830,12 @@ export class UIController {
     document.querySelectorAll('.modal-close, .modal-backdrop').forEach(el => {
       el.onclick = (e) => {
         if (e.target === el) {
-          el.closest('.modal-backdrop').classList.remove('open');
+          const backdrop = el.closest('.modal-backdrop');
+          backdrop.classList.remove('open');
+          // Stop any in-flight organizer thumbnail rendering.
+          if (backdrop.id === 'modal-organizer' && window.app) {
+            window.app._organizerRenderToken = (window.app._organizerRenderToken || 0) + 1;
+          }
         }
       };
     });

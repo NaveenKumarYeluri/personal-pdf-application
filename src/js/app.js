@@ -555,6 +555,16 @@ class PersonalPDFApp {
 
     // Save initial text once
     if (span._originalText === undefined) {
+      span._originalInlineStyle = span.getAttribute('style') || '';
+      const initialStyle = window.getComputedStyle(span);
+      const initialFontPx = parseFloat(initialStyle.fontSize) || 16;
+      const initialLinePx = parseFloat(initialStyle.lineHeight) || initialFontPx * 1.2;
+      span._lineHeightRatio = Math.max(0.9, Math.min(2.5, initialLinePx / initialFontPx));
+      const initialColor = initialStyle.color || '';
+      span._originalColor = (!initialColor || initialColor === 'transparent' || initialColor === 'rgba(0, 0, 0, 0)')
+        ? '#111827'
+        : initialColor;
+
       if (typeof healPdfTextLigatures === 'function') {
         span.textContent = healPdfTextLigatures(span.textContent);
       }
@@ -638,7 +648,7 @@ class PersonalPDFApp {
     }
     span._baseFontSize = baseFontSize;
     span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
-    span.style.lineHeight = '1.25';
+    span.style.lineHeight = String(span._lineHeightRatio || 1.2);
     span.style.webkitTextSizeAdjust = '100%';
     span.style.textSizeAdjust = '100%';
 
@@ -646,11 +656,7 @@ class PersonalPDFApp {
     span.style.transform = 'none';
     span.style.letterSpacing = 'normal';
 
-    // Constrain max-width to available line space without overflowing across diagrams, subsequent spans, or page margins
-    const wrapRect = pageWrapper.getBoundingClientRect();
-    const wrapW = wrapRect.width || pageWrapper.clientWidth || 800;
-
-    // 1. Check for immediate horizontal sibling on the same line
+    // Wrap within the available line width without overflowing the page margin
     let minNextLeft = Infinity;
     const siblingSpans = pageWrapper.querySelectorAll('.textLayer span');
     for (const sibling of siblingSpans) {
@@ -665,39 +671,19 @@ class PersonalPDFApp {
     if (minNextLeft !== Infinity) {
       calculatedMaxW = Math.max(span._originalWidth || 40, minNextLeft - span.offsetLeft - 4);
     } else {
-      // 2. No same-line sibling: Detect paragraph column right margin from vertically adjacent lines
-      let maxParagraphRight = 0;
-      for (const sibling of siblingSpans) {
-        if (sibling !== span) {
-          const dy = Math.abs(sibling.offsetTop - span.offsetTop);
-          if (dy > 0 && dy < 140) {
-            const dx = Math.abs(sibling.offsetLeft - span.offsetLeft);
-            // Sibling is in same paragraph text column if left margin aligns within 25px
-            if (dx < 25) {
-              const sibW = sibling.getBoundingClientRect().width || sibling._originalWidth || sibling.offsetWidth || 0;
-              const sibRight = sibling.offsetLeft + sibW;
-              if (sibRight > maxParagraphRight) {
-                maxParagraphRight = sibRight;
-              }
-            }
-          }
-        }
-      }
-
-      // Constrain to column right boundary, strictly avoiding stretching into page margin
-      const rightMarginPad = 48;
-      const colRightLimit = maxParagraphRight > (span.offsetLeft + 40)
-        ? Math.min(maxParagraphRight, wrapW - rightMarginPad)
-        : Math.min(wrapW - rightMarginPad, (span.offsetLeft || 0) + (span._originalWidth || 100) + 20);
-
-      calculatedMaxW = Math.max(span._originalWidth || 40, colRightLimit - span.offsetLeft);
+      // No same-line sibling: wrap within the original line width so typed text
+      // grows into a paragraph without changing the font size or crossing into
+      // an adjacent column.
+      calculatedMaxW = Math.max(span._originalWidth || 40, 40);
     }
 
     const maxW = Math.max(40, Math.floor(calculatedMaxW));
     span.style.maxWidth = `${maxW}px`;
-    span.style.whiteSpace = 'nowrap';
-    span.style.overflow = 'hidden';
-    span.style.textOverflow = 'clip';
+    span.style.whiteSpace = 'pre-wrap';
+    span.style.overflowWrap = 'break-word';
+    span.style.wordBreak = 'normal';
+    span.style.overflow = 'visible';
+    span.style.height = 'auto';
 
     // Set as active in-place span in annotator engine
     this.annotator.setActiveInPlaceSpan(span);
@@ -714,49 +700,27 @@ class PersonalPDFApp {
     span._pageNum = pageNum;
     span._pageWrapper = pageWrapper;
 
-    // Helper to measure true rendered text width even when overflow: hidden is active
-    const measureTextWidth = (el) => {
-      try {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const rects = range.getClientRects();
-        if (rects && rects.length > 0) {
-          let totalW = 0;
-          for (let i = 0; i < rects.length; i++) totalW += rects[i].width;
-          if (totalW > 0) return totalW;
-        }
-      } catch (err) {}
-      return el.scrollWidth || el.offsetWidth || 0;
-    };
-
-    // Helper to sanitize child HTML and auto-fit so text NEVER truncates and NEVER wraps onto line below
+    // Keep the PDF's original typography while editing. Text wraps and the box
+    // grows downward; the font size is never shrunk to squeeze text into one line.
     const cleanSpanContent = () => {
       if (span._isComposing) return;
       span.style.fontFamily = fontStack;
       span.style.fontWeight = span._customFontWeight || 'normal';
       span.style.fontStyle = span._customFontStyle || 'normal';
-      span.style.lineHeight = '1.25';
+      span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
+      span.style.lineHeight = String(span._lineHeightRatio || 1.2);
+      span.style.letterSpacing = 'normal';
       span.style.webkitTextSizeAdjust = '100%';
       span.style.textSizeAdjust = '100%';
       span.style.transform = 'none';
       span.style.maxWidth = `${Math.floor(maxW)}px`;
-      span.style.whiteSpace = 'nowrap';
-      span.style.overflow = 'hidden';
-      span.style.textOverflow = 'clip';
-
-      // Dynamic single-line proportional fitting:
-      // If user adds words, scale font size and letter-spacing smoothly down so ALL text
-      // stays strictly within the line, NEVER overflowing off the page and NEVER wrapping over adjacent lines!
-      const curW = measureTextWidth(span);
-      if (curW > maxW && maxW > 0) {
-        const fitRatio = Math.max(0.35, maxW / curW);
-        const fittedSize = baseFontSize * fitRatio;
-        span.style.fontSize = `calc(var(--scale-factor, 1) * ${fittedSize.toFixed(2)}px)`;
-        span.style.letterSpacing = fitRatio < 0.90 ? (fitRatio < 0.70 ? '-0.35px' : '-0.20px') : 'normal';
-      } else {
-        span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
-        span.style.letterSpacing = 'normal';
-      }
+      span.style.whiteSpace = 'pre-wrap';
+      span.style.overflowWrap = 'break-word';
+      span.style.wordBreak = 'normal';
+      span.style.overflow = 'visible';
+      span.style.height = 'auto';
+      span.style.color = span._originalColor || '#111827';
+      span.style.backgroundColor = '#ffffff';
     };
 
     // Execute immediately on edit start
@@ -790,17 +754,23 @@ class PersonalPDFApp {
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
       });
 
+      span.addEventListener('paste', (e) => {
+        // Keep pasted text plain so PDF typography and line layout stay intact.
+        const text = (e.clipboardData || window.clipboardData)?.getData('text/plain');
+        if (text === undefined || text === null) return;
+        e.preventDefault();
+        document.execCommand('insertText', false, text);
+      });
+
       span.addEventListener('keydown', (kEvt) => {
         if (kEvt.key === 'Escape') {
           kEvt.preventDefault();
           this.annotator.revertInPlaceEdit(span, pageNum);
           span.blur();
           this.ui.setStatus('Reverted in-place text edit');
-        } else if (kEvt.key === 'Enter') {
-          // Enter commits and saves single-line edit (prevents inserting line breaks that overlap adjacent lines)
-          kEvt.preventDefault();
-          span.blur();
         }
+        // Enter is intentionally left alone: it inserts a paragraph line break and
+        // the text box grows instead of shrinking the font or committing the edit.
       });
 
       span.addEventListener('blur', () => {
@@ -814,22 +784,24 @@ class PersonalPDFApp {
           span.classList.add('in-place-modified');
           if (tLayer) tLayer.classList.add('has-modifications');
 
-          // Explicitly ensure solid text visibility and clean single-line fitting without truncation
+          // Keep the same font size; the edited line may wrap into a paragraph.
           span.style.transform = 'none';
-          span.style.letterSpacing = span.style.letterSpacing || 'normal';
+          span.style.letterSpacing = 'normal';
           span.style.maxWidth = `${Math.floor(maxW)}px`;
-          span.style.whiteSpace = 'nowrap';
-          span.style.overflow = 'hidden';
-          span.style.textOverflow = 'clip';
+          span.style.whiteSpace = 'pre-wrap';
+          span.style.overflowWrap = 'break-word';
+          span.style.wordBreak = 'normal';
+          span.style.overflow = 'visible';
+          span.style.height = 'auto';
           span.style.width = 'auto';
           span.style.minWidth = '0';
-          span.style.color = '#111827';
+          span.style.color = span._originalColor || '#111827';
           span.style.backgroundColor = '#ffffff';
           span.style.opacity = '1';
           span.style.visibility = 'visible';
 
-          // Directly erase original text pixels from underlying PDF canvas using normalized coordinates
-          // Strictly mask ONLY the original line's bounding height so adjacent lines below are NEVER overwritten!
+          // Erase the original PDF text underneath the edited block. The block is
+          // opaque white, so mask its current (possibly expanded) height too.
           const pageCanvas = pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
           if (pageCanvas && span._normRect) {
             const canvasCtx = pageCanvas.getContext('2d');
@@ -837,9 +809,8 @@ class PersonalPDFApp {
             canvasCtx.setTransform(1, 0, 0, 1, 0, 0); // Pure canvas buffer pixels
             const normX = span._normRect.x;
             const normY = span._normRect.y;
-            const boundedSpanW = Math.max(span._originalWidth || 0, span.offsetWidth || 0);
-            const normW = boundedSpanW / (pageWrapper.clientWidth || 1);
-            const normH = span._normRect.h; // STRICTLY original line height! Never erase adjacent lines below!
+            const normW = Math.max(span._originalWidth || 0, maxW) / (pageWrapper.clientWidth || 1);
+            const normH = Math.max(span._originalHeight || 0, span.offsetHeight || 0) / (pageWrapper.clientHeight || 1);
             canvasCtx.fillStyle = '#ffffff';
             canvasCtx.fillRect(
               Math.floor(normX * pageCanvas.width) - 2,
@@ -943,15 +914,17 @@ class PersonalPDFApp {
         matchedSpan.classList.add('in-place-modified');
         matchedSpan.style.webkitTextSizeAdjust = 'none';
         matchedSpan.style.textSizeAdjust = 'none';
-        matchedSpan.style.lineHeight = '1.25';
+        matchedSpan.style.lineHeight = String(edit.lineHeightRatio || matchedSpan._lineHeightRatio || 1.2);
         matchedSpan.style.transform = 'none';
         matchedSpan.style.letterSpacing = 'normal';
-        matchedSpan.style.whiteSpace = 'nowrap';
-        matchedSpan.style.overflow = 'hidden';
-        matchedSpan.style.textOverflow = 'clip';
+        matchedSpan.style.whiteSpace = 'pre-wrap';
+        matchedSpan.style.overflowWrap = 'break-word';
+        matchedSpan.style.wordBreak = 'normal';
+        matchedSpan.style.overflow = 'visible';
+        matchedSpan.style.height = 'auto';
         matchedSpan.style.width = 'auto';
         matchedSpan.style.minWidth = '0';
-        matchedSpan.style.color = '#111827';
+        matchedSpan.style.color = edit.color || matchedSpan._originalColor || '#111827';
         matchedSpan.style.backgroundColor = '#ffffff';
         matchedSpan.style.opacity = '1';
         matchedSpan.style.visibility = 'visible';
@@ -962,13 +935,8 @@ class PersonalPDFApp {
         if (matchedSpan._baseFontSize) {
           matchedSpan.style.fontSize = `calc(var(--scale-factor, 1) * ${matchedSpan._baseFontSize.toFixed(2)}px)`;
         }
-        if (pageWrapper) {
-          const maxW = Math.max(80, (pageWrapper.clientWidth || 800) - matchedSpan.offsetLeft - 48);
-          matchedSpan.style.maxWidth = `${maxW}px`;
-          matchedSpan.style.whiteSpace = 'nowrap';
-          matchedSpan.style.overflow = 'hidden';
-          matchedSpan.style.textOverflow = 'clip';
-        }
+        const restoredMaxW = edit.maxWidth || Math.max(80, (pageWrapper?.clientWidth || 800) - matchedSpan.offsetLeft - 48);
+        matchedSpan.style.maxWidth = `${restoredMaxW}px`;
 
         const normRect = matchedSpan._normRect;
         if (pageCanvas && pageWrapper && normRect) {
@@ -977,8 +945,8 @@ class PersonalPDFApp {
           canvasCtx.setTransform(1, 0, 0, 1, 0, 0); // Pure canvas buffer pixels
           const normX = normRect.x;
           const normY = normRect.y;
-          const normW = Math.max(normRect.w, (matchedSpan.offsetWidth || 0) / (pageWrapper.clientWidth || 1));
-          const normH = normRect.h; // Strictly original line height, never mask lines below!
+          const normW = Math.max(normRect.w, restoredMaxW / (pageWrapper.clientWidth || 1));
+          const normH = Math.max(normRect.h, (matchedSpan.offsetHeight || 0) / (pageWrapper.clientHeight || 1));
           canvasCtx.fillStyle = '#ffffff';
           canvasCtx.fillRect(
             Math.floor(normX * pageCanvas.width) - 2,
@@ -1564,7 +1532,7 @@ class PersonalPDFApp {
       card.draggable = true;
 
       const thumbBox = document.createElement('div');
-      thumbBox.className = 'organizer-thumb';
+      thumbBox.className = 'organizer-thumb organizer-thumb-loading';
       const canvas = document.createElement('canvas');
       thumbBox.appendChild(canvas);
 
@@ -1586,23 +1554,6 @@ class PersonalPDFApp {
       card.appendChild(footer);
       grid.appendChild(card);
       this.organizerCards.push(card);
-
-      // Render thumbnail with correct page rotation
-      const page = await this.viewer.pdfDoc.getPage(i);
-      const effectiveRot = ((page.rotate || 0) + (this.viewer.rotation || 0)) % 360;
-      const vp = page.getViewport({ scale: 0.25, rotation: effectiveRot });
-      canvas.width = vp.width;
-      canvas.height = vp.height;
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-
-      // Also render user's annotations/drawings onto thumbnail if present on this page
-      const pageWrapper = document.getElementById(`page-wrapper-${i}`);
-      if (pageWrapper) {
-        const annotCanvas = document.getElementById(`annot-canvas-${i}`);
-        if (annotCanvas) {
-          canvas.getContext('2d').drawImage(annotCanvas, 0, 0, canvas.width, canvas.height);
-        }
-      }
 
       // Move Left/Right actions (Instant touch & click page switching)
       footer.querySelector('.btn-move-left').onclick = (e) => {
@@ -1660,7 +1611,50 @@ class PersonalPDFApp {
     }
 
     this._setupDragAndDropReorder(grid);
+    // Show the dialog right away. Thumbnails are rendered progressively so large
+    // documents do not delay opening the organizer.
     modal.classList.add('open');
+    const token = this._organizerRenderToken = (this._organizerRenderToken || 0) + 1;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    this._renderOrganizerThumbnails(token);
+  }
+
+  async _renderOrganizerThumbnails(token) {
+    const cards = Array.from(this.organizerCards || []);
+    for (const card of cards) {
+      if (token !== this._organizerRenderToken) return;
+      if (!card.isConnected) continue;
+
+      const pageNum = parseInt(card.dataset.pageIndex, 10) + 1;
+      const thumbBox = card.querySelector('.organizer-thumb');
+      const canvas = thumbBox ? thumbBox.querySelector('canvas') : null;
+      if (!thumbBox || !canvas) continue;
+
+      try {
+        const page = await this.viewer.pdfDoc.getPage(pageNum);
+        if (token !== this._organizerRenderToken) return;
+
+        const effectiveRot = ((page.rotate || 0) + (this.viewer.rotation || 0)) % 360;
+        const vp = page.getViewport({ scale: 0.25, rotation: effectiveRot });
+        canvas.width = Math.max(1, Math.floor(vp.width));
+        canvas.height = Math.max(1, Math.floor(vp.height));
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        if (token !== this._organizerRenderToken) return;
+
+        // Also render user's annotations/drawings onto thumbnail if present on this page
+        const annotCanvas = document.getElementById(`annot-canvas-${pageNum}`);
+        if (annotCanvas) {
+          canvas.getContext('2d').drawImage(annotCanvas, 0, 0, canvas.width, canvas.height);
+        }
+      } catch (err) {
+        console.warn(`Could not render thumbnail for page ${pageNum}:`, err);
+      } finally {
+        thumbBox.classList.remove('organizer-thumb-loading');
+      }
+
+      // Yield to the browser so opening, scrolling and drag/drop stay responsive.
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
   }
 
   _renumberOrganizerCards() {

@@ -132,20 +132,22 @@ def run_all_tests():
          "isSansSerif" in app_js and "/sans-serif|calibri|arial|helvetica" in app_js)
     test("app.js preserves fontWeight for bold document text",
          "span._customFontWeight = isBold ? '700' : '400'" in app_js)
-    test("Canvas whiteout mask strictly uses original line height (normH = span._normRect.h)",
-         "const normH = span._normRect.h;" in app_js and "Math.max(span._normRect.h, (span.offsetHeight" not in app_js)
-    test("cleanSpanContent uses auto-fitting font scale to protect adjacent lines from being overwritten",
-         "span.style.whiteSpace = 'nowrap'" in app_js and "fitRatio" in app_js)
+    test("Canvas whiteout mask covers the original line and any wrapped paragraph height",
+         "Math.max(span._originalHeight || 0, span.offsetHeight || 0) / (pageWrapper.clientHeight || 1)" in app_js)
+    test("cleanSpanContent preserves the PDF font size and wraps text instead of shrinking it",
+         "span.style.whiteSpace = 'pre-wrap'" in app_js and "fitRatio" not in app_js and
+         "span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`" in app_js)
     test("app.js protects Android soft keyboard (Gboard) composition state with compositionstart/end",
          "_isComposing" in app_js and "compositionstart" in app_js and "compositionend" in app_js)
     test("app.js detects neighboring spans on the same line to constrain max editing width",
          "siblingSpans" in app_js and "minNextLeft" in app_js)
     test("app.js prioritizes native Calibri on desktop and Carlito/Arimo/Tinos for exact Android font parity",
          "'Calibri', 'Carlito'" in app_js and "Carlito" in html)
-    test("pdf-annotator.js and pdf-export.js support single-line fitted maxWidth constrained text drawing",
-         "compCtx.fillText(textToRender, sx, sy, maskW)" in annot_js and "ctx.fillText(textContentVal, sx, sy, origW)" in export_js)
-    test("pdf-annotator.js burnAnnotationsToPdf locks mask height to original line height",
-         "const origH = span._originalHeight || spanRect.height" in annot_js and "origH * scaleY" in annot_js)
+    test("pdf-annotator.js and pdf-export.js wrap in-place edited text onto multiple lines",
+         "this._wrapCanvasText(compCtx, textToRender" in annot_js and "this._wrapCanvasText(ctx, textContentVal" in export_js and
+         "fillText(line, sx, sy + idx * lineHeight)" in annot_js and "fillText(line, sx, sy + idx * lineHeight)" in export_js)
+    test("pdf-annotator.js masks the expanded paragraph block when burning in-place edits",
+         "const origH = span._originalHeight || spanRect.height" in annot_js and "const blockH = Math.max(origH * scaleY, lines.length * lineHeight)" in annot_js)
 
     # =========================================================================
     # 5. Document-Level Markup & Annotation Interaction Safeguards
@@ -434,20 +436,20 @@ def run_all_tests():
          "fontStack = `'Calibri', 'Carlito'" in app_js)
     test("pdf-viewer.js extracts direct PDF stream font and weight metadata",
          "div._pdfFontName = detectedFont;" in viewer_js and "div._pdfIsBold =" in viewer_js)
-    test("app.js uses dynamic proportional scaling (down to 0.35) to prevent text truncation",
-         "const fitRatio = Math.max(0.35, maxW / curW);" in app_js)
-    test("app.js detects paragraph column right margin from vertically adjacent sibling spans",
-         "maxParagraphRight" in app_js and "colRightLimit" in app_js)
-    test("viewer.css locks white-space: nowrap and overflow: hidden to protect line layout and page boundaries",
-         "white-space: nowrap !important;" in viewer_css and "overflow: hidden !important;" in viewer_css)
-    test("Enter key commits single-line edit cleanly without inserting overlapping lines",
-         "kEvt.key === 'Enter'" in app_js and "span.blur();" in app_js)
-    test("Canvas whiteout mask strictly covers original line height to prevent erasing line below",
-         "Math.ceil(normH * pageCanvas.height) + 4" in app_js and "totalMaskH" not in app_js)
-    test("pdf-annotator.js renders single-line fitted text onto Canvas without line collisions",
-         "compCtx.fillText(textToRender, sx, sy, maskW);" in annot_js)
-    test("pdf-export.js renders single-line fitted text onto Print Canvas without line collisions",
-         "ctx.fillText(textContentVal, sx, sy, origW);" in export_js)
+    test("app.js keeps the PDF font size instead of shrinking text to fit one line",
+         "fitRatio" not in app_js and "const fittedSize = baseFontSize * fitRatio" not in app_js)
+    test("app.js wraps edits within the original line width to preserve the text column",
+         "calculatedMaxW = Math.max(span._originalWidth || 40, 40)" in app_js)
+    test("viewer.css allows in-place edits to wrap and grow instead of clipping lines",
+         "white-space: pre-wrap !important;" in viewer_css and "overflow: visible !important;" in viewer_css)
+    test("Enter key inserts a paragraph line break for multi-line in-place editing",
+         "kEvt.key === 'Enter'" not in app_js and "span.style.whiteSpace = 'pre-wrap'" in app_js)
+    test("Canvas whiteout mask covers the whole edited paragraph block",
+         "const blockH = Math.max(origH * scaleY, lines.length * lineHeight)" in annot_js)
+    test("pdf-annotator.js renders wrapped in-place text onto Canvas without shrinking",
+         "compCtx.fillText(line, sx, sy + idx * lineHeight)" in annot_js)
+    test("pdf-export.js renders wrapped in-place text onto the print canvas without shrinking",
+         "ctx.fillText(line, sx, sy + idx * lineHeight)" in export_js)
 
     # =========================================================================
     # 16. Annotate Text Box Bounds, Resize Handles & Dedicated Drag Bar Verification

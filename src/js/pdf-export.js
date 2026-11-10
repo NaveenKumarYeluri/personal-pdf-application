@@ -11,6 +11,30 @@ export class PDFExportEngine {
     this.app = app || (typeof window !== 'undefined' ? window.app : null);
   }
 
+  _wrapCanvasText(ctx, text, maxWidth) {
+    const paragraphs = String(text).replace(/\r\n?/g, '\n').split('\n');
+    const lines = [];
+    for (const para of paragraphs) {
+      if (!para) {
+        lines.push('');
+        continue;
+      }
+      const words = para.split(/\s+/);
+      let current = '';
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (current && ctx.measureText(candidate).width > maxWidth) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) lines.push(current);
+    }
+    return lines.length > 0 ? lines : [''];
+  }
+
   /**
    * Draw every visible layer of a rendered page onto one canvas: PDF content,
    * ink, whiteouts, in-place edits, stamps/signatures/images, text boxes and
@@ -62,30 +86,39 @@ export class PDFExportEngine {
       ctx.restore();
     });
 
-    // 4. In-place text edits: mask the original line and draw the new text.
+    // 4. In-place text edits: mask the original text and draw the new paragraph.
     wrapper.querySelectorAll('.textLayer span.in-place-modified, .textLayer span.inline-editing').forEach(span => {
       const cs = window.getComputedStyle(span);
       const fSize = parseFloat(cs.fontSize) * scaleY;
       const fontFamily = span._customFontStack || cs.fontFamily || 'sans-serif';
       const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
       const fontStyle = cs.fontStyle || 'normal';
-      const color = cs.color || '#111827';
+      const color = cs.color || span._originalColor || '#111827';
       const sx = span.offsetLeft * scaleX;
       const sy = span.offsetTop * scaleY;
       const origH = (span._originalHeight || 18) * scaleY;
       const origW = Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX;
+      const csFontPx = parseFloat(cs.fontSize) || 1;
+      const csLinePx = parseFloat(cs.lineHeight);
+      const lineRatio = span._lineHeightRatio || (csLinePx && !isNaN(csLinePx) ? csLinePx / csFontPx : 1.2);
+      const lineHeight = fSize * lineRatio;
 
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(origW) + 4, Math.ceil(origH) + 4);
-
-      // Always a single line, fitted to the original line width, so a long edit
-      // can never spill into the line below.
-      const textContentVal = (span.innerText || span.textContent || '').replace(/[\r\n]+/g, ' ');
       ctx.save();
       ctx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
       ctx.fillStyle = color;
       ctx.textBaseline = 'top';
-      ctx.fillText(textContentVal, sx, sy, origW);
+
+      const textContentVal = String(span.innerText !== undefined ? span.innerText : span.textContent || '');
+      const lines = this._wrapCanvasText(ctx, textContentVal, Math.max(1, origW));
+      const blockH = Math.max(origH, lines.length * lineHeight);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(origW) + 4, Math.ceil(blockH) + 4);
+
+      ctx.fillStyle = color;
+      lines.forEach((line, idx) => {
+        if (line) ctx.fillText(line, sx, sy + idx * lineHeight);
+      });
       ctx.restore();
     });
 
