@@ -165,6 +165,25 @@ export class PDFOrganizerEngine {
     return await mergedDoc.save({ useObjectStreams: false });
   }
 
+  /**
+   * Flatten all interactive form fields into static page content.
+   * Returns { bytes, fieldCount }. When the document has no fields, bytes is
+   * returned unchanged and fieldCount is 0.
+   */
+  async flattenForm(pdfBytes) {
+    this._checkLib();
+    const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const doc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
+    const form = doc.getForm();
+    const fields = form.getFields();
+    if (!fields || fields.length === 0) {
+      return { bytes: rawBytes, fieldCount: 0 };
+    }
+    form.flatten();
+    const bytes = await doc.save({ useObjectStreams: false });
+    return { bytes, fieldCount: fields.length };
+  }
+
   async insertBlankPage(pdfBytes, atIndex = -1) {
     this._checkLib();
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);

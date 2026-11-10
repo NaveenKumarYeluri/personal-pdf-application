@@ -2297,9 +2297,39 @@ class PersonalPDFApp {
   async insertBlankPage() {
     if (!this.currentPdfBytes) return;
     this.ui.setStatus('Inserting blank page...');
-    const updated = await this.organizer.insertBlankPage(this.currentPdfBytes, this.viewer.currentPage);
+    // currentPage is 1-based; insertPage() takes a 0-based index. Passing the
+    // 1-based value inserts the blank page immediately AFTER the current page.
+    const insertIndex = Math.max(0, Math.min(this.viewer.totalPages, this.viewer.currentPage || 1));
+    const updated = await this.organizer.insertBlankPage(this.currentPdfBytes, insertIndex);
     await this.loadArrayBuffer(updated, this.currentDocName);
     this.ui.setStatus('Blank page inserted');
+  }
+
+  async flattenFormFields() {
+    if (!this.currentPdfBytes) {
+      this.ui.showToast('Please open a PDF document first', 'warning');
+      return false;
+    }
+    this.ui.setStatus('Flattening form fields...');
+    try {
+      const result = await this.organizer.flattenForm(this.currentPdfBytes);
+      if (!result || result.fieldCount === 0) {
+        this.ui.setStatus('No interactive form fields found');
+        this.ui.showToast('This document has no fillable form fields to flatten', 'info');
+        return false;
+      }
+      await this.loadArrayBuffer(result.bytes, this.currentDocName);
+      const msg = `Flattened ${result.fieldCount} form field${result.fieldCount === 1 ? '' : 's'}`;
+      this.ui.setStatus(msg);
+      this.ui.showToast(msg, 'success');
+      return true;
+    } catch (err) {
+      console.error('Form flatten failed:', err);
+      const msg = `Could not flatten form: ${err.message}`;
+      this.ui.setStatus(msg);
+      this.ui.showToast(msg, 'error');
+      return false;
+    }
   }
 
   async applyPageNumbers() {

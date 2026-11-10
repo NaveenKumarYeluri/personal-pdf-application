@@ -602,10 +602,9 @@ export class UIController {
       closeAllSheets();
       document.getElementById('modal-split')?.classList.add('open');
     });
-    document.getElementById('m3-tool-flatten')?.addEventListener('click', () => {
+    document.getElementById('m3-tool-flatten')?.addEventListener('click', async () => {
       closeAllSheets();
-      this.app.saveAsModifiedPdf();
-      this.showToast('Document flattened with all annotations baked permanently', 'success');
+      await this.app.flattenFormFields();
     });
     document.getElementById('m3-tool-protect')?.addEventListener('click', () => {
       closeAllSheets();
@@ -1969,8 +1968,8 @@ export class UIController {
       this.app.signature.openModal();
     };
 
-    document.getElementById('btn-flatten-form').onclick = () => {
-      this.setStatus('Form fields flattened successfully');
+    document.getElementById('btn-flatten-form').onclick = async () => {
+      await this.app.flattenFormFields();
     };
   }
 
