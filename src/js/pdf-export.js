@@ -11,6 +11,202 @@ export class PDFExportEngine {
     this.app = app || (typeof window !== 'undefined' ? window.app : null);
   }
 
+  /**
+   * Draw every visible layer of a rendered page onto one canvas: PDF content,
+   * ink, whiteouts, in-place edits, stamps/signatures/images, text boxes and
+   * redaction boxes. Used by both PNG export and printing.
+   */
+  _compositePageCanvas(pageNum, targetWidth, targetHeight) {
+    const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+    if (!wrapper) return null;
+    const origCanvas = wrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
+    if (!origCanvas || origCanvas.width === 0 || origCanvas.height === 0) return null;
+
+    const out = document.createElement('canvas');
+    out.width = targetWidth || origCanvas.width;
+    out.height = targetHeight || origCanvas.height;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, out.width, out.height);
+
+    // 1. Base PDF render
+    ctx.drawImage(origCanvas, 0, 0, out.width, out.height);
+
+    // 2. Ink / highlighter / shapes
+    const annotCanvas = document.getElementById(`annot-canvas-${pageNum}`);
+    if (annotCanvas) {
+      ctx.drawImage(annotCanvas, 0, 0, out.width, out.height);
+    }
+
+    const wrapW = wrapper.clientWidth || 1;
+    const wrapH = wrapper.clientHeight || 1;
+    const scaleX = out.width / wrapW;
+    const scaleY = out.height / wrapH;
+
+    // 3. Whiteout masks
+    wrapper.querySelectorAll('.whiteout-box').forEach(wb => {
+      const wx = wb.offsetLeft * scaleX;
+      const wy = wb.offsetTop * scaleY;
+      const ww = wb.offsetWidth * scaleX;
+      const wh = wb.offsetHeight * scaleY;
+      const rotDeg = parseFloat(wb.dataset.rotation || 0);
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      if (rotDeg !== 0) {
+        ctx.translate(wx + ww / 2, wy + wh / 2);
+        ctx.rotate(rotDeg * Math.PI / 180);
+        ctx.fillRect(-ww / 2, -wh / 2, ww, wh);
+      } else {
+        ctx.fillRect(wx, wy, ww, wh);
+      }
+      ctx.restore();
+    });
+
+    // 4. In-place text edits: mask the original line and draw the new text.
+    wrapper.querySelectorAll('.textLayer span.in-place-modified, .textLayer span.inline-editing').forEach(span => {
+      const cs = window.getComputedStyle(span);
+      const fSize = parseFloat(cs.fontSize) * scaleY;
+      const fontFamily = span._customFontStack || cs.fontFamily || 'sans-serif';
+      const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
+      const fontStyle = cs.fontStyle || 'normal';
+      const color = cs.color || '#111827';
+      const sx = span.offsetLeft * scaleX;
+      const sy = span.offsetTop * scaleY;
+      const origH = (span._originalHeight || 18) * scaleY;
+      const origW = Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(origW) + 4, Math.ceil(origH) + 4);
+
+      // Always a single line, fitted to the original line width, so a long edit
+      // can never spill into the line below.
+      const textContentVal = (span.innerText || span.textContent || '').replace(/[\r\n]+/g, ' ');
+      ctx.save();
+      ctx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
+      ctx.fillStyle = color;
+      ctx.textBaseline = 'top';
+      ctx.fillText(textContentVal, sx, sy, origW);
+      ctx.restore();
+    });
+
+    // 5. Stamps, signatures and placed images
+    wrapper.querySelectorAll('.placed-stamp').forEach(stamp => {
+      if (stamp.classList.contains('whiteout-box')) return;
+      const sx = stamp.offsetLeft * scaleX;
+      const sy = stamp.offsetTop * scaleY;
+      const sw = stamp.offsetWidth * scaleX;
+      const sh = stamp.offsetHeight * scaleY;
+      const rotDeg = parseFloat(stamp.dataset.rotation || 0);
+      const img = stamp.querySelector('img');
+
+      if (img && img.complete) {
+        ctx.save();
+        if (rotDeg !== 0) {
+          ctx.translate(sx + sw / 2, sy + sh / 2);
+          ctx.rotate(rotDeg * Math.PI / 180);
+          ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+        } else {
+          ctx.drawImage(img, sx, sy, sw, sh);
+        }
+        ctx.restore();
+        return;
+      }
+
+      const badge = stamp.querySelector('.stamp-badge');
+      if (badge) {
+        const badgeCs = window.getComputedStyle(badge);
+        const parsedFSize = parseFloat(badge.style.fontSize || badgeCs.fontSize) || 20;
+        const fFamily = badge.style.fontFamily || badgeCs.fontFamily || 'sans-serif';
+        const stampColor = badge.style.color || badgeCs.color || '#dc2626';
+        const stampOpacity = parseFloat(badge.style.opacity || badgeCs.opacity) || 0.85;
+        const badgeRot = parseFloat(badge.dataset.rotation || -8);
+        ctx.save();
+        ctx.translate(sx + sw / 2, sy + sh / 2);
+        ctx.rotate(badgeRot * Math.PI / 180);
+        ctx.globalAlpha = stampOpacity;
+        ctx.font = `bold ${Math.round(parsedFSize * scaleX)}px ${fFamily}`;
+        ctx.strokeStyle = stampColor;
+        ctx.lineWidth = 3 * scaleX;
+        ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+        ctx.fillStyle = stampColor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(badge.textContent, 0, 0);
+        ctx.restore();
+      }
+    });
+
+    // 6. Typewriter text boxes
+    wrapper.querySelectorAll('.annotation-textbox').forEach(tb => {
+      const contentEl = tb.querySelector('.textbox-content') || tb;
+      const textContent = contentEl.innerText || contentEl.textContent || '';
+      if (!textContent.trim()) return;
+
+      const cs = window.getComputedStyle(contentEl);
+      const tx = tb.offsetLeft * scaleX;
+      const ty = tb.offsetTop * scaleY;
+      const tw = tb.offsetWidth * scaleX;
+      const fSize = parseFloat(cs.fontSize) * scaleY;
+      const fontFamily = cs.fontFamily || 'Inter, sans-serif';
+      const fontWeight = cs.fontWeight || 'normal';
+      const fontStyle = cs.fontStyle || 'normal';
+      const textAlign = cs.textAlign || 'left';
+      const color = cs.color || '#000000';
+      const parsedLineHeight = parseFloat(cs.lineHeight);
+      const lineHeight = (!isNaN(parsedLineHeight) && parsedLineHeight > 0) ? parsedLineHeight * scaleY : fSize * 1.3;
+
+      if (tb.classList.contains('in-place-editor') || (cs.backgroundColor && cs.backgroundColor.includes('255, 255, 255'))) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(tx - 1, ty - 1, tw + 2, (tb.offsetHeight * scaleY) + 2);
+      }
+
+      ctx.save();
+      ctx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
+      ctx.fillStyle = color;
+      ctx.textBaseline = 'top';
+
+      const maxLineWidth = Math.max(40, tw - 16 * scaleX);
+      const wrappedLines = [];
+      textContent.split(/\r?\n/).forEach(rawLine => {
+        if (!rawLine) { wrappedLines.push(''); return; }
+        let currentLine = '';
+        rawLine.split(' ').forEach(word => {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          if (ctx.measureText(testLine).width > maxLineWidth && currentLine) {
+            wrappedLines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        });
+        if (currentLine) wrappedLines.push(currentLine);
+      });
+
+      wrappedLines.forEach((line, lineIdx) => {
+        let lineX = tx + 8 * scaleX;
+        if (textAlign === 'center') {
+          lineX = tx + tw / 2;
+          ctx.textAlign = 'center';
+        } else if (textAlign === 'right') {
+          lineX = tx + tw - 8 * scaleX;
+          ctx.textAlign = 'right';
+        } else {
+          ctx.textAlign = 'left';
+        }
+        ctx.fillText(line, lineX, ty + 6 * scaleY + lineIdx * lineHeight);
+      });
+      ctx.restore();
+    });
+
+    // 7. Redaction blackouts
+    wrapper.querySelectorAll('.redaction-box').forEach(rb => {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(rb.offsetLeft * scaleX, rb.offsetTop * scaleY, rb.offsetWidth * scaleX, rb.offsetHeight * scaleY);
+    });
+
+    return out;
+  }
+
   async exportPageAsImage(pageNum, format = 'image/png') {
     const targetPage = Math.max(1, Math.min(pageNum || 1, this.viewer.totalPages || 1));
     const wrapper = document.getElementById(`page-wrapper-${targetPage}`);
@@ -18,38 +214,8 @@ export class PDFExportEngine {
 
     // Strategy 1: High-res composite directly from viewer DOM if page is rendered
     if (origCanvas && origCanvas.width > 0 && origCanvas.height > 0) {
-      const exportCanvas = document.createElement('canvas');
-      exportCanvas.width = origCanvas.width;
-      exportCanvas.height = origCanvas.height;
-      const ctx = exportCanvas.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-      ctx.drawImage(origCanvas, 0, 0);
-
-      // Composite annotation ink canvas
-      const annotCanvas = document.getElementById(`annot-canvas-${targetPage}`);
-      if (annotCanvas) {
-        ctx.drawImage(annotCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
-      }
-
-      // Composite stamps, signatures, images
-      if (wrapper) {
-        const scaleX = exportCanvas.width / wrapper.clientWidth;
-        const scaleY = exportCanvas.height / wrapper.clientHeight;
-        const stamps = wrapper.querySelectorAll('.placed-stamp');
-        for (const stamp of stamps) {
-          const sx = stamp.offsetLeft * scaleX;
-          const sy = stamp.offsetTop * scaleY;
-          const sw = stamp.offsetWidth * scaleX;
-          const sh = stamp.offsetHeight * scaleY;
-          const img = stamp.querySelector('img');
-          if (img && img.complete) {
-            ctx.drawImage(img, sx, sy, sw, sh);
-          }
-        }
-      }
-
-      return exportCanvas.toDataURL(format, 0.95);
+      const exportCanvas = this._compositePageCanvas(targetPage, origCanvas.width, origCanvas.height);
+      if (exportCanvas) return exportCanvas.toDataURL(format, 0.95);
     }
 
     // Strategy 2: Render directly from PDF.js if not present in DOM
@@ -338,14 +504,13 @@ export class PDFExportEngine {
   }
 
   preparePrintContainer() {
-    let container = document.getElementById('print-render-container');
-    const currentDoc = this.app?.currentDocName || this.viewer?.currentDocName || 'default';
-    if (container && container.dataset.docName === currentDoc && container.children.length > 0) {
-      return container;
-    }
-    if (container) container.remove();
+    // Always rebuild: annotations may have changed since the last print, and
+    // a cached container would print a stale snapshot.
+    const existing = document.getElementById('print-render-container');
+    if (existing) existing.remove();
 
-    container = document.createElement('div');
+    const currentDoc = this.app?.currentDocName || this.viewer?.currentDocName || 'default';
+    const container = document.createElement('div');
     container.id = 'print-render-container';
     container.dataset.docName = currentDoc;
 
@@ -357,84 +522,9 @@ export class PDFExportEngine {
       const origCanvas = wrapper?.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
       if (!origCanvas || origCanvas.width === 0 || origCanvas.height === 0) continue;
 
-      const printCanvas = document.createElement('canvas');
+      const printCanvas = this._compositePageCanvas(pageNum, origCanvas.width, origCanvas.height);
+      if (!printCanvas) continue;
       printCanvas.className = 'print-page-canvas';
-      printCanvas.width = origCanvas.width;
-      printCanvas.height = origCanvas.height;
-      const ctx = printCanvas.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, printCanvas.width, printCanvas.height);
-      ctx.drawImage(origCanvas, 0, 0);
-
-      // Composite annotation ink canvas if present
-      const annotCanvas = document.getElementById(`annot-canvas-${pageNum}`);
-      if (annotCanvas) {
-        ctx.drawImage(annotCanvas, 0, 0, printCanvas.width, printCanvas.height);
-      }
-
-      if (wrapper) {
-        const scaleX = printCanvas.width / (wrapper.clientWidth || 1);
-        const scaleY = printCanvas.height / (wrapper.clientHeight || 1);
-
-        // Composite whiteouts
-        wrapper.querySelectorAll('.whiteout-box').forEach(wb => {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(wb.offsetLeft * scaleX, wb.offsetTop * scaleY, wb.offsetWidth * scaleX, wb.offsetHeight * scaleY);
-        });
-
-        // Composite in-place modified spans
-        wrapper.querySelectorAll('.textLayer span.in-place-modified, .textLayer span.inline-editing').forEach(span => {
-          const cs = window.getComputedStyle(span);
-          const fSize = parseFloat(cs.fontSize) * scaleY;
-          const fontFamily = span._customFontStack || cs.fontFamily || 'sans-serif';
-          const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
-          const fontStyle = cs.fontStyle || 'normal';
-          const color = cs.color || '#111827';
-          const sx = span.offsetLeft * scaleX;
-          const sy = span.offsetTop * scaleY;
-
-          // Mask original underlying text area with white in case of active inline-editing or zoom variations
-          // Strictly single line height so adjacent lines below are NEVER erased!
-          const origH = (span._originalHeight || 18) * scaleY;
-          const maxAllowedW = (parseFloat(span.style.maxWidth) || span.offsetWidth || span._originalWidth || 100) * scaleX;
-          const origW = Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(origW) + 4, Math.ceil(origH) + 4);
-
-          ctx.save();
-          ctx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
-          ctx.fillStyle = color;
-          ctx.textBaseline = 'top';
-
-          const textContentVal = (span.innerText || span.textContent || '').replace(/[\r\n]+/g, ' ');
-          // Draw single-line text fitted to origW using Canvas fillText maxWidth parameter
-          ctx.fillText(textContentVal, sx, sy, origW);
-          ctx.restore();
-        });
-
-        // Composite stamps, signatures, images
-        wrapper.querySelectorAll('.placed-stamp').forEach(stamp => {
-          if (stamp.classList.contains('whiteout-box')) return;
-          const img = stamp.querySelector('img');
-          const sx = stamp.offsetLeft * scaleX;
-          const sy = stamp.offsetTop * scaleY;
-          const sw = stamp.offsetWidth * scaleX;
-          const sh = stamp.offsetHeight * scaleY;
-          const rotDeg = parseFloat(stamp.dataset.rotation || 0);
-
-          if (img && img.complete) {
-            ctx.save();
-            if (rotDeg !== 0) {
-              ctx.translate(sx + sw / 2, sy + sh / 2);
-              ctx.rotate(rotDeg * Math.PI / 180);
-              ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
-            } else {
-              ctx.drawImage(img, sx, sy, sw, sh);
-            }
-            ctx.restore();
-          }
-        });
-      }
 
       const sheet = document.createElement('div');
       sheet.className = 'print-page-sheet';
