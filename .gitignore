@@ -55,3 +55,6 @@ desktop.ini
 # Local test documents (large PDF/image samples)
 test-docs/
 
+# Generated test artifacts
+test-output/
+
