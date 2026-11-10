@@ -277,8 +277,8 @@ export class PDFViewerEngine {
       this.currentPage = 1;
       this.rotation = 0;
 
-      // Render document pages
-      await this.renderAllPages();
+      // Render document pages (fresh document: discard any previous overlays)
+      await this.renderAllPages({ preserveOverlays: false });
       
       // Load outline / bookmarks
       await this.loadBookmarks();
@@ -300,50 +300,155 @@ export class PDFViewerEngine {
     }
   }
 
-  async renderAllPages() {
+  async renderAllPages(options = {}) {
     if (!this.pdfDoc) return;
-    this.pagesContainer.innerHTML = '';
+
+    // Zooming / rotating must NOT discard annotations. Reuse the existing page
+    // wrappers and only rebuild their canvas + text layers. Overlay DOM
+    // (text boxes, stamps, sticky notes, whiteouts, signatures) stays attached
+    // and is rescaled by _renderSinglePage().
+    const preserveOverlays = options.preserveOverlays !== false;
+
+    if (!preserveOverlays) {
+      this.pagesContainer.innerHTML = '';
+    } else {
+      this.pagesContainer.querySelectorAll('.page-wrapper').forEach(w => {
+        const n = parseInt(w.dataset.pageNumber, 10);
+        if (!n || n > this.totalPages) w.remove();
+      });
+    }
     this.pageRenders.clear();
 
     const firstPage = await this.pdfDoc.getPage(1);
     this._calculateScale(firstPage);
 
     for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
-      const pageWrapper = document.createElement('div');
-      pageWrapper.className = 'page-wrapper';
-      pageWrapper.id = `page-wrapper-${pageNum}`;
-      pageWrapper.dataset.pageNumber = pageNum;
+      let pageWrapper = preserveOverlays
+        ? document.getElementById(`page-wrapper-${pageNum}`)
+        : null;
 
-      const canvas = document.createElement('canvas');
-      canvas.id = `page-canvas-${pageNum}`;
-      canvas.className = 'pdf-canvas';
-      pageWrapper.appendChild(canvas);
-
-      // Text Layer container for selection & search
-      const textLayer = document.createElement('div');
-      textLayer.className = 'textLayer';
-      textLayer.id = `text-layer-${pageNum}`;
-      pageWrapper.appendChild(textLayer);
-
-      // Overlay canvas for annotations
-      const annotationLayer = document.createElement('div');
-      annotationLayer.className = 'annotation-layer';
-      if (typeof document !== 'undefined' && document.body.classList.contains('annotating-active')) {
-        annotationLayer.classList.add('drawing-active');
-        annotationLayer.style.pointerEvents = 'auto';
+      if (!pageWrapper) {
+        pageWrapper = document.createElement('div');
+        pageWrapper.className = 'page-wrapper';
+        pageWrapper.id = `page-wrapper-${pageNum}`;
+        pageWrapper.dataset.pageNumber = pageNum;
+      } else {
+        // Remove only the render layers; keep user overlays intact.
+        pageWrapper.querySelectorAll(':scope > .pdf-canvas, :scope > .textLayer, :scope > .annotation-layer')
+          .forEach(node => node.remove());
       }
-      annotationLayer.id = `annotation-layer-${pageNum}`;
-      const annotCanvas = document.createElement('canvas');
-      annotCanvas.id = `annot-canvas-${pageNum}`;
-      annotationLayer.appendChild(annotCanvas);
-      pageWrapper.appendChild(annotationLayer);
 
+      const { canvas, textLayer, annotCanvas } = this._createPageLayers(pageWrapper, pageNum);
       this.pagesContainer.appendChild(pageWrapper);
       this.observer.observe(pageWrapper);
 
       // Render the page
       await this._renderSinglePage(pageNum, pageWrapper, canvas, textLayer, annotCanvas);
     }
+  }
+
+  _createPageLayers(pageWrapper, pageNum) {
+    const canvas = document.createElement('canvas');
+    canvas.id = `page-canvas-${pageNum}`;
+    canvas.className = 'pdf-canvas';
+
+    // Text Layer container for selection & search
+    const textLayer = document.createElement('div');
+    textLayer.className = 'textLayer';
+    textLayer.id = `text-layer-${pageNum}`;
+
+    // Overlay canvas for annotations
+    const annotationLayer = document.createElement('div');
+    annotationLayer.className = 'annotation-layer';
+    if (typeof document !== 'undefined' && document.body.classList.contains('annotating-active')) {
+      annotationLayer.classList.add('drawing-active');
+      annotationLayer.style.pointerEvents = 'auto';
+    }
+    annotationLayer.id = `annotation-layer-${pageNum}`;
+    const annotCanvas = document.createElement('canvas');
+    annotCanvas.id = `annot-canvas-${pageNum}`;
+    annotationLayer.appendChild(annotCanvas);
+
+    const fragment = document.createDocumentFragment();
+    fragment.appendChild(canvas);
+    fragment.appendChild(textLayer);
+    fragment.appendChild(annotationLayer);
+    pageWrapper.insertBefore(fragment, pageWrapper.firstChild);
+
+    return { canvas, textLayer, annotCanvas };
+  }
+
+  /**
+   * Keep overlay elements (text boxes, stamps, notes, masks) aligned when the
+   * page is zoomed or rotated. Positions are normalised against the previous
+   * page size and the rotation delta is applied around the page centre.
+   */
+  _rescaleOverlayChildren(pageWrapper, oldW, oldH, newW, newH, oldRotation, newRotation) {
+    if (!oldW || !oldH || !newW || !newH) return;
+    if (oldW === newW && oldH === newH && oldRotation === newRotation) return;
+
+    const delta = (((newRotation - oldRotation) % 360) + 360) % 360;
+    const scale = Math.sqrt((newW * newH) / (oldW * oldH)) || 1;
+
+    const rotateNorm = (u, v) => {
+      if (delta === 90) return [1 - v, u];
+      if (delta === 180) return [1 - u, 1 - v];
+      if (delta === 270) return [v, 1 - u];
+      return [u, v];
+    };
+
+    const selector = ':scope > .annotation-textbox, :scope > .placed-stamp, ' +
+      ':scope > .sticky-note-container, :scope > .redaction-box, :scope > .whiteout-box';
+
+    pageWrapper.querySelectorAll(selector).forEach(el => {
+      const w = el.offsetWidth || 0;
+      const h = el.offsetHeight || 0;
+      if (!w && !h) return;
+
+      const isNote = el.classList.contains('sticky-note-container');
+      let ncx = (el.offsetLeft + w / 2) / oldW;
+      let ncy = (el.offsetTop + h / 2) / oldH;
+      [ncx, ncy] = rotateNorm(ncx, ncy);
+
+      // Sticky notes are UI markers: reposition but keep them legible.
+      const newWpx = isNote ? w : w * scale;
+      const newHpx = isNote ? h : h * scale;
+      el.style.left = `${Math.round(ncx * newW - newWpx / 2)}px`;
+      el.style.top = `${Math.round(ncy * newH - newHpx / 2)}px`;
+
+      if (isNote) return;
+
+      if (el.classList.contains('annotation-textbox')) {
+        if (w) el.style.width = `${Math.round(newWpx)}px`;
+        if (el.style.maxWidth) {
+          const maxW = parseFloat(el.style.maxWidth);
+          if (!isNaN(maxW)) el.style.maxWidth = `${Math.round(maxW * (newW / oldW))}px`;
+        }
+        const content = el.querySelector('.textbox-content');
+        if (content) {
+          const cs = window.getComputedStyle(content);
+          const fs = parseFloat(cs.fontSize);
+          if (!isNaN(fs)) content.style.fontSize = `${fs * scale}px`;
+        }
+      } else if (el.classList.contains('whiteout-box') || el.classList.contains('redaction-box')) {
+        el.style.width = `${Math.round(newWpx)}px`;
+        el.style.height = `${Math.round(newHpx)}px`;
+      } else if (el.classList.contains('placed-stamp')) {
+        // Image/signature stamps size through their width; text stamps scale via font.
+        if (el.classList.contains('placed-image-box') || el.classList.contains('placed-signature-box')) {
+          if (w) el.style.width = `${Math.round(newWpx)}px`;
+        } else {
+          const badge = el.querySelector('.stamp-badge');
+          if (badge) {
+            const cs = window.getComputedStyle(badge);
+            const fs = parseFloat(badge.style.fontSize || cs.fontSize);
+            if (!isNaN(fs)) badge.style.fontSize = `${fs * scale}px`;
+          }
+        }
+      }
+
+      if (typeof el._updateBar === 'function') el._updateBar();
+    });
   }
 
   _calculateScale(page) {
@@ -379,8 +484,14 @@ export class PDFViewerEngine {
     const viewport = page.getViewport({ scale: this.scale, rotation: effectiveRot });
     const outputScale = window.devicePixelRatio || 1;
 
-    pageWrapper.style.width = `${Math.floor(viewport.width)}px`;
-    pageWrapper.style.height = `${Math.floor(viewport.height)}px`;
+    const previousWidth = parseFloat(pageWrapper.dataset.renderWidth) || 0;
+    const previousHeight = parseFloat(pageWrapper.dataset.renderHeight) || 0;
+    const previousRotation = parseFloat(pageWrapper.dataset.renderRotation) || 0;
+    const renderedWidth = Math.floor(viewport.width);
+    const renderedHeight = Math.floor(viewport.height);
+
+    pageWrapper.style.width = `${renderedWidth}px`;
+    pageWrapper.style.height = `${renderedHeight}px`;
 
     canvas.width = Math.floor(viewport.width * outputScale);
     canvas.height = Math.floor(viewport.height * outputScale);
@@ -391,6 +502,21 @@ export class PDFViewerEngine {
     annotCanvas.height = canvas.height;
     annotCanvas.style.width = canvas.style.width;
     annotCanvas.style.height = canvas.style.height;
+    annotCanvas.dataset.rotation = String(effectiveRot);
+
+    // Preserve and realign overlay annotations across zoom / rotation.
+    this._rescaleOverlayChildren(
+      pageWrapper,
+      previousWidth,
+      previousHeight,
+      renderedWidth,
+      renderedHeight,
+      previousRotation,
+      effectiveRot
+    );
+    pageWrapper.dataset.renderWidth = String(renderedWidth);
+    pageWrapper.dataset.renderHeight = String(renderedHeight);
+    pageWrapper.dataset.renderRotation = String(effectiveRot);
 
     const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
     const ctx = canvas.getContext('2d');

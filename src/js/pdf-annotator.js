@@ -148,12 +148,12 @@ export class PDFAnnotatorEngine {
         const actualEl = annotEl.closest('.sticky-note-container') || annotEl;
         const pageWrapper = actualEl.closest('.page-wrapper');
         const pNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+        actualEl._savedParent = actualEl.parentNode;
         this.undoStack.push({
-          type: 'element',
+          type: 'element-remove',
           pageNum: pNum,
           elements: [actualEl]
         });
-        actualEl._savedParent = actualEl.parentNode;
         actualEl.remove();
         if (this.activeTextBox === actualEl) {
           this.activeTextBox = null;
@@ -248,7 +248,12 @@ export class PDFAnnotatorEngine {
         points: [...this.currentPath],
         color: this.color,
         strokeWidth: strokeW,
-        opacity: isHighlighter ? 0.35 : this.opacity
+        opacity: isHighlighter ? 0.35 : this.opacity,
+        // Reference canvas geometry so the stroke can be rescaled and rotated
+        // when the page is re-rendered at a different zoom level.
+        baseWidth: this.activeCanvas.width || 1,
+        baseHeight: this.activeCanvas.height || 1,
+        baseRotation: parseFloat(this.activeCanvas.dataset.rotation || 0)
       };
 
       if (!this.annotations.has(this.activePageNum)) {
@@ -297,15 +302,18 @@ export class PDFAnnotatorEngine {
     const list = this.annotations.get(pageNum);
     if (!list || list.length === 0) return;
 
-    const threshold = 35; // Hit radius
+    const canvas = document.getElementById(`annot-canvas-${pageNum}`);
+    const threshold = 35; // Hit radius (current canvas pixels)
     let changed = false;
 
     for (let i = list.length - 1; i >= 0; i--) {
       const annot = list[i];
       let hit = false;
-      if (annot.points && annot.points.length) {
+      if (annot.points && annot.points.length && canvas) {
+        const delta = this._annotationRotationDelta(annot, canvas);
         for (const pt of annot.points) {
-          const dist = Math.hypot(pt.x - x, pt.y - y);
+          const mapped = this._mapAnnotationPoint(annot, pt, canvas, delta);
+          const dist = Math.hypot(mapped.x - x, mapped.y - y);
           if (dist <= threshold) {
             hit = true;
             break;
@@ -396,6 +404,32 @@ export class PDFAnnotatorEngine {
     }
   }
 
+  _annotationRotationDelta(a, canvas) {
+    const current = parseFloat(canvas.dataset.rotation || 0);
+    const base = a.baseRotation !== undefined ? parseFloat(a.baseRotation) : current;
+    return (((current - base) % 360) + 360) % 360;
+  }
+
+  _mapNormPoint(u, v, delta) {
+    if (delta === 90) return [1 - v, u];
+    if (delta === 180) return [1 - u, 1 - v];
+    if (delta === 270) return [v, 1 - u];
+    return [u, v];
+  }
+
+  _annotationScale(a, canvas) {
+    const baseW = a.baseWidth || canvas.width;
+    const baseH = a.baseHeight || canvas.height;
+    return Math.sqrt((canvas.width / baseW) * (canvas.height / baseH)) || 1;
+  }
+
+  _mapAnnotationPoint(a, point, canvas, delta) {
+    const baseW = a.baseWidth || canvas.width;
+    const baseH = a.baseHeight || canvas.height;
+    const [u, v] = this._mapNormPoint(point.x / baseW, point.y / baseH, delta);
+    return { x: u * canvas.width, y: v * canvas.height };
+  }
+
   _redrawPageAnnotations(pageNum) {
     const canvas = document.getElementById(`annot-canvas-${pageNum}`);
     if (!canvas) return;
@@ -404,27 +438,32 @@ export class PDFAnnotatorEngine {
 
     const annots = this.annotations.get(pageNum) || [];
     annots.forEach(a => {
+      const delta = this._annotationRotationDelta(a, canvas);
+      const scale = this._annotationScale(a, canvas);
       ctx.strokeStyle = a.color;
-      ctx.lineWidth = a.strokeWidth;
+      ctx.lineWidth = (a.strokeWidth || 2) * scale;
       ctx.globalAlpha = a.opacity;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
       if (a.type === 'pen' || a.type === 'highlighter') {
-        if (a.points.length < 2) return;
+        if (!a.points || a.points.length < 2) return;
+        const pts = a.points.map(p => this._mapAnnotationPoint(a, p, canvas, delta));
         ctx.beginPath();
-        ctx.moveTo(a.points[0].x, a.points[0].y);
-        for (let i = 1; i < a.points.length; i++) {
-          ctx.lineTo(a.points[i].x, a.points[i].y);
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x, pts[i].y);
         }
         ctx.stroke();
       } else if (a.type === 'rectangle') {
-        const start = a.points[0];
-        const end = a.points[a.points.length - 1];
+        if (!a.points || a.points.length < 2) return;
+        const start = this._mapAnnotationPoint(a, a.points[0], canvas, delta);
+        const end = this._mapAnnotationPoint(a, a.points[a.points.length - 1], canvas, delta);
         ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
       } else if (a.type === 'circle') {
-        const start = a.points[0];
-        const end = a.points[a.points.length - 1];
+        if (!a.points || a.points.length < 2) return;
+        const start = this._mapAnnotationPoint(a, a.points[0], canvas, delta);
+        const end = this._mapAnnotationPoint(a, a.points[a.points.length - 1], canvas, delta);
         const rx = Math.abs(end.x - start.x) / 2;
         const ry = Math.abs(end.y - start.y) / 2;
         const cx = Math.min(start.x, end.x) + rx;
@@ -433,8 +472,9 @@ export class PDFAnnotatorEngine {
         ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         ctx.stroke();
       } else if (a.type === 'line') {
-        const start = a.points[0];
-        const end = a.points[a.points.length - 1];
+        if (!a.points || a.points.length < 2) return;
+        const start = this._mapAnnotationPoint(a, a.points[0], canvas, delta);
+        const end = this._mapAnnotationPoint(a, a.points[a.points.length - 1], canvas, delta);
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
         ctx.lineTo(end.x, end.y);
@@ -442,13 +482,15 @@ export class PDFAnnotatorEngine {
       } else if (a.type === 'underline' || a.type === 'strikethrough') {
         if (!a.rects) return;
         ctx.strokeStyle = a.color || '#2563eb';
-        ctx.lineWidth = a.strokeWidth || 2;
+        ctx.lineWidth = (a.strokeWidth || 2) * scale;
         ctx.lineCap = 'butt';
         a.rects.forEach(r => {
+          const y = (a.type === 'underline') ? (r.y + r.h - 1) : (r.y + r.h / 2);
+          const p1 = this._mapAnnotationPoint(a, { x: r.x, y }, canvas, delta);
+          const p2 = this._mapAnnotationPoint(a, { x: r.x + r.w, y }, canvas, delta);
           ctx.beginPath();
-          const y = (a.type === 'underline') ? Math.round(r.y + r.h - 1) : Math.round(r.y + r.h / 2);
-          ctx.moveTo(r.x, y);
-          ctx.lineTo(r.x + r.w, y);
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
           ctx.stroke();
         });
       }
@@ -488,8 +530,9 @@ export class PDFAnnotatorEngine {
         e.stopPropagation();
         e.preventDefault();
       }
+      noteContainer._savedParent = noteContainer.parentNode;
       this.undoStack.push({
-        type: 'element',
+        type: 'element-remove',
         pageNum,
         elements: [noteContainer]
       });
@@ -681,12 +724,12 @@ export class PDFAnnotatorEngine {
     btnDel.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
+      box._savedParent = box.parentNode;
       this.undoStack.push({
-        type: 'element',
+        type: 'element-remove',
         pageNum,
         elements: [box]
       });
-      box._savedParent = box.parentNode;
       if (box._floatingBar) box._floatingBar.remove();
       box.remove();
       if (this.activeTextBox === box) {
@@ -850,8 +893,9 @@ export class PDFAnnotatorEngine {
     if (!stamp) return;
     const pageWrapper = stamp.closest('.page-wrapper');
     const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+    stamp._savedParent = stamp.parentNode;
     this.undoStack.push({
-      type: 'element',
+      type: 'element-remove',
       pageNum,
       elements: [stamp]
     });
@@ -1059,11 +1103,14 @@ export class PDFAnnotatorEngine {
             color: this.color || '#2563eb',
             strokeWidth: 2,
             opacity: 1,
-            rects
+            rects,
+            baseWidth: pageWrapper.clientWidth || 1,
+            baseHeight: pageWrapper.clientHeight || 1,
+            baseRotation: parseFloat(pageWrapper.dataset.renderRotation || 0)
           };
           annots.push(annotObj);
           this.annotations.set(pageNum, annots);
-          this._redrawAnnotations(pageNum);
+          this._redrawPageAnnotations(pageNum);
 
           this.undoStack.push({
             type: 'draw',
@@ -1127,11 +1174,14 @@ export class PDFAnnotatorEngine {
             color: this.color || '#ef4444',
             strokeWidth: 2,
             opacity: 1,
-            rects
+            rects,
+            baseWidth: pageWrapper.clientWidth || 1,
+            baseHeight: pageWrapper.clientHeight || 1,
+            baseRotation: parseFloat(pageWrapper.dataset.renderRotation || 0)
           };
           annots.push(annotObj);
           this.annotations.set(pageNum, annots);
-          this._redrawAnnotations(pageNum);
+          this._redrawPageAnnotations(pageNum);
 
           this.undoStack.push({
             type: 'draw',
@@ -1188,12 +1238,12 @@ export class PDFAnnotatorEngine {
       const pageWrapper = box.closest('.page-wrapper');
       const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
       
+      box._savedParent = box.parentNode;
       this.undoStack.push({
-        type: 'element',
+        type: 'element-remove',
         pageNum,
         elements: [box]
       });
-      box._savedParent = box.parentNode;
       if (box._floatingBar) box._floatingBar.remove();
       box.remove();
       if (this.activeTextBox === box) {
@@ -1242,8 +1292,9 @@ export class PDFAnnotatorEngine {
     }
     const pageWrapper = element.closest('.page-wrapper');
     const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+    element._savedParent = element.parentNode || pageWrapper;
     this.undoStack.push({
-      type: 'element',
+      type: 'element-remove',
       pageNum,
       elements: [element]
     });
@@ -1256,8 +1307,9 @@ export class PDFAnnotatorEngine {
     if (!note) return;
     const pageWrapper = note.closest('.page-wrapper');
     const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
+    note._savedParent = note.parentNode;
     this.undoStack.push({
-      type: 'element',
+      type: 'element-remove',
       pageNum,
       elements: [note]
     });
@@ -1306,8 +1358,9 @@ export class PDFAnnotatorEngine {
     btnDel.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
+      stamp._savedParent = stamp.parentNode;
       this.undoStack.push({
-        type: 'element',
+        type: 'element-remove',
         pageNum,
         elements: [stamp]
       });
@@ -1353,13 +1406,14 @@ export class PDFAnnotatorEngine {
     const action = this.undoStack.pop();
     this.redoStack.push(action);
 
-    if (action.type === 'stroke') {
+    if (action.type === 'stroke' || action.type === 'draw') {
+      const annot = action.type === 'draw' ? action.annotation : action.data;
       const pageAnnots = this.annotations.get(action.pageNum);
       if (pageAnnots && pageAnnots.length > 0) {
-        const idx = pageAnnots.lastIndexOf(action.data);
+        const idx = pageAnnots.lastIndexOf(annot);
         if (idx !== -1) {
           pageAnnots.splice(idx, 1);
-        } else {
+        } else if (action.type === 'stroke') {
           pageAnnots.pop();
         }
         this._redrawPageAnnotations(action.pageNum);
@@ -1385,14 +1439,32 @@ export class PDFAnnotatorEngine {
         }
       }
     } else if (action.type === 'element') {
+      // Undo an element that was added: detach it, remembering where it lived.
       action.elements.forEach(el => {
         if (el && el.parentNode) {
           el._savedParent = el.parentNode;
           el.remove();
         }
       });
+    } else if (action.type === 'element-remove') {
+      // Undo a deletion: reattach the element to its original page.
+      action.elements.forEach(el => this._reattachElement(el, action.pageNum));
+      this._redrawPageAnnotations(action.pageNum);
     }
     return true;
+  }
+
+  _reattachElement(el, pageNum) {
+    if (!el) return;
+    let parent = el._savedParent;
+    if (!parent || !parent.isConnected) {
+      parent = document.getElementById(`page-wrapper-${pageNum}`);
+    }
+    if (!parent) return;
+    if (el.classList.contains('element-selected')) el.classList.remove('element-selected');
+    parent.appendChild(el);
+    el._savedParent = parent;
+    if (typeof el._updateBar === 'function') el._updateBar();
   }
 
   redo() {
@@ -1400,11 +1472,12 @@ export class PDFAnnotatorEngine {
     const action = this.redoStack.pop();
     this.undoStack.push(action);
 
-    if (action.type === 'stroke') {
+    if (action.type === 'stroke' || action.type === 'draw') {
+      const annot = action.type === 'draw' ? action.annotation : action.data;
       if (!this.annotations.has(action.pageNum)) {
         this.annotations.set(action.pageNum, []);
       }
-      this.annotations.get(action.pageNum).push(action.data);
+      this.annotations.get(action.pageNum).push(annot);
       this._redrawPageAnnotations(action.pageNum);
     } else if (action.type === 'in-place-edit') {
       if (action.span) {
@@ -1421,9 +1494,14 @@ export class PDFAnnotatorEngine {
         });
       }
     } else if (action.type === 'element') {
+      // Redo an addition: reattach the element.
+      action.elements.forEach(el => this._reattachElement(el, action.pageNum));
+    } else if (action.type === 'element-remove') {
+      // Redo a deletion: detach it again.
       action.elements.forEach(el => {
-        if (el && el._savedParent) {
-          el._savedParent.appendChild(el);
+        if (el && el.parentNode) {
+          el._savedParent = el.parentNode;
+          el.remove();
         }
       });
     }
@@ -1437,7 +1515,7 @@ export class PDFAnnotatorEngine {
   async burnAnnotationsToPdf(pdfBytes) {
     const lib = window.PDFLib || window.pdfLib;
     if (!lib) return pdfBytes;
-    const { PDFDocument, rgb } = lib;
+    const { PDFDocument, rgb, PDFName, PDFString } = lib;
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
     const doc = await PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const pages = doc.getPages();
@@ -1698,6 +1776,48 @@ export class PDFAnnotatorEngine {
         const rh = rb.offsetHeight * scaleY;
         compCtx.fillStyle = '#000000';
         compCtx.fillRect(rx, ry, rw, rh);
+      }
+
+      // Preserve sticky notes as real PDF text annotations (comments), so they
+      // survive saving even though they are not part of the raster composite.
+      const stickyNotes = wrapper.querySelectorAll('.sticky-note-container');
+      if (stickyNotes.length > 0 && PDFName && PDFString) {
+        try {
+          const wrapRect = wrapper.getBoundingClientRect();
+          const pdfScaleX = width / (wrapper.clientWidth || 1);
+          const pdfScaleY = height / (wrapper.clientHeight || 1);
+          const existing = page.node.Annots ? page.node.Annots() : null;
+          const annots = existing ? existing.asArray().slice() : [];
+
+          stickyNotes.forEach(note => {
+            const marker = note.querySelector('.sticky-note-marker') || note;
+            const textarea = note.querySelector('textarea');
+            const text = (textarea?.value || textarea?.textContent || '').trim() || 'Sticky note';
+            const mRect = marker.getBoundingClientRect();
+            const nx = (mRect.left - wrapRect.left) * pdfScaleX;
+            const ny = height - ((mRect.top - wrapRect.top) + mRect.height) * pdfScaleY;
+            const nw = Math.max(16, mRect.width * pdfScaleX);
+            const nh = Math.max(16, mRect.height * pdfScaleY);
+
+            const annotRef = doc.context.register(doc.context.obj({
+              Type: PDFName.of('Annot'),
+              Subtype: PDFName.of('Text'),
+              Rect: [nx, ny, nx + nw, ny + nh],
+              Contents: PDFString.of(text),
+              T: PDFString.of('Personal PDF Suite'),
+              Name: PDFName.of('Comment'),
+              C: [1, 0.85, 0],
+              F: 4
+            }));
+            annots.push(annotRef);
+          });
+
+          if (annots.length > 0) {
+            page.node.set(PDFName.of('Annots'), doc.context.obj(annots));
+          }
+        } catch (noteErr) {
+          console.warn('Could not preserve sticky notes as PDF annotations:', noteErr);
+        }
       }
 
       // Embed composite canvas image into PDF page
@@ -2050,8 +2170,9 @@ export class PDFAnnotatorEngine {
       e.stopPropagation();
       const pageWrapper = element.closest('.page-wrapper');
       const pageNum = pageWrapper ? parseInt(pageWrapper.id.replace('page-wrapper-', ''), 10) : 1;
+      element._savedParent = element.parentNode || pageWrapper;
       this.undoStack.push({
-        type: 'element',
+        type: 'element-remove',
         pageNum,
         elements: [element]
       });

@@ -51,7 +51,12 @@ class PersonalPDFApp {
       onPageChange: (current, total) => this._onPageChange(current, total),
       onDocumentLoaded: (meta) => this._onDocumentLoaded(meta),
       onContentEdited: (editData) => this._handleDirectContentEdit(editData),
-      onPageRendered: (pageNum, textLayer) => this._restoreInPlaceEdits(pageNum, textLayer)
+      onPageRendered: (pageNum, textLayer) => {
+        this._restoreInPlaceEdits(pageNum, textLayer);
+        // Canvas ink is cleared whenever the annotation layer is rebuilt on
+        // zoom/rotate, so repaint it from the persistent annotation store.
+        if (this.annotator) this.annotator._redrawPageAnnotations(pageNum);
+      }
     });
 
     // 2. Organizer Engine
