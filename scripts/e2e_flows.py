@@ -94,6 +94,51 @@ def main():
         record("undo restores deleted stamp", n3 == n1, n3)
         record("redo re-deletes stamp", n4 == n1 - 1, n4)
 
+        # ---------- Stamp customization & deletion ----------
+        page.select_option("#annot-stamp", "DRAFT")
+        page.wait_for_timeout(700)
+        active = page.evaluate("() => !!window.app.annotator.activeStamp")
+        record("placing stamp keeps it selected", active, active)
+
+        page.select_option("#stamp-opacity", "0.45")
+        page.wait_for_timeout(400)
+        opacity = page.evaluate("() => document.querySelector('.placed-stamp .stamp-badge').style.opacity")
+        record("stamp opacity applies", opacity == "0.45", opacity)
+
+        page.select_option("#stamp-rotation", "15")
+        page.wait_for_timeout(400)
+        rotation = page.evaluate("() => document.querySelector('.placed-stamp .stamp-badge').dataset.rotation")
+        record("stamp rotation applies", rotation == "15", rotation)
+
+        page.fill("#stamp-font-size", "36")
+        page.dispatch_event("#stamp-font-size", "change")
+        page.wait_for_timeout(400)
+        font_size = page.evaluate("() => getComputedStyle(document.querySelector('.placed-stamp .stamp-badge')).fontSize")
+        record("stamp font size increases", font_size == "36px", font_size)
+
+        page.click("#btn-stamp-delete")
+        page.wait_for_timeout(400)
+        deleted = page.locator(".placed-stamp").count()
+        visible_bars = page.evaluate("() => [...document.querySelectorAll('.element-floating-bar')].filter(b => getComputedStyle(b).display !== 'none').length")
+        record("Delete Selected Stamp removes the stamp", deleted == 0, deleted)
+        record("stamp toolbar hides after deletion", visible_bars == 0, visible_bars)
+
+        page.click("#btn-undo")
+        page.wait_for_timeout(500)
+        record("undo restores stamp deleted from toolbar", page.locator(".placed-stamp").count() == 1)
+
+        stamp = page.locator(".placed-stamp").last
+        stamp.hover()
+        page.wait_for_timeout(200)
+        stamp.locator(".textbox-delete-btn").click(force=True)
+        page.wait_for_timeout(400)
+        visible_bars = page.evaluate("() => [...document.querySelectorAll('.element-floating-bar')].filter(b => getComputedStyle(b).display !== 'none').length")
+        record("stamp close button removes the stamp", page.locator(".placed-stamp").count() == 0)
+        record("stamp toolbar hides immediately after close", visible_bars == 0, visible_bars)
+        page.click("#btn-undo")
+        page.wait_for_timeout(500)
+        record("undo restores stamp deleted from close button", page.locator(".placed-stamp").count() == 1)
+
         # ---------- Underline selection markup ----------
         page.click("#tool-select")
         page.wait_for_timeout(300)

@@ -155,7 +155,7 @@ class PersonalPDFApp {
 
     // Deselect annotations, stamps, images, signatures, and whiteouts when clicking outside
     document.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.annotation-textbox, .textbox-drag-bar, .textbox-content, .sticky-note-container, .sticky-note-marker, .sticky-note-popup, .btn-delete-note, .placed-stamp, .placed-image-box, .placed-signature-box, .whiteout-box, .element-floating-bar, .element-resize-handle, .element-rotate-handle, .element-rotate-line, .textbox-delete-btn')) {
+      if (e.target.closest('#dynamic-mode-tools, .annotation-textbox, .textbox-drag-bar, .textbox-content, .sticky-note-container, .sticky-note-marker, .sticky-note-popup, .btn-delete-note, .placed-stamp, .placed-image-box, .placed-signature-box, .whiteout-box, .element-floating-bar, .element-resize-handle, .element-rotate-handle, .element-rotate-line, .textbox-delete-btn')) {
         return;
       }
       if (this.annotator && typeof this.annotator._deselectAllElements === 'function') {

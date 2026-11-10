@@ -930,8 +930,10 @@ export class PDFAnnotatorEngine {
   }
 
   setActiveStamp(stamp) {
-    if (this.activeStamp && this.activeStamp !== stamp) {
-      this.activeStamp.classList.remove('selected', 'element-selected');
+    const prev = this.activeStamp;
+    if (prev && prev !== stamp) {
+      prev.classList.remove('selected', 'element-selected');
+      if (typeof prev._updateBar === 'function') prev._updateBar();
     }
     this.activeStamp = stamp;
     if (stamp) {
@@ -949,8 +951,14 @@ export class PDFAnnotatorEngine {
     }
   }
 
+  _getActiveStamp() {
+    return this.activeStamp ||
+      document.querySelector('.placed-stamp.element-selected') ||
+      document.querySelector('.placed-stamp.selected');
+  }
+
   deleteActiveStamp() {
-    const stamp = this.activeStamp || document.querySelector('.placed-stamp.element-selected') || document.querySelector('.placed-stamp.selected');
+    const stamp = this._getActiveStamp();
     if (!stamp) return;
     const pageWrapper = stamp.closest('.page-wrapper');
     const pageNum = pageWrapper ? parseInt(pageWrapper.dataset.pageNumber, 10) : 1;
@@ -963,13 +971,18 @@ export class PDFAnnotatorEngine {
     if (stamp._floatingBar) stamp._floatingBar.remove();
     stamp.remove();
     if (this.activeStamp === stamp) {
-      this.setActiveStamp(null);
+      this.activeStamp = null;
+      this.onActiveStampChange(null);
+      if (this.ui && typeof this.ui.syncActiveStamp === 'function') {
+        this.ui.syncActiveStamp(null);
+      }
     }
   }
 
   setStampText(text) {
-    if (!this.activeStamp || !text) return;
-    const badge = this.activeStamp.querySelector('.stamp-badge');
+    const stamp = this._getActiveStamp();
+    if (!stamp || !text) return;
+    const badge = stamp.querySelector('.stamp-badge');
     if (badge) {
       badge.textContent = text;
       const cleanClass = text.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -978,8 +991,9 @@ export class PDFAnnotatorEngine {
   }
 
   setStampColor(color) {
-    if (!this.activeStamp || !color) return;
-    const badge = this.activeStamp.querySelector('.stamp-badge');
+    const stamp = this._getActiveStamp();
+    if (!stamp || !color) return;
+    const badge = stamp.querySelector('.stamp-badge');
     if (badge) {
       badge.style.color = color;
       badge.style.borderColor = color;
@@ -987,34 +1001,40 @@ export class PDFAnnotatorEngine {
   }
 
   setStampOpacity(opacity) {
-    if (!this.activeStamp) return;
-    const badge = this.activeStamp.querySelector('.stamp-badge');
-    if (badge) {
-      badge.style.opacity = opacity;
+    const stamp = this._getActiveStamp();
+    if (!stamp) return;
+    const badge = stamp.querySelector('.stamp-badge');
+    const val = parseFloat(opacity);
+    if (badge && !isNaN(val)) {
+      badge.style.opacity = String(Math.max(0, Math.min(1, val)));
     }
   }
 
   setStampFontSize(size) {
     const parsed = parseInt(size, 10);
-    if (!this.activeStamp || isNaN(parsed) || parsed < 8) return;
-    const badge = this.activeStamp.querySelector('.stamp-badge');
+    const stamp = this._getActiveStamp();
+    if (!stamp || isNaN(parsed) || parsed < 8) return;
+    const badge = stamp.querySelector('.stamp-badge');
     if (badge) {
       badge.style.fontSize = `${parsed}px`;
     }
   }
 
   setStampRotation(deg) {
-    if (!this.activeStamp) return;
-    const badge = this.activeStamp.querySelector('.stamp-badge');
-    if (badge) {
-      badge.style.transform = `rotate(${deg}deg)`;
-      badge.dataset.rotation = deg;
+    const stamp = this._getActiveStamp();
+    if (!stamp) return;
+    const badge = stamp.querySelector('.stamp-badge');
+    const parsed = parseFloat(deg);
+    if (badge && !isNaN(parsed)) {
+      badge.style.transform = `rotate(${parsed}deg)`;
+      badge.dataset.rotation = String(parsed);
     }
   }
 
   setStampFontFamily(font) {
-    if (!this.activeStamp || !font) return;
-    const badge = this.activeStamp.querySelector('.stamp-badge');
+    const stamp = this._getActiveStamp();
+    if (!stamp || !font) return;
+    const badge = stamp.querySelector('.stamp-badge');
     if (badge) {
       badge.style.fontFamily = font;
     }
@@ -1419,16 +1439,7 @@ export class PDFAnnotatorEngine {
     btnDel.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
-      stamp._savedParent = stamp.parentNode;
-      this.undoStack.push({
-        type: 'element-remove',
-        pageNum,
-        elements: [stamp]
-      });
-      stamp.remove();
-      if (this.activeStamp === stamp) {
-        this.setActiveStamp(null);
-      }
+      this.deleteElement(stamp);
     };
     stamp.appendChild(btnDel);
 
@@ -1533,6 +1544,10 @@ export class PDFAnnotatorEngine {
     if (!parent) return;
     if (el.classList.contains('element-selected')) el.classList.remove('element-selected');
     parent.appendChild(el);
+    // The floating toolbar lives outside the element, so restore it too.
+    if (el._floatingBar && !el._floatingBar.isConnected) {
+      parent.appendChild(el._floatingBar);
+    }
     el._savedParent = parent;
     if (typeof el._updateBar === 'function') el._updateBar();
   }
@@ -1582,6 +1597,7 @@ export class PDFAnnotatorEngine {
         if (el && el.parentNode) {
           el._savedParent = el.parentNode;
           el.remove();
+          if (el._floatingBar) el._floatingBar.remove();
         }
       });
     }
@@ -1915,7 +1931,7 @@ export class PDFAnnotatorEngine {
   }
 
   _selectElement(element) {
-    this._deselectAllElements();
+    this._deselectAllElements(element);
     if (element) {
       element.classList.add('element-selected');
       if (typeof element._updateBar === 'function') {
@@ -1924,17 +1940,19 @@ export class PDFAnnotatorEngine {
     }
   }
 
-  _deselectAllElements() {
+  _deselectAllElements(except = null) {
     document.querySelectorAll('.element-selected').forEach(el => {
+      if (el === except) return;
       el.classList.remove('element-selected');
       if (typeof el._updateBar === 'function') {
         el._updateBar();
       }
     });
     document.querySelectorAll('.element-floating-bar').forEach(bar => {
+      if (except && bar === except._floatingBar) return;
       bar.style.display = 'none';
     });
-    if (this.activeStamp && !this.activeStamp.classList.contains('element-selected')) {
+    if (this.activeStamp && this.activeStamp !== except && !this.activeStamp.classList.contains('element-selected')) {
       this.setActiveStamp(null);
     }
   }
@@ -2248,16 +2266,7 @@ export class PDFAnnotatorEngine {
     btnDel.title = 'Remove';
     btnDel.onclick = (e) => {
       e.stopPropagation();
-      const pageWrapper = element.closest('.page-wrapper');
-      const pageNum = pageWrapper ? parseInt(pageWrapper.id.replace('page-wrapper-', ''), 10) : 1;
-      element._savedParent = element.parentNode || pageWrapper;
-      this.undoStack.push({
-        type: 'element-remove',
-        pageNum,
-        elements: [element]
-      });
-      bar.remove();
-      element.remove();
+      this.deleteElement(element);
     };
     bar.appendChild(btnDel);
   }
@@ -2267,6 +2276,7 @@ export class PDFAnnotatorEngine {
     let startX = 0, startY = 0;
     let startLeft = 0, startTop = 0;
     let startWidth = 0, startHeight = 0;
+    let startFontSize = 18;
     let aspectRatio = 1;
     const handleType = handle.dataset.handle;
 
@@ -2281,6 +2291,11 @@ export class PDFAnnotatorEngine {
       startWidth = element.offsetWidth;
       startHeight = element.offsetHeight;
       aspectRatio = startWidth / (startHeight || 1);
+      const badge = element.querySelector('.stamp-badge');
+      if (badge) {
+        const fs = parseFloat(badge.style.fontSize || window.getComputedStyle(badge).fontSize);
+        if (!isNaN(fs)) startFontSize = fs;
+      }
       document.body.style.userSelect = 'none';
     };
 
@@ -2360,6 +2375,18 @@ export class PDFAnnotatorEngine {
         element.style.maxWidth = `${Math.max(40, parentW - element.offsetLeft - 16)}px`;
       }
 
+      // Text stamps scale with the box so the label stays proportionate.
+      const stampBadge = element.querySelector('.stamp-badge');
+      if (stampBadge && startWidth > 0 && startHeight > 0) {
+        // Use only the explicitly resized axis to avoid a font-size/auto-height
+        // feedback loop while the pointer is moving.
+        const usesWidth = handleType.includes('e') || handleType.includes('w');
+        const scale = usesWidth
+          ? element.offsetWidth / startWidth
+          : element.offsetHeight / startHeight;
+        stampBadge.style.fontSize = `${Math.max(8, Math.round(startFontSize * scale))}px`;
+      }
+
       if (typeof element._updateBar === 'function') {
         element._updateBar();
       }
@@ -2369,6 +2396,9 @@ export class PDFAnnotatorEngine {
       if (!isResizing) return;
       isResizing = false;
       document.body.style.userSelect = '';
+      if (element.classList.contains('placed-stamp') && this.ui && typeof this.ui.syncActiveStamp === 'function') {
+        this.ui.syncActiveStamp(element);
+      }
     };
 
     handle.addEventListener('mousedown', (e) => {

@@ -1317,6 +1317,7 @@ export class UIController {
           <option value="custom">+ Custom...</option>
         </select>
         <input type="color" id="stamp-color" value="#dc2626" class="tool-select" style="padding:1px; width:22px; height:22px;" title="Stamp Color">
+        <input type="number" id="stamp-font-size" value="18" min="8" max="144" class="tool-select" style="width:46px;" title="Stamp Font Size (pt)">
         <select id="stamp-opacity" class="tool-select" style="width:55px;" title="Stamp Opacity">
           <option value="1.0">100%</option>
           <option value="0.85" selected>85%</option>
@@ -1513,6 +1514,7 @@ export class UIController {
     // Stamp controls wiring
     const stampSelect = document.getElementById('annot-stamp');
     const stampColorInput = document.getElementById('stamp-color');
+    const stampFontSizeInput = document.getElementById('stamp-font-size');
     const stampOpacityInput = document.getElementById('stamp-opacity');
     const stampRotationInput = document.getElementById('stamp-rotation');
     const btnStampDelete = document.getElementById('btn-stamp-delete');
@@ -1530,6 +1532,7 @@ export class UIController {
         const stamp = this.app.annotator.placeStamp(this.app.viewer.currentPage, val);
         if (stamp) {
           if (stampColorInput.value) this.app.annotator.setStampColor(stampColorInput.value);
+          if (stampFontSizeInput.value) this.app.annotator.setStampFontSize(parseInt(stampFontSizeInput.value, 10));
           if (stampOpacityInput.value) this.app.annotator.setStampOpacity(parseFloat(stampOpacityInput.value));
           if (stampRotationInput.value) this.app.annotator.setStampRotation(parseFloat(stampRotationInput.value));
         }
@@ -1541,6 +1544,10 @@ export class UIController {
 
     stampColorInput.onchange = (e) => {
       this.app.annotator.setStampColor(e.target.value);
+    };
+
+    stampFontSizeInput.onchange = (e) => {
+      this.app.annotator.setStampFontSize(e.target.value);
     };
 
     stampOpacityInput.onchange = (e) => {
@@ -1889,6 +1896,7 @@ export class UIController {
   syncActiveStamp(stamp) {
     const stampSelect = document.getElementById('annot-stamp');
     const stampColorInput = document.getElementById('stamp-color');
+    const stampFontSizeInput = document.getElementById('stamp-font-size');
     const stampOpacityInput = document.getElementById('stamp-opacity');
     const stampRotationInput = document.getElementById('stamp-rotation');
     const btnStampDelete = document.getElementById('btn-stamp-delete');
@@ -1946,6 +1954,12 @@ export class UIController {
         }
       }
       if (closest) stampOpacityInput.value = closest;
+    }
+
+    if (stampFontSizeInput) {
+      const cs = window.getComputedStyle(badge);
+      const size = parseInt(badge.style.fontSize || cs.fontSize, 10);
+      if (!isNaN(size)) stampFontSizeInput.value = String(size);
     }
 
     if (stampRotationInput) {
