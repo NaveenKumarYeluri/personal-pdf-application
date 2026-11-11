@@ -331,6 +331,200 @@ def main():
         record("flatten removes form fields", fields_after == 0, fields_after)
         record("flatten reports success", "flatten" in status.lower(), status)
 
+        # ---------- Regression: zoom keeps the reading position ----------
+        multi_pdf = ROOT / "test-docs" / "SQL Server Advanced Concepts.pdf"
+        page.set_input_files("#file-input", str(multi_pdf))
+        page.wait_for_function("() => window.app.viewer.totalPages === 13", timeout=40000)
+        page.wait_for_timeout(2500)
+
+        def top_page_ratio():
+            return page.evaluate("""() => {
+              const c = document.getElementById('viewer-container').getBoundingClientRect();
+              const w = document.getElementById('page-wrapper-7').getBoundingClientRect();
+              return {
+                page: window.app.viewer.currentPage,
+                ratio: w.height ? (c.top - w.top) / w.height : 0
+              };
+            }""")
+
+        def check_zoom(label):
+            page.evaluate("() => window.app.viewer.goToPage(7)")
+            page.wait_for_timeout(900)
+            page.evaluate("() => document.getElementById('viewer-container').scrollTop += 300")
+            page.wait_for_timeout(350)
+            before = top_page_ratio()
+            page.evaluate("""() => {
+              window.__zoomPages = [];
+              const v = window.app.viewer;
+              const t0 = performance.now();
+              const tick = () => {
+                window.__zoomPages.push(v.currentPage);
+                if (performance.now() - t0 < 3000) requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            }""")
+            page.select_option("#zoom-select", label[1])
+            page.wait_for_timeout(3200)
+            after = top_page_ratio()
+            seen = sorted(set(page.evaluate("() => window.__zoomPages || []")))
+            drift = abs(after["ratio"] - before["ratio"])
+            page_jump = abs(after["page"] - before["page"])
+            # The reported regression was a violent jump to page 1 (or the end).
+            no_first_page_flash = not (before["page"] > 3 and 1 in seen)
+            ok = drift < 0.05 and page_jump <= 1 and no_first_page_flash
+            record(label[0], ok,
+                   f"anchor page {before['page']}->{after['page']} ratio drift {drift:.3f} seen {seen}")
+
+        check_zoom(("zoom 75% keeps reading anchor", "0.75"))
+        check_zoom(("zoom 100% keeps reading anchor", "1.00"))
+        check_zoom(("zoom 200% keeps reading anchor", "2.00"))
+        check_zoom(("Fit Page keeps reading anchor", "page-fit"))
+        check_zoom(("Auto Fit keeps reading anchor", "auto"))
+        check_zoom(("Fit Width keeps reading anchor", "page-width"))
+
+        # ---------- Regression: thumbnails appear immediately, then fill ----------
+        thumbs = page.evaluate("""async () => {
+          const v = window.app.viewer;
+          v.renderThumbnails(); // async; the synchronous skeleton pass runs now
+          const immediate = {
+            items: document.querySelectorAll('.thumbnail-item').length,
+            loading: document.querySelectorAll('.thumbnail-item.thumb-loading').length
+          };
+          const t0 = performance.now();
+          while (performance.now() - t0 < 6000) {
+            if (document.querySelectorAll('.thumbnail-item.thumb-loading').length === 0) break;
+            await new Promise(r => setTimeout(r, 50));
+          }
+          return {
+            immediate,
+            total: v.totalPages,
+            remaining: document.querySelectorAll('.thumbnail-item.thumb-loading').length,
+            blankCanvases: [...document.querySelectorAll('.thumbnail-item canvas')]
+              .filter(c => !c.width || !c.height).length,
+            elapsed: Math.round(performance.now() - t0)
+          };
+        }""")
+        record("thumbnail placeholders appear immediately",
+               thumbs["immediate"]["items"] == thumbs["total"] and thumbs["immediate"]["loading"] > 0,
+               thumbs["immediate"])
+        record("all thumbnails fill without blank canvases",
+               thumbs["remaining"] == 0 and thumbs["blankCanvases"] == 0, thumbs)
+
+        # ---------- Regression: annotations sidebar lists every marked page ----------
+        page.click(".mode-tab[data-mode='annotate']")
+        page.wait_for_timeout(400)
+        page.evaluate("() => window.app.viewer.goToPage(1)")
+        page.wait_for_timeout(700)
+        page.evaluate("() => window.app.annotator.setTool('highlighter', { color: '#fbbf24' })")
+        hbox = page.locator("#annot-canvas-1").bounding_box()
+        page.mouse.move(hbox["x"] + 60, hbox["y"] + 100)
+        page.mouse.down()
+        page.mouse.move(hbox["x"] + 220, hbox["y"] + 108, steps=8)
+        page.mouse.up()
+        page.wait_for_timeout(350)
+
+        underlined = page.evaluate("""() => {
+          const span = [...document.querySelectorAll('#page-wrapper-2 .textLayer span')]
+            .find(s => (s.textContent || '').trim().length > 15);
+          if (!span) return false;
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          window.app.annotator.toggleUnderline();
+          return true;
+        }""")
+        page.wait_for_timeout(450)
+        page.click(".sidebar-tab[data-tab='annotations']")
+        page.wait_for_timeout(500)
+        rows = page.evaluate("""() => [...document.querySelectorAll('.annot-list-item')].map(r => ({
+          page: Number(r.dataset.page),
+          type: r.dataset.type,
+          text: (r.innerText || '').replace(/\\s+/g, ' ').trim()
+        }))""")
+        record("annotations sidebar shows the highlighted page",
+               any(r["type"] == "highlight" and r["page"] == 1 for r in rows), rows)
+        record("annotations sidebar shows the underlined page",
+               underlined and any(r["type"] == "underline" and r["page"] == 2 for r in rows), rows)
+        record("annotations sidebar page numbers stay in range",
+               bool(rows) and all(1 <= r["page"] <= 13 for r in rows), rows)
+
+        # ---------- Regression: drawing never silently saves or burns ----------
+        baseline = page.evaluate("""async () => {
+          const bytes = window.app.currentPdfBytes;
+          const buf = await crypto.subtle.digest('SHA-256', bytes);
+          return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }""")
+        stored_before = page.evaluate("""async () => {
+          const d = await window.app.storage.getActiveDocument();
+          if (!d || !d.bytes) return null;
+          const buf = await crypto.subtle.digest('SHA-256', new Uint8Array(d.bytes));
+          return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }""")
+
+        page.evaluate("() => window.app.annotator.clearAllEdits()")
+        page.wait_for_timeout(200)
+        for tool, pageno in (("highlighter", 1), ("rectangle", 2)):
+            page.evaluate(f"() => window.app.viewer.goToPage({pageno})")
+            page.wait_for_timeout(500)
+            page.evaluate(f"() => window.app.annotator.setTool('{tool}', {{ color: '#ef4444' }})")
+            abox = page.locator(f"#annot-canvas-{pageno}").bounding_box()
+            page.mouse.move(abox["x"] + 70, abox["y"] + 110)
+            page.mouse.down()
+            page.mouse.move(abox["x"] + 230, abox["y"] + 210, steps=8)
+            page.mouse.up()
+            page.wait_for_timeout(300)
+
+        after_draw = page.evaluate("""async () => {
+          const bytes = window.app.currentPdfBytes;
+          const buf = await crypto.subtle.digest('SHA-256', bytes);
+          return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }""")
+        stored_after = page.evaluate("""async () => {
+          const d = await window.app.storage.getActiveDocument();
+          if (!d || !d.bytes) return null;
+          const buf = await crypto.subtle.digest('SHA-256', new Uint8Array(d.bytes));
+          return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }""")
+        live_count = page.evaluate("() => [...window.app.annotator.annotations.values()].reduce((n, a) => n + a.length, 0)")
+        record("drawing does not rewrite the working PDF bytes", baseline == after_draw,
+               f"{baseline[:12]} -> {after_draw[:12]}")
+        record("drawing is not written to the auto-restored session",
+               stored_before == stored_after == baseline,
+               f"stored {str(stored_before)[:12]} / {str(stored_after)[:12]}")
+        record("drawn shapes remain live annotations until Save",
+               live_count >= 2, live_count)
+
+        # ---------- Regression: rotation refreshes thumbnail orientation ----------
+        portrait = page.evaluate("""() => {
+          const c = document.querySelector('#thumb-1 canvas');
+          return c ? { w: c.width, h: c.height } : null;
+        }""")
+        page.click("#btn-rotate-cw")
+        try:
+            page.wait_for_function("""() => {
+              const v = window.app.viewer;
+              const c = document.querySelector('#thumb-1 canvas');
+              return v.rotation === 90 &&
+                document.querySelectorAll('.thumbnail-item.thumb-loading').length === 0 &&
+                c && c.width > c.height;
+            }""", timeout=20000)
+            rotated = page.evaluate("""() => {
+              const c = document.querySelector('#thumb-1 canvas');
+              return { w: c.width, h: c.height, loading: document.querySelectorAll('.thumbnail-item.thumb-loading').length };
+            }""")
+        except Exception as e:
+            print("rotate thumbnail error:", e)
+            rotated = page.evaluate("""() => {
+              const c = document.querySelector('#thumb-1 canvas');
+              return c ? { w: c.width, h: c.height, loading: document.querySelectorAll('.thumbnail-item.thumb-loading').length } : {};
+            }""")
+        record("rotating refreshes thumbnails to the new orientation",
+               bool(portrait) and portrait["w"] < portrait["h"] and
+               rotated.get("w", 0) > rotated.get("h", 0) and rotated.get("loading") == 0,
+               f"portrait {portrait} -> {rotated}")
+
         print("\n--- PAGE ERRORS ---")
         for e in errors:
             print(e)

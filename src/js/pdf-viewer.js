@@ -102,6 +102,11 @@ export class PDFViewerEngine {
     this.currentSearchIndex = -1;
     this.currentSearchQuery = '';
     this.documentFonts = new Set();
+    // Guards against page/scroll tracking firing while we rebuild canvases at
+    // a new zoom level. Without this the viewer jumps to the first page.
+    this._suppressScrollTracking = false;
+    this._renderToken = 0;
+    this._thumbnailRenderToken = 0;
 
     // Configure PDF.js worker (Bundled offline first with CDN fallback)
     if (window.pdfjsLib) {
@@ -187,8 +192,14 @@ export class PDFViewerEngine {
         m3Bar.classList.remove('visible');
       }
 
+      if (this._suppressScrollTracking) return;
+
       if (!ticking) {
         requestAnimationFrame(() => {
+          if (this._suppressScrollTracking) {
+            ticking = false;
+            return;
+          }
           const visiblePage = this.getCurrentVisiblePage();
           if (visiblePage && visiblePage !== this.currentPage) {
             this.currentPage = visiblePage;
@@ -203,6 +214,7 @@ export class PDFViewerEngine {
 
     // 2. Multi-threshold IntersectionObserver for fallback
     this.observer = new IntersectionObserver((entries) => {
+      if (this._suppressScrollTracking) return;
       let mostVisibleEntry = null;
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -212,6 +224,10 @@ export class PDFViewerEngine {
         }
       });
       if (mostVisibleEntry) {
+        // Entries are measured when the frame is produced, so a callback can be
+        // delivered after a zoom render with pre-zoom geometry. Trusting it
+        // would briefly report a neighbouring page (e.g. 7 -> 8).
+        if (mostVisibleEntry.time < (this._renderStartTime || 0)) return;
         const pageNum = parseInt(mostVisibleEntry.target.dataset.pageNumber, 10);
         if (pageNum && pageNum !== this.currentPage) {
           this.currentPage = pageNum;
@@ -300,6 +316,55 @@ export class PDFViewerEngine {
     }
   }
 
+  /**
+   * Capture the page and fractional offset currently at the top of the
+   * viewport. Used so zooming/rotating keeps the reader exactly where they
+   * were instead of snapping back to page 1.
+   */
+  _captureScrollAnchor() {
+    if (!this.container || !this.pagesContainer) return null;
+    const wrappers = Array.from(this.pagesContainer.querySelectorAll('.page-wrapper'));
+    if (wrappers.length === 0) return null;
+
+    const cRect = this.container.getBoundingClientRect();
+    let anchor = wrappers[wrappers.length - 1];
+    for (const w of wrappers) {
+      const r = w.getBoundingClientRect();
+      if (r.bottom > cRect.top + 1) {
+        anchor = w;
+        break;
+      }
+    }
+
+    const r = anchor.getBoundingClientRect();
+    const pageNum = parseInt(anchor.dataset.pageNumber, 10) || 1;
+    return {
+      pageNum,
+      // 0 = page top aligned with viewport top; >0 = scrolled into the page;
+      // negative = the page starts below the viewport (gap between pages).
+      ratio: r.height > 0 ? (cRect.top - r.top) / r.height : 0,
+      gapTop: r.top - cRect.top
+    };
+  }
+
+  _restoreScrollAnchor(anchor) {
+    if (!anchor || !this.container) return;
+    const wrapper = document.getElementById(`page-wrapper-${anchor.pageNum}`);
+    if (!wrapper) return;
+
+    const cRect = this.container.getBoundingClientRect();
+    const r = wrapper.getBoundingClientRect();
+    if (r.height <= 0) return;
+
+    const desiredTop = anchor.ratio > 0
+      ? cRect.top - anchor.ratio * r.height
+      : cRect.top + anchor.gapTop;
+    const delta = Math.round(r.top - desiredTop);
+    if (delta !== 0) {
+      this.container.scrollTop += delta;
+    }
+  }
+
   async renderAllPages(options = {}) {
     if (!this.pdfDoc) return;
 
@@ -308,42 +373,103 @@ export class PDFViewerEngine {
     // (text boxes, stamps, sticky notes, whiteouts, signatures) stays attached
     // and is rescaled by _renderSinglePage().
     const preserveOverlays = options.preserveOverlays !== false;
+    const anchor = preserveOverlays ? this._captureScrollAnchor() : null;
+    const token = ++this._renderToken;
+    this._suppressScrollTracking = true;
+    this._renderStartTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
-    if (!preserveOverlays) {
-      this.pagesContainer.innerHTML = '';
-    } else {
-      this.pagesContainer.querySelectorAll('.page-wrapper').forEach(w => {
-        const n = parseInt(w.dataset.pageNumber, 10);
-        if (!n || n > this.totalPages) w.remove();
-      });
-    }
-    this.pageRenders.clear();
-
-    const firstPage = await this.pdfDoc.getPage(1);
-    this._calculateScale(firstPage);
-
-    for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
-      let pageWrapper = preserveOverlays
-        ? document.getElementById(`page-wrapper-${pageNum}`)
-        : null;
-
-      if (!pageWrapper) {
-        pageWrapper = document.createElement('div');
-        pageWrapper.className = 'page-wrapper';
-        pageWrapper.id = `page-wrapper-${pageNum}`;
-        pageWrapper.dataset.pageNumber = pageNum;
+    try {
+      if (!preserveOverlays) {
+        this.pagesContainer.innerHTML = '';
       } else {
-        // Remove only the render layers; keep user overlays intact.
-        pageWrapper.querySelectorAll(':scope > .pdf-canvas, :scope > .textLayer, :scope > .annotation-layer')
-          .forEach(node => node.remove());
+        this.pagesContainer.querySelectorAll('.page-wrapper').forEach(w => {
+          const n = parseInt(w.dataset.pageNumber, 10);
+          if (!n || n > this.totalPages) w.remove();
+        });
+      }
+      this.pageRenders.clear();
+
+      const firstPage = await this.pdfDoc.getPage(1);
+      if (token !== this._renderToken) return;
+      this._calculateScale(firstPage);
+
+      // Resize every existing wrapper in a single layout pass before painting.
+      // Doing this page-by-page made the scroll container creep upwards while
+      // each page was resized, which looked like a fast scroll to page 1.
+      if (preserveOverlays && anchor) {
+        // Compute all viewports first (these await), then write every size in
+        // one synchronous batch and restore the scroll offset in the same
+        // frame. Interleaving awaits with style writes let the browser paint
+        // and re-anchor between pages, which produced the visible scroll jump.
+        const sizes = [];
+        for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
+          if (!document.getElementById(`page-wrapper-${pageNum}`)) continue;
+          const page = await this.pdfDoc.getPage(pageNum);
+          if (token !== this._renderToken) return;
+          const effectiveRot = ((page.rotate || 0) + (this.rotation || 0)) % 360;
+          const viewport = page.getViewport({ scale: this.scale, rotation: effectiveRot });
+          sizes.push({ pageNum, width: Math.floor(viewport.width), height: Math.floor(viewport.height) });
+        }
+        if (token !== this._renderToken) return;
+        for (const { pageNum, width, height } of sizes) {
+          const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+          if (!wrapper) continue;
+          wrapper.style.width = `${width}px`;
+          wrapper.style.height = `${height}px`;
+        }
+        this._restoreScrollAnchor(anchor);
       }
 
-      const { canvas, textLayer, annotCanvas } = this._createPageLayers(pageWrapper, pageNum);
-      this.pagesContainer.appendChild(pageWrapper);
-      this.observer.observe(pageWrapper);
+      for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
+        if (token !== this._renderToken) return;
+        let pageWrapper = preserveOverlays
+          ? document.getElementById(`page-wrapper-${pageNum}`)
+          : null;
 
-      // Render the page
-      await this._renderSinglePage(pageNum, pageWrapper, canvas, textLayer, annotCanvas);
+        const isNewWrapper = !pageWrapper;
+        if (isNewWrapper) {
+          pageWrapper = document.createElement('div');
+          pageWrapper.className = 'page-wrapper';
+          pageWrapper.id = `page-wrapper-${pageNum}`;
+          pageWrapper.dataset.pageNumber = pageNum;
+        } else {
+          // Remove only the render layers; keep user overlays intact.
+          pageWrapper.querySelectorAll(':scope > .pdf-canvas, :scope > .textLayer, :scope > .annotation-layer')
+            .forEach(node => node.remove());
+        }
+
+        const { canvas, textLayer, annotCanvas } = this._createPageLayers(pageWrapper, pageNum);
+        // appendChild on an existing node would move it to the end, scrambling
+        // page order (and the scroll position) while re-rendering on zoom.
+        // Re-observing an existing wrapper also queues a fresh IntersectionObserver
+        // callback that can land after the guard is lifted and undo the anchor.
+        if (isNewWrapper) {
+          this.pagesContainer.appendChild(pageWrapper);
+          this.observer.observe(pageWrapper);
+        }
+
+        // Render the page
+        await this._renderSinglePage(pageNum, pageWrapper, canvas, textLayer, annotCanvas);
+      }
+
+      if (token !== this._renderToken) return;
+
+      if (preserveOverlays && anchor) {
+        // Heights are stable now; nudge once more in case the browser's scroll
+        // anchoring adjusted the offset while canvases were swapped.
+        this._restoreScrollAnchor(anchor);
+        // Report the page that actually dominates the viewport. This matches
+        // what page tracking would say without resizing, so zooming at a page
+        // boundary cannot flip the indicator from e.g. 8 back to 7.
+        const landedPage = this.getCurrentVisiblePage() || anchor.pageNum;
+        this.currentPage = landedPage;
+        this.onPageChange(landedPage, this.totalPages);
+        this._highlightThumbnail(landedPage);
+      }
+    } finally {
+      if (token === this._renderToken) {
+        this._suppressScrollTracking = false;
+      }
     }
   }
 
@@ -497,6 +623,9 @@ export class PDFViewerEngine {
     canvas.height = Math.floor(viewport.height * outputScale);
     canvas.style.width = `${Math.floor(viewport.width)}px`;
     canvas.style.height = `${Math.floor(viewport.height)}px`;
+    // Thumbnails copy this canvas directly; the tag lets them detect a stale
+    // bitmap while a rotate re-render is still in flight.
+    canvas.dataset.viewerRotation = String(this.rotation || 0);
 
     annotCanvas.width = canvas.width;
     annotCanvas.height = canvas.height;
@@ -753,11 +882,13 @@ export class PDFViewerEngine {
 
   async renderThumbnails() {
     if (!this.thumbnailsContainer || !this.pdfDoc) return;
+    const token = ++this._thumbnailRenderToken;
     this.thumbnailsContainer.innerHTML = '';
 
+    const entries = [];
     for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
       const item = document.createElement('div');
-      item.className = `thumbnail-item ${pageNum === this.currentPage ? 'active' : ''}`;
+      item.className = `thumbnail-item thumb-loading ${pageNum === this.currentPage ? 'active' : ''}`;
       item.id = `thumb-${pageNum}`;
       item.onclick = () => this.goToPage(pageNum);
 
@@ -773,19 +904,62 @@ export class PDFViewerEngine {
       item.appendChild(preview);
       item.appendChild(label);
       this.thumbnailsContainer.appendChild(item);
-
-      // Render thumbnail canvas asynchronously
-      this._renderThumbnailCanvas(pageNum, canvas);
+      entries.push({ pageNum, canvas, item });
     }
+
+    // Fill the skeleton placeholders immediately. The current page comes first
+    // so its thumbnail appears instantly, then the rest in reading order.
+    entries.sort((a, b) => {
+      const da = Math.abs(a.pageNum - this.currentPage);
+      const db = Math.abs(b.pageNum - this.currentPage);
+      return da - db || a.pageNum - b.pageNum;
+    });
+
+    let drawn = 0;
+    for (const { pageNum, canvas, item } of entries) {
+      if (token !== this._thumbnailRenderToken) return;
+      // Copying the already-rendered page canvas is effectively instant; only
+      // fall back to a fresh PDF.js render when that canvas is unavailable.
+      const copied = this._renderThumbnailFromPageCanvas(pageNum, canvas);
+      if (!copied) {
+        await this._renderThumbnailCanvas(pageNum, canvas);
+      }
+      if (token !== this._thumbnailRenderToken) return;
+      item.classList.remove('thumb-loading');
+      drawn++;
+      if (drawn % 4 === 0) {
+        // Yield to the browser so scrolling and clicks stay responsive.
+        await new Promise(resolve => requestAnimationFrame(() => resolve()));
+      }
+    }
+  }
+
+  _renderThumbnailFromPageCanvas(pageNum, canvas) {
+    const source = document.getElementById(`page-canvas-${pageNum}`);
+    if (!source || !source.width || !source.height) return false;
+    // A rotation render replaces page canvases asynchronously. If this bitmap
+    // still belongs to the previous rotation, let PDF.js draw the thumbnail.
+    if (source.dataset.viewerRotation !== String(this.rotation || 0)) return false;
+    const maxWidth = 160;
+    const ratio = Math.min(maxWidth / source.width, 1);
+    const w = Math.max(40, Math.round(source.width * ratio));
+    const h = Math.max(40, Math.round(source.height * ratio));
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, 0, 0, w, h);
+    return true;
   }
 
   async _renderThumbnailCanvas(pageNum, canvas) {
     try {
       const page = await this.pdfDoc.getPage(pageNum);
       const effectiveRot = ((page.rotate || 0) + (this.rotation || 0)) % 360;
-      const thumbViewport = page.getViewport({ scale: 0.25, rotation: effectiveRot });
-      canvas.width = thumbViewport.width;
-      canvas.height = thumbViewport.height;
+      const thumbViewport = page.getViewport({ scale: 0.22, rotation: effectiveRot });
+      canvas.width = Math.floor(thumbViewport.width);
+      canvas.height = Math.floor(thumbViewport.height);
       const ctx = canvas.getContext('2d');
       await page.render({ canvasContext: ctx, viewport: thumbViewport }).promise;
     } catch (e) {
@@ -797,8 +971,12 @@ export class PDFViewerEngine {
     const prev = this.thumbnailsContainer?.querySelector('.thumbnail-item.active');
     if (prev) prev.classList.remove('active');
     const curr = document.getElementById(`thumb-${pageNum}`);
-    if (curr) {
-      curr.classList.add('active');
+    if (!curr) return;
+    curr.classList.add('active');
+    // Only scroll the sidebar when the thumbnails pane is actually visible.
+    // Calling scrollIntoView while another tab is open caused surprise jumps.
+    const pane = document.getElementById('tab-thumbnails');
+    if (!pane || pane.classList.contains('active')) {
       curr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }

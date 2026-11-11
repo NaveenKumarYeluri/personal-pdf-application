@@ -271,6 +271,7 @@ export class PDFAnnotatorEngine {
         data: annot
       });
       this.redoStack = [];
+      this._notifyAnnotationsChanged();
     }
 
     this.currentPath = [];
@@ -394,6 +395,7 @@ export class PDFAnnotatorEngine {
 
     if (changed) {
       this._redrawPageAnnotations(pageNum);
+      this._notifyAnnotationsChanged();
     }
   }
 
@@ -1069,6 +1071,7 @@ export class PDFAnnotatorEngine {
       edit
     });
     this.redoStack = [];
+    this._notifyAnnotationsChanged();
   }
 
   revertInPlaceEdit(span, pageNum) {
@@ -1089,6 +1092,23 @@ export class PDFAnnotatorEngine {
     this.inPlaceEdits.clear();
     this.activeInPlaceSpan = null;
     this.activeTextBox = null;
+    this._notifyAnnotationsChanged();
+  }
+
+  /**
+   * Canvas markup does not create DOM nodes, so the sidebar's MutationObserver
+   * cannot see it. Ping the UI when the annotations tab is open.
+   */
+  _notifyAnnotationsChanged() {
+    if (typeof document === 'undefined') return;
+    const pane = document.getElementById('tab-annotations');
+    if (!pane || !pane.classList.contains('active')) return;
+    clearTimeout(this._annotSyncTimer);
+    this._annotSyncTimer = setTimeout(() => {
+      if (typeof window !== 'undefined' && window.app?.ui?.syncAnnotationsList) {
+        window.app.ui.syncAnnotationsList();
+      }
+    }, 100);
   }
 
   setFontFamily(family) {
@@ -1208,6 +1228,7 @@ export class PDFAnnotatorEngine {
             annotation: annotObj
           });
           this.redoStack = [];
+          this._notifyAnnotationsChanged();
 
           sel.removeAllRanges();
           return false;
@@ -1279,6 +1300,7 @@ export class PDFAnnotatorEngine {
             annotation: annotObj
           });
           this.redoStack = [];
+          this._notifyAnnotationsChanged();
 
           sel.removeAllRanges();
           return false;
@@ -1545,6 +1567,7 @@ export class PDFAnnotatorEngine {
       action.elements.forEach(el => this._reattachElement(el, action.pageNum));
       this._redrawPageAnnotations(action.pageNum);
     }
+    this._notifyAnnotationsChanged();
     return true;
   }
 
@@ -1615,6 +1638,7 @@ export class PDFAnnotatorEngine {
         }
       });
     }
+    this._notifyAnnotationsChanged();
     return true;
   }
 

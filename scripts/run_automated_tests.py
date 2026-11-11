@@ -481,6 +481,53 @@ def run_all_tests():
          ".placed-stamp" in annot_js[annot_js.find("_onMouseDown(e) {"):annot_js.find("_onMouseMove(e) {")])
 
     # =========================================================================
+    # 17. Zoom Anchoring, Thumbnail Pipeline & Annotation Sidebar Verification
+    # =========================================================================
+    print("\n--- 17. Zoom Anchor, Thumbnail Pipeline & Annotation Sidebar Verification ---")
+    test("pdf-viewer.js captures the top-of-viewport page and fractional offset before re-render",
+         "_captureScrollAnchor()" in viewer_js and "ratio: r.height > 0 ? (cRect.top - r.top) / r.height : 0" in viewer_js)
+    test("pdf-viewer.js restores the scroll anchor after resizing page wrappers",
+         "_restoreScrollAnchor(anchor)" in viewer_js and
+         "wrapper.style.width = `${width}px`" in viewer_js and
+         "wrapper.style.height = `${height}px`" in viewer_js)
+    test("pdf-viewer.js suppresses scroll/IntersectionObserver page tracking while re-rendering",
+         "this._suppressScrollTracking = true;" in viewer_js and
+         "if (this._suppressScrollTracking) return;" in viewer_js and
+         "mostVisibleEntry.time < (this._renderStartTime || 0)" in viewer_js)
+    test("pdf-viewer.js only appends/observes newly created wrappers so page order is not reshuffled",
+         "const isNewWrapper = !pageWrapper;" in viewer_js and
+         "if (isNewWrapper) {" in viewer_js)
+    test("pdf-viewer.js builds thumbnails from already-rendered page canvases with a PDF.js fallback",
+         "_renderThumbnailFromPageCanvas" in viewer_js and
+         "document.getElementById(`page-canvas-${pageNum}`)" in viewer_js and
+         "await this._renderThumbnailCanvas(pageNum, canvas);" in viewer_js)
+    test("pdf-viewer.js rejects stale page canvases when thumbnails are refreshed after rotation",
+         "canvas.dataset.viewerRotation = String(this.rotation || 0);" in viewer_js and
+         "source.dataset.viewerRotation !== String(this.rotation || 0)" in viewer_js)
+    test("pdf-viewer.js shows thumbnail skeletons before progressive fill",
+         "thumb-loading" in viewer_js and
+         "thumbnail-shimmer" in viewer_css)
+    test("ui.js groups canvas highlights, ink and shapes by page in the annotations sidebar",
+         "const typeMeta = {" in ui_js and
+         "highlighter: { icon:" in ui_js and
+         "underline: { icon:" in ui_js and
+         "strikethrough: { icon:" in ui_js and
+         "row.dataset.page = String(item.pageNum);" in ui_js)
+    test("ui.js annotates sidebar rows with a safe type/page and uses textContent for labels",
+         "row.dataset.type = item.type;" in ui_js and
+         "label.textContent = item.label;" in ui_js)
+    test("ui.js auto-refreshes the annotations tab while it is open",
+         "_initAnnotationsAutoSync()" in ui_js and
+         "new MutationObserver(schedule)" in ui_js)
+    test("pdf-annotator.js notifies the sidebar after canvas markup changes",
+         "_notifyAnnotationsChanged()" in annot_js and
+         "this._notifyAnnotationsChanged();" in annot_js)
+    test("drawing never calls burnAnnotationsToPdf or persists session bytes",
+         annot_js.count("burnAnnotationsToPdf(") == 1 and "saveActiveDocument" not in annot_js)
+    test("annotation burning stays limited to explicit save, save-as, organizer apply and protect",
+         app_js.count("burnAnnotationsToPdf(") == 4)
+
+    # =========================================================================
     # Summary
     # =========================================================================
     print("\n" + "=" * 75)

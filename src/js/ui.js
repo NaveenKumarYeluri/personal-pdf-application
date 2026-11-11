@@ -18,8 +18,33 @@ export class UIController {
     this._initModals();
     this._initTheme();
     this._initMaterialMobileUI();
+    this._initAnnotationsAutoSync();
     if (this.app?.annotator) this.app.annotator.ui = this;
     this.setMode('view');
+  }
+
+  /**
+   * Keep the Annotations sidebar in sync while it is visible: newly added text
+   * boxes, notes, stamps and in-place edits are DOM mutations, so observing the
+   * page container covers them without instrumenting every element handler.
+   */
+  _initAnnotationsAutoSync() {
+    const target = document.getElementById('pdf-viewer');
+    if (!target || typeof MutationObserver === 'undefined') return;
+
+    let timer = null;
+    const schedule = () => {
+      const pane = document.getElementById('tab-annotations');
+      if (!pane || !pane.classList.contains('active')) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => this.syncAnnotationsList(), 120);
+    };
+    this._annotationsObserver = new MutationObserver(schedule);
+    this._annotationsObserver.observe(target, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
   }
 
   _initRightToolsPane() {
@@ -2287,67 +2312,108 @@ export class UIController {
     list.innerHTML = '';
 
     const items = [];
+    const totalPages = this.app.viewer?.totalPages || 0;
 
-    // 1. Text boxes & sticky notes & stamps & in-place edits from pages
-    document.querySelectorAll('.page-wrapper').forEach(w => {
-      const pageNum = parseInt(w.id.replace('page-wrapper-', ''), 10) || 1;
+    // 1. Text boxes, sticky notes, stamps and in-place edits from the page DOM.
+    const wrappers = Array.from(document.querySelectorAll('.page-wrapper'));
+    wrappers.sort((a, b) => {
+      const na = parseInt(a.dataset.pageNumber || a.id.replace('page-wrapper-', ''), 10) || 0;
+      const nb = parseInt(b.dataset.pageNumber || b.id.replace('page-wrapper-', ''), 10) || 0;
+      return na - nb;
+    });
+
+    const shortText = (value, max = 28) => {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      return text.length > max ? `${text.substring(0, max)}…` : text;
+    };
+
+    wrappers.forEach(w => {
+      const pageNum = parseInt(w.dataset.pageNumber || w.id.replace('page-wrapper-', ''), 10) || 1;
 
       // Textboxes
       w.querySelectorAll('.annotation-textbox:not(.in-place-editor)').forEach(tb => {
-        const text = (tb.innerText || '').trim();
+        const content = tb.querySelector('.textbox-content') || tb;
+        const text = shortText(content.innerText || content.textContent);
         items.push({
           type: 'text',
           icon: 'T',
-          label: text ? `Text: "${text.substring(0, 25)}..."` : 'Text Box',
+          label: text ? `Text box: “${text}”` : 'Empty text box',
           pageNum,
           el: tb
         });
       });
 
       // Sticky notes
-      w.querySelectorAll('.sticky-note').forEach(note => {
-        const text = (note.querySelector('textarea')?.value || '').trim();
+      w.querySelectorAll('.sticky-note, .sticky-note-container').forEach(note => {
+        const text = shortText(note.querySelector('textarea')?.value || '');
         items.push({
           type: 'note',
           icon: '💬',
-          label: text ? `Note: "${text.substring(0, 25)}..."` : 'Sticky Note',
+          label: text ? `Note: “${text}”` : 'Sticky note',
           pageNum,
           el: note
         });
       });
 
-      // Stamps
+      // Stamps / signatures
       w.querySelectorAll('.placed-stamp').forEach(stamp => {
         const badge = stamp.querySelector('.stamp-badge');
         items.push({
           type: 'stamp',
           icon: '✍️',
-          label: badge ? `Stamp: ${badge.textContent}` : 'Stamp / Signature',
+          label: badge ? `Stamp: ${shortText(badge.textContent)}` : 'Stamp / Signature',
           pageNum,
           el: stamp
         });
       });
 
-      // In-place edits
+      // In-place text edits
       w.querySelectorAll('.textLayer span.in-place-modified, .textLayer span.inline-editing').forEach(span => {
         items.push({
           type: 'edit',
           icon: '📝',
-          label: `Edit: "${(span.textContent || '').substring(0, 25)}..."`,
+          label: `Edited text: “${shortText(span.innerText || span.textContent)}”`,
           pageNum,
           el: span
         });
       });
     });
 
-    // Ink drawings
-    if (this.app.annotator?.annotations) {
-      for (const [pageNum, strokes] of this.app.annotator.annotations.entries()) {
-        if (strokes && strokes.length > 0) {
+    // 2. Canvas markup (highlighter, pen, shapes, underline, strikethrough).
+    //    Group by page + type so highlighted pages always appear here, even
+    //    when the user used the highlighter brush instead of a text markup.
+    const annotator = this.app.annotator;
+    if (annotator?.annotations) {
+      const typeMeta = {
+        highlighter: { icon: '🖍️', label: 'Highlight' },
+        pen: { icon: '✏️', label: 'Freehand drawing' },
+        rectangle: { icon: '▭', label: 'Rectangle' },
+        circle: { icon: '◯', label: 'Circle' },
+        line: { icon: '╱', label: 'Line' },
+        arrow: { icon: '➜', label: 'Arrow' },
+        underline: { icon: 'U̲', label: 'Underline markup' },
+        strikethrough: { icon: 'S̶', label: 'Strikethrough markup' }
+      };
+
+      const orderedPages = Array.from(annotator.annotations.entries())
+        .map(([pageNum, annots]) => [parseInt(pageNum, 10), annots])
+        .filter(([pageNum, annots]) => Number.isFinite(pageNum) &&
+          (!totalPages || (pageNum >= 1 && pageNum <= totalPages)) &&
+          Array.isArray(annots) && annots.length > 0)
+        .sort((a, b) => a[0] - b[0]);
+
+      for (const [pageNum, annots] of orderedPages) {
+        const counts = new Map();
+        annots.forEach(a => {
+          const type = typeMeta[a?.type] ? a.type : 'pen';
+          counts.set(type, (counts.get(type) || 0) + 1);
+        });
+        for (const [type, count] of counts) {
+          const meta = typeMeta[type];
           items.push({
-            type: 'ink',
-            icon: '✏️',
-            label: `Drawings (${strokes.length} strokes)`,
+            type: type === 'highlighter' ? 'highlight' : type,
+            icon: meta.icon,
+            label: `${meta.label} (${count})`,
             pageNum,
             el: document.getElementById(`annot-canvas-${pageNum}`)
           });
@@ -2359,6 +2425,7 @@ export class UIController {
       list.innerHTML = `
         <div class="empty-state">
           No annotations added yet.<br>
+          Use the Highlighter 🖍️, Pen ✏️, Text T or Note 💬 tools, then return here to see every marked page.<br>
           <button id="btn-start-annotating" class="btn btn-primary btn-sm" style="margin-top:10px; cursor:pointer;">✏️ Start Annotating</button>
         </div>
       `;
@@ -2369,20 +2436,41 @@ export class UIController {
       return;
     }
 
+    const typeOrder = {
+      highlight: 0, underline: 1, strikethrough: 2, ink: 3, pen: 3,
+      rectangle: 4, circle: 4, line: 4, arrow: 4,
+      text: 5, note: 6, stamp: 7, edit: 8
+    };
+    items.sort((a, b) => a.pageNum - b.pageNum ||
+      ((typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9)) ||
+      a.label.localeCompare(b.label));
+
     items.forEach(item => {
       const row = document.createElement('div');
       row.className = 'annot-list-item';
-      row.innerHTML = `
-        <div class="annot-list-left">
-          <span>${item.icon}</span>
-          <span>${item.label}</span>
-        </div>
-        <span class="annot-page-badge">Page ${item.pageNum}</span>
-      `;
+      row.dataset.page = String(item.pageNum);
+      row.dataset.type = item.type;
+
+      const left = document.createElement('div');
+      left.className = 'annot-list-left';
+      const icon = document.createElement('span');
+      icon.textContent = item.icon;
+      const label = document.createElement('span');
+      // textContent keeps document/user text from being parsed as markup.
+      label.textContent = item.label;
+      left.appendChild(icon);
+      left.appendChild(label);
+
+      const badge = document.createElement('span');
+      badge.className = 'annot-page-badge';
+      badge.textContent = `Page ${item.pageNum}`;
+
+      row.appendChild(left);
+      row.appendChild(badge);
+
       row.onclick = () => {
         this.app.viewer.goToPage(item.pageNum);
         if (item.el) {
-          item.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           item.el.style.transition = 'box-shadow 0.3s ease';
           item.el.style.boxShadow = '0 0 0 3px #ef4444';
           setTimeout(() => {
