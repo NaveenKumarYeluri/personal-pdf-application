@@ -615,6 +615,75 @@ def main():
         record("Open picker retains a writable handle",
                picker_open["hasHandle"] and picker_open["name"] == "picked.pdf", picker_open)
 
+        # ---------- Native path survives a restart (session restore) ----------
+        persist = page.evaluate("""() => {
+          window.__TAURI__ = { core: { invoke: async () => null } };
+          window.app._setSaveTarget({ kind: 'native', path: 'C:/Users/Test/Documents/persist.pdf' });
+          const stored = localStorage.getItem('personalPdfSuite.lastFilePath');
+          window.app._setSaveTarget(null);
+          const cleared = localStorage.getItem('personalPdfSuite.lastFilePath');
+          delete window.__TAURI__;
+          return { stored, cleared };
+        }""")
+        record("Native save path is remembered across restarts",
+               persist["stored"] == "C:/Users/Test/Documents/persist.pdf", persist)
+        record("Clearing the document forgets the remembered path",
+               persist["cleared"] is None, persist)
+
+        restored = page.evaluate("""async (b64) => {
+          const path = 'C:/Users/Test/Documents/restored.pdf';
+          localStorage.setItem('personalPdfSuite.lastFilePath', path);
+          window.__TAURI__ = { core: { invoke: async (cmd) => (cmd === 'read_pdf_file' ? b64 : null) } };
+          window.app.currentPdfBytes = null;
+          window.app.currentFilePath = null;
+          window.app.currentFileHandle = null;
+          await window.app._restoreSession();
+          const result = {
+            name: window.app.currentDocName,
+            path: window.app.currentFilePath,
+            stored: localStorage.getItem('personalPdfSuite.lastFilePath'),
+            bytes: window.app.currentPdfBytes?.length || 0
+          };
+          delete window.__TAURI__;
+          return result;
+        }""", pdf_b64)
+        record("Restored session re-reads the original file from disk",
+               restored["name"] == "restored.pdf" and
+               restored["path"] == "C:/Users/Test/Documents/restored.pdf" and
+               restored["stored"] == "C:/Users/Test/Documents/restored.pdf" and
+               restored["bytes"] > 1000, restored)
+
+        # ---------- Native drag & drop keeps the real file path ----------
+        dropped = page.evaluate("""async (b64) => {
+          let handler = null;
+          window.__TAURI__ = {
+            core: { invoke: async (cmd) => (cmd === 'read_pdf_file' ? b64 : null) },
+            webviewWindow: {
+              getCurrentWebviewWindow: () => ({
+                onDragDropEvent: (cb) => { handler = cb; return Promise.resolve(() => {}); }
+              })
+            }
+          };
+          window.app._setupTauriFileDrop();
+          if (handler) {
+            await handler({ payload: { type: 'drop', paths: ['C:/Users/Test/Documents/dropped.pdf'] } });
+          }
+          const result = {
+            registered: typeof handler === 'function',
+            name: window.app.currentDocName,
+            path: window.app.currentFilePath,
+            stored: localStorage.getItem('personalPdfSuite.lastFilePath'),
+            bytes: window.app.currentPdfBytes?.length || 0
+          };
+          delete window.__TAURI__;
+          return result;
+        }""", pdf_b64)
+        record("Dropped desktop files keep their real path",
+               dropped["registered"] and dropped["name"] == "dropped.pdf" and
+               dropped["path"] == "C:/Users/Test/Documents/dropped.pdf" and
+               dropped["stored"] == "C:/Users/Test/Documents/dropped.pdf" and
+               dropped["bytes"] > 1000, dropped)
+
         # ---------- Save As switches to the chosen new file ----------
         save_as = page.evaluate("""async () => {
           let written = 0;

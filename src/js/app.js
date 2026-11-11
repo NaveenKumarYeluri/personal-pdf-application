@@ -12,7 +12,7 @@ import { PDFExportEngine } from './pdf-export.js';
 import { ScreenWakeLockManager } from './wake-lock.js';
 import { StorageEngine } from './storage.js';
 import { UIController } from './ui.js';
-import { FileAccessManager } from './file-access.js';
+import { FileAccessManager, fileNameFromPath } from './file-access.js';
 
 class PersonalPDFApp {
   constructor() {
@@ -34,6 +34,7 @@ class PersonalPDFApp {
     this._bindWatermarkEvents();
     this._bindProtectEvents();
     this._setupElectronBridge();
+    this._setupTauriFileDrop();
     this._initBackButton();
     this._initAppStatePersistence();
     this._restoreSession();
@@ -991,6 +992,37 @@ class PersonalPDFApp {
   }
 
   /**
+   * Desktop drag & drop: Tauri reports real filesystem paths, so files dropped
+   * on the window can be saved back in place (the HTML5 drop event gives no
+   * usable path in the native shell).
+   */
+  _setupTauriFileDrop() {
+    if (!this.fileAccess.canUseNativeDesktop) return;
+    try {
+      const win = window.__TAURI__?.webviewWindow?.getCurrentWebviewWindow?.();
+      if (!win?.onDragDropEvent) return;
+      win.onDragDropEvent(async (event) => {
+        const payload = event?.payload || {};
+        if (payload.type !== 'drop') return;
+        const path = (payload.paths || []).find(p => /\.pdf$/i.test(p));
+        if (!path) return;
+        try {
+          const bytes = await this.fileAccess.readNativePdf(path);
+          const name = fileNameFromPath(path);
+          await this.loadArrayBuffer(bytes, name);
+          this._setSaveTarget({ kind: 'native', path });
+          this.ui.showToast(`Opened: ${name}`, 'success');
+        } catch (err) {
+          console.error('Could not open dropped file:', err);
+          this.ui.showToast(`Could not open dropped file: ${err.message}`, 'error');
+        }
+      });
+    } catch (err) {
+      console.warn('Native drag & drop is unavailable:', err);
+    }
+  }
+
+  /**
    * Shared Open entry point for every toolbar, menu and keyboard shortcut.
    * Uses native dialogs / File System Access API when available and falls back
    * to the hidden <input type="file"> everywhere else (Android, Firefox, ...).
@@ -1030,14 +1062,17 @@ class PersonalPDFApp {
     if (!target) {
       this.currentFileHandle = null;
       this.currentFilePath = null;
+      this.fileAccess.storePath(null);
       return;
     }
     if (target.kind === 'handle') {
       this.currentFileHandle = target.handle;
       this.currentFilePath = null;
+      this.fileAccess.storePath(null);
     } else {
       this.currentFilePath = target.path || null;
       this.currentFileHandle = null;
+      this.fileAccess.storePath(this.currentFilePath);
     }
   }
 
@@ -1304,6 +1339,11 @@ class PersonalPDFApp {
       //    must run before the burn so the picker keeps user activation.
       let chosen = null;
       if (this.fileAccess.canPickSaveTarget) {
+        if (!existingTarget) {
+          this.ui.setStatus(forceNewTarget
+            ? 'Choose a location for the new PDF copy...'
+            : 'Choose where to save this document (no linked file yet)...');
+        }
         chosen = await this.fileAccess.pickSaveTarget(
           forceNewTarget ? this._suggestCopyName() : this.currentDocName
         );
@@ -1397,20 +1437,46 @@ class PersonalPDFApp {
   async _restoreSession() {
     try {
       const saved = await this.storage.getActiveDocument();
-      if (saved && saved.bytes && !this.currentPdfBytes) {
+      if (this.currentPdfBytes) return;
+
+      // Desktop: the original path is remembered, so re-read the current file
+      // from disk and keep saving straight back into it after a restart.
+      const storedPath = this.fileAccess.getStoredPath();
+      if (storedPath) {
+        try {
+          const bytes = await this.fileAccess.readNativePdf(storedPath);
+          if (bytes && bytes.length) {
+            const name = fileNameFromPath(storedPath);
+            await this.loadArrayBuffer(bytes, name, true);
+            this._setSaveTarget({ kind: 'native', path: storedPath });
+            this._restoreSessionPage(saved);
+            this.ui.showToast(`Restored document: ${name}`, 'info');
+            return;
+          }
+        } catch (err) {
+          console.warn('Saved document path is no longer available:', err);
+          this.fileAccess.storePath(null);
+        }
+      }
+
+      if (saved && saved.bytes) {
         console.log('Restoring previous PDF session:', saved.name);
-        // A restored session has no live file handle/path anymore.
+        // A session restored from memory has no known file handle/path.
         this._setSaveTarget(null);
         await this.loadArrayBuffer(saved.bytes, saved.name, false);
-        if (saved.page && saved.page > 1) {
-          setTimeout(() => {
-            this.viewer.goToPage(saved.page);
-          }, 350);
-        }
+        this._restoreSessionPage(saved);
         this.ui.showToast(`Restored document: ${saved.name}`, 'info');
       }
     } catch (err) {
       console.warn('Could not restore session:', err);
+    }
+  }
+
+  _restoreSessionPage(saved) {
+    if (saved?.page && saved.page > 1) {
+      setTimeout(() => {
+        this.viewer.goToPage(saved.page);
+      }, 350);
     }
   }
 

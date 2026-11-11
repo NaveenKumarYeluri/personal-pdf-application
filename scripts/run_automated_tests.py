@@ -271,6 +271,13 @@ def run_all_tests():
          "result.fallback" in app_js and "fallback: true" in file_access_js)
     test("download fallback is preserved for Android/Firefox/restored sessions",
          "this.exporter.downloadFile(outputBytes, fallbackName" in app_js)
+    test("restored desktop sessions keep their original file path",
+         "getStoredPath" in file_access_js and "storePath" in file_access_js and
+         "readNativePdf(storedPath)" in app_js and
+         "_setSaveTarget({ kind: 'native', path: storedPath })" in app_js)
+    test("native drag & drop opens files with their real path",
+         "onDragDropEvent" in app_js and "_setupTauriFileDrop" in app_js and
+         "readNativePdf(path)" in app_js)
 
     # =========================================================================
     # 9. Search Highlighting Precision

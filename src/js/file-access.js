@@ -29,10 +29,12 @@ function base64ToBytes(text) {
   return bytes;
 }
 
-function fileNameFromPath(path) {
+export function fileNameFromPath(path) {
   const parts = String(path || '').split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : 'document.pdf';
 }
+
+const STORED_PATH_KEY = 'personalPdfSuite.lastFilePath';
 
 export class FileAccessManager {
   /** True when running inside the Tauri desktop shell with the IPC bridge. */
@@ -72,6 +74,35 @@ export class FileAccessManager {
     if (!target) return 'Downloads folder';
     if (target.kind === 'native') return target.path;
     return 'Original file (in place)';
+  }
+
+  /**
+   * Remember the native file path so a restored session keeps saving to the
+   * same document after the app is restarted.
+   */
+  getStoredPath() {
+    if (!this.canUseNativeDesktop) return null;
+    try {
+      return localStorage.getItem(STORED_PATH_KEY) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  storePath(path) {
+    if (!this.canUseNativeDesktop) return;
+    try {
+      if (path) localStorage.setItem(STORED_PATH_KEY, path);
+      else localStorage.removeItem(STORED_PATH_KEY);
+    } catch (_) {
+      // Storage may be unavailable; saving still works for this session.
+    }
+  }
+
+  /** Read a PDF straight from a known native path (no dialog). */
+  async readNativePdf(path) {
+    const data = await this._invoke('read_pdf_file', { path });
+    return base64ToBytes(String(data || ''));
   }
 
   _invoke(command, args = {}) {
