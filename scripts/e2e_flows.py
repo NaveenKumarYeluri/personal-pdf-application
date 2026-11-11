@@ -615,6 +615,32 @@ def main():
         record("Open picker retains a writable handle",
                picker_open["hasHandle"] and picker_open["name"] == "picked.pdf", picker_open)
 
+        # ---------- Save As switches to the chosen new file ----------
+        save_as = page.evaluate("""async () => {
+          let written = 0;
+          window.showSaveFilePicker = async () => ({
+            name: 'renamed.pdf',
+            createWritable: async () => ({
+              write: async (data) => { written = data.length; },
+              close: async () => {},
+              abort: async () => {}
+            }),
+            queryPermission: async () => 'granted',
+            requestPermission: async () => 'granted'
+          });
+          await window.app.saveAsDocument();
+          const result = {
+            name: window.app.currentDocName,
+            written,
+            keptHandleName: window.app.currentFileHandle?.name || null
+          };
+          delete window.showSaveFilePicker;
+          return result;
+        }""")
+        record("Save As switches the document to the chosen new file",
+               save_as["name"] == "renamed.pdf" and save_as["written"] > 1000 and
+               save_as["keptHandleName"] == "renamed.pdf", save_as)
+
         # ---------- Platforms without file APIs still download ----------
         fallback_save = page.evaluate("""async () => {
           window.showOpenFilePicker = undefined;
