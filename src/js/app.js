@@ -1009,8 +1009,10 @@ class PersonalPDFApp {
         try {
           const bytes = await this.fileAccess.readNativePdf(path);
           const name = fileNameFromPath(path);
-          await this.loadArrayBuffer(bytes, name);
+          // Link the target before rendering so an early Save can never
+          // fall back to the location picker.
           this._setSaveTarget({ kind: 'native', path });
+          await this.loadArrayBuffer(bytes, name);
           this.ui.showToast(`Opened: ${name}`, 'success');
         } catch (err) {
           console.error('Could not open dropped file:', err);
@@ -1037,8 +1039,10 @@ class PersonalPDFApp {
         document.getElementById('file-input')?.click();
         return;
       }
-      await this.loadArrayBuffer(result.bytes, result.name);
+      // Link the new save target before rendering so an early Save cannot
+      // write to the previously opened document.
       this._setSaveTarget(result.target || null);
+      await this.loadArrayBuffer(result.bytes, result.name);
       this.ui.setStatus(`Ready: ${result.name}`);
     } catch (err) {
       console.error('Open document failed:', err);
@@ -1447,8 +1451,8 @@ class PersonalPDFApp {
           const bytes = await this.fileAccess.readNativePdf(storedPath);
           if (bytes && bytes.length) {
             const name = fileNameFromPath(storedPath);
-            await this.loadArrayBuffer(bytes, name, true);
             this._setSaveTarget({ kind: 'native', path: storedPath });
+            await this.loadArrayBuffer(bytes, name, true);
             this._restoreSessionPage(saved);
             this.ui.showToast(`Restored document: ${name}`, 'info');
             return;
