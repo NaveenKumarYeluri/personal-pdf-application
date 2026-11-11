@@ -72,11 +72,27 @@ fn write_atomic(path: PathBuf, bytes: &[u8]) -> Result<(), String> {
     let temp = parent.join(format!(".{}.{}.tmp", file_name, std::process::id()));
 
     std::fs::write(&temp, bytes).map_err(|e| format!("Could not write file: {e}"))?;
-    if let Err(err) = std::fs::rename(&temp, &path) {
-        let _ = std::fs::remove_file(&temp);
-        return Err(format!("Could not replace the original file: {err}"));
+
+    // Antivirus/cloud-sync tools can briefly hold the freshly written file, so
+    // retry the atomic swap a couple of times before giving up.
+    let mut last_error = None;
+    for attempt in 0..3 {
+        match std::fs::rename(&temp, &path) {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                last_error = Some(err);
+                if attempt < 2 {
+                    std::thread::sleep(std::time::Duration::from_millis(60));
+                }
+            }
+        }
     }
-    Ok(())
+
+    let _ = std::fs::remove_file(&temp);
+    Err(format!(
+        "Could not replace the original file: {}",
+        last_error.map(|e| e.to_string()).unwrap_or_default()
+    ))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
