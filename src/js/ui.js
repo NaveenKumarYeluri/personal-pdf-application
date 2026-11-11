@@ -176,7 +176,7 @@ export class UIController {
           sheetEdit?.classList.toggle('open');
           scrim?.classList.toggle('open');
         } else {
-          document.getElementById('file-input')?.click();
+          this.app.openDocumentPicker();
         }
       };
     }
@@ -209,7 +209,7 @@ export class UIController {
     });
 
     document.getElementById('m3-btn-open')?.addEventListener('click', () => {
-      document.getElementById('file-input')?.click();
+      this.app.openDocumentPicker();
     });
 
     document.getElementById('m3-btn-save')?.addEventListener('click', () => {
@@ -454,7 +454,7 @@ export class UIController {
 
     document.getElementById('m3-drawer-open')?.addEventListener('click', () => {
       closeAllSheets();
-      document.getElementById('file-input')?.click();
+      this.app.openDocumentPicker();
     });
     document.getElementById('m3-drawer-annotate')?.addEventListener('click', () => {
       closeAllSheets();

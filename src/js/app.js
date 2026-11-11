@@ -12,11 +12,18 @@ import { PDFExportEngine } from './pdf-export.js';
 import { ScreenWakeLockManager } from './wake-lock.js';
 import { StorageEngine } from './storage.js';
 import { UIController } from './ui.js';
+import { FileAccessManager } from './file-access.js';
 
 class PersonalPDFApp {
   constructor() {
     this.currentDocName = 'document.pdf';
     this.currentPdfBytes = null;
+    // Where the open document lives, so Save can write back to it instead of
+    // downloading a second copy. Exactly one of these is set at any time.
+    this.currentFilePath = null;      // Tauri desktop: absolute path on disk
+    this.currentFileHandle = null;    // Chromium: FileSystemFileHandle
+    this.fileAccess = new FileAccessManager();
+    this._openPickerInFlight = false;
     this.organizerCards = [];
     this.wakeLock = new ScreenWakeLockManager();
     this.storage = new StorageEngine();
@@ -103,8 +110,8 @@ class PersonalPDFApp {
     const btnSaveAsPdf = document.getElementById('btn-save-as-pdf');
     const btnPrint = document.getElementById('btn-print');
 
-    btnOpenFile.onclick = () => fileInput.click();
-    btnWelcomeOpen.onclick = () => fileInput.click();
+    btnOpenFile.onclick = () => this.openDocumentPicker();
+    btnWelcomeOpen.onclick = () => this.openDocumentPicker();
 
     // Tab close
     const btnTabClose = document.getElementById('btn-tab-close');
@@ -112,6 +119,7 @@ class PersonalPDFApp {
       btnTabClose.onclick = async (e) => {
         e.stopPropagation();
         this.currentPdfBytes = null;
+        this._setSaveTarget(null);
         this.viewer.pdfDoc = null;
         if (this.storage) await this.storage.clearActiveDocument();
         if (this.wakeLock) this.wakeLock.release();
@@ -134,6 +142,8 @@ class PersonalPDFApp {
     fileInput.onchange = (e) => {
       const file = e.target.files[0];
       if (file) this.loadFile(file);
+      // Allow picking the same file again (e.g. after it changed on disk).
+      e.target.value = '';
     };
 
     btnLoadSample.onclick = () => this.loadSamplePDF();
@@ -502,7 +512,7 @@ class PersonalPDFApp {
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'o' || e.key === 'O') {
           e.preventDefault();
-          fileInput.click();
+          this.openDocumentPicker();
         } else if (e.key === 'z' || e.key === 'Z') {
           e.preventDefault();
           if (e.shiftKey) {
@@ -980,10 +990,82 @@ class PersonalPDFApp {
     }
   }
 
+  /**
+   * Shared Open entry point for every toolbar, menu and keyboard shortcut.
+   * Uses native dialogs / File System Access API when available and falls back
+   * to the hidden <input type="file"> everywhere else (Android, Firefox, ...).
+   */
+  async openDocumentPicker() {
+    if (this._openPickerInFlight) return;
+    this._openPickerInFlight = true;
+    try {
+      const result = await this.fileAccess.openPdf();
+      if (!result || result.cancelled) return;
+      if (result.fallback) {
+        document.getElementById('file-input')?.click();
+        return;
+      }
+      await this.loadArrayBuffer(result.bytes, result.name);
+      this._setSaveTarget(result.target || null);
+      this.ui.setStatus(`Ready: ${result.name}`);
+    } catch (err) {
+      console.error('Open document failed:', err);
+      this.ui.showToast(`Could not open document: ${err.message}`, 'error');
+      this.ui.setStatus(`Open error: ${err.message}`);
+    } finally {
+      this._openPickerInFlight = false;
+    }
+  }
+
   async loadFile(file) {
+    // Files arriving through <input type="file"> or drag & drop expose no
+    // writable location, so the previous save target must be dropped.
+    this._setSaveTarget(null);
     this.currentDocName = file.name;
     const arrayBuffer = await file.arrayBuffer();
     await this.loadArrayBuffer(arrayBuffer, file.name);
+  }
+
+  _setSaveTarget(target) {
+    if (!target) {
+      this.currentFileHandle = null;
+      this.currentFilePath = null;
+      return;
+    }
+    if (target.kind === 'handle') {
+      this.currentFileHandle = target.handle;
+      this.currentFilePath = null;
+    } else {
+      this.currentFilePath = target.path || null;
+      this.currentFileHandle = null;
+    }
+  }
+
+  _currentSaveTarget() {
+    if (this.currentFilePath && this.fileAccess.canUseNativeDesktop) {
+      return { kind: 'native', path: this.currentFilePath };
+    }
+    if (this.currentFileHandle) {
+      return { kind: 'handle', handle: this.currentFileHandle };
+    }
+    return null;
+  }
+
+  _suggestCopyName() {
+    const baseName = (this.currentDocName || 'document.pdf').replace(/\.pdf$/i, '');
+    return `${baseName}_copy.pdf`;
+  }
+
+  _setDocumentName(name) {
+    if (!name) return;
+    this.currentDocName = name;
+    const titleEl = document.getElementById('current-doc-name');
+    if (titleEl) titleEl.textContent = name;
+    const m3Title = document.getElementById('m3-doc-title');
+    if (m3Title) m3Title.textContent = name;
+    if (this.storage && this.currentPdfBytes) {
+      this.storage.saveActiveDocument(name, this.currentPdfBytes, this.viewer?.currentPage || 1);
+    }
   }
 
   async loadArrayBuffer(data, docName = 'document.pdf', persist = true) {
@@ -1151,6 +1233,7 @@ class PersonalPDFApp {
       });
 
       const pdfBytes = await doc.save();
+      this._setSaveTarget(null);
       await this.loadArrayBuffer(pdfBytes, 'Personal_PDF_Suite_Welcome.pdf');
       this.ui.showToast('Sample PDF generated & loaded', 'success');
     } catch (err) {
@@ -1160,30 +1243,132 @@ class PersonalPDFApp {
   }
 
   async saveDocument() {
+    return this._savePdfToDisk(false);
+  }
+
+  async saveAsDocument() {
+    return this._savePdfToDisk(true);
+  }
+
+  /**
+   * Save (or Save As) the open document.
+   *
+   * Save  -> overwrite the file the document was opened from.
+   * Save As -> always ask for a new location, then keep writing there.
+   *
+   * When no writable location is known (drag & drop, restored session, Android
+   * or browsers without the File System Access API) the legacy download/share
+   * flow is used so every platform keeps working.
+   */
+  async _savePdfToDisk(forceNewTarget) {
     if (!this.currentPdfBytes) {
       alert('No document is open to save.');
       return;
     }
 
-    this.ui.setStatus('Compositing annotations and signatures into PDF...');
+    const existingTarget = forceNewTarget ? null : this._currentSaveTarget();
+    this.ui.setStatus(forceNewTarget
+      ? 'Compositing annotations and saving a new PDF copy...'
+      : 'Saving changes to the open document...');
+
     try {
-      let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
-      const saveName = this.currentDocName;
-      const dlRes = await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
+      // 1. Save straight back into the file the document came from.
+      if (existingTarget) {
+        // Ask for write permission before burning, while the click's user
+        // activation is still fresh (required by Chromium).
+        const writable = existingTarget.kind !== 'handle'
+          || await this.fileAccess.ensureWritable(existingTarget);
+
+        if (writable) {
+          const outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
+          const res = await this.fileAccess.write(existingTarget, outputBytes);
+          if (res.success) {
+            this._reportSaveSuccess(outputBytes, this.currentDocName,
+              this.fileAccess.describeTarget(existingTarget), false);
+            return;
+          }
+          if (res.cancelled) {
+            this.ui.setStatus('Save cancelled');
+            return;
+          }
+          console.error('In-place save failed:', res.error);
+          this.ui.showToast(`Could not update the original file: ${res.error || 'unknown error'}`, 'error');
+        } else {
+          this.ui.showToast('Write access to the original file was denied. Choose where to save.', 'error');
+        }
+        // Fall through so the user can pick a different location instead of
+        // being stuck with a failed save.
+      }
+
+      // 2. Ask for a destination. Native dialogs and the Chromium save picker
+      //    must run before the burn so the picker keeps user activation.
+      let chosen = null;
+      if (this.fileAccess.canPickSaveTarget) {
+        chosen = await this.fileAccess.pickSaveTarget(
+          forceNewTarget ? this._suggestCopyName() : this.currentDocName
+        );
+        if (chosen?.cancelled) {
+          this.ui.setStatus(forceNewTarget ? 'Save As cancelled' : 'Save cancelled');
+          return;
+        }
+        if (chosen?.fallback) chosen = null;
+      }
+
+      // 3. Legacy fallback (Android, Firefox, file://, restored sessions).
+      let fallbackName = this.currentDocName || 'document.pdf';
+      if (!chosen && forceNewTarget) {
+        const defaultName = this._suggestCopyName();
+        const customName = prompt('Save As - Enter name for new PDF copy:', defaultName);
+        if (!customName || !customName.trim()) {
+          this.ui.setStatus('Save As cancelled');
+          return;
+        }
+        fallbackName = customName.trim();
+        if (!fallbackName.toLowerCase().endsWith('.pdf')) {
+          fallbackName += '.pdf';
+        }
+      }
+
+      const outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
+
+      if (chosen) {
+        const res = await this.fileAccess.write(chosen.target, outputBytes);
+        if (res.cancelled) {
+          this.ui.setStatus(forceNewTarget ? 'Save As cancelled' : 'Save cancelled');
+          return;
+        }
+        if (!res.success) {
+          this.ui.showToast(`Save error: ${res.error || 'could not write file'}`, 'error');
+          this.ui.setStatus(`Save error: ${res.error || 'could not write file'}`);
+          return;
+        }
+        this._setSaveTarget(chosen.target);
+        if (chosen.name && (forceNewTarget || !existingTarget)) {
+          // First save to a chosen location (or Save As): the active document
+          // now lives under that new name.
+          this._setDocumentName(chosen.name);
+        }
+        this._reportSaveSuccess(
+          outputBytes,
+          forceNewTarget ? chosen.name : this.currentDocName,
+          this.fileAccess.describeTarget(chosen.target),
+          forceNewTarget
+        );
+        return;
+      }
+
+      const dlRes = await this.exporter.downloadFile(outputBytes, fallbackName, 'application/pdf');
       if (dlRes?.cancelled) {
-        this.ui.setStatus('Save cancelled');
+        this.ui.setStatus(forceNewTarget ? 'Save As cancelled' : 'Save cancelled');
         return;
       }
       if (dlRes && dlRes.success) {
-        const dest = dlRes.destination || 'Downloads folder';
-        this.ui.showExportResultModal({
-          title: 'Document Saved',
-          message: `Changes saved to ${saveName}.`,
-          destination: dest,
-          files: [{ name: saveName, size: outputBytes.length }]
-        });
-        this.ui.showToast(`Saved: ${saveName}`, 'success');
-        this.ui.setStatus(`Saved: ${saveName}`);
+        this._reportSaveSuccess(
+          outputBytes,
+          fallbackName,
+          dlRes.destination || 'Downloads folder',
+          forceNewTarget
+        );
       } else {
         this.ui.showToast('Could not save document', 'error');
       }
@@ -1194,52 +1379,15 @@ class PersonalPDFApp {
     }
   }
 
-  async saveAsDocument() {
-    if (!this.currentPdfBytes) {
-      alert('No document is open to save.');
-      return;
-    }
-
-    const origName = this.currentDocName || 'document.pdf';
-    const baseName = origName.replace(/\.pdf$/i, '');
-    const defaultName = `${baseName}_copy.pdf`;
-
-    const customName = prompt('Save As - Enter name for new PDF copy:', defaultName);
-    if (!customName || !customName.trim()) {
-      return; // Cancelled
-    }
-
-    let saveName = customName.trim();
-    if (!saveName.toLowerCase().endsWith('.pdf')) {
-      saveName += '.pdf';
-    }
-
-    this.ui.setStatus('Compositing annotations and saving new PDF copy...');
-    try {
-      let outputBytes = await this.annotator.burnAnnotationsToPdf(this.currentPdfBytes);
-      const dlRes = await this.exporter.downloadFile(outputBytes, saveName, 'application/pdf');
-      if (dlRes?.cancelled) {
-        this.ui.setStatus('Save As cancelled');
-        return;
-      }
-      if (dlRes && dlRes.success) {
-        const dest = dlRes.destination || 'Downloads folder';
-        this.ui.showExportResultModal({
-          title: 'Save As Complete',
-          message: `New PDF copy saved successfully.`,
-          destination: dest,
-          files: [{ name: saveName, size: outputBytes.length }]
-        });
-        this.ui.showToast(`Saved As: ${saveName}`, 'success');
-        this.ui.setStatus(`Saved new copy: ${saveName}`);
-      } else {
-        this.ui.showToast('Could not save document copy', 'error');
-      }
-    } catch (err) {
-      console.error(err);
-      this.ui.showToast(`Save As error: ${err.message}`, 'error');
-      this.ui.setStatus(`Save As error: ${err.message}`);
-    }
+  _reportSaveSuccess(bytes, name, destination, isCopy) {
+    this.ui.showExportResultModal({
+      title: isCopy ? 'Save As Complete' : 'Document Saved',
+      message: isCopy ? 'New PDF copy saved successfully.' : `Changes saved to ${name}.`,
+      destination: destination || 'Downloads folder',
+      files: [{ name, size: bytes.length }]
+    });
+    this.ui.showToast(`${isCopy ? 'Saved As' : 'Saved'}: ${name}`, 'success');
+    this.ui.setStatus(`${isCopy ? 'Saved As' : 'Saved'}: ${name}`);
   }
 
   saveAsModifiedPdf() {
@@ -1251,6 +1399,8 @@ class PersonalPDFApp {
       const saved = await this.storage.getActiveDocument();
       if (saved && saved.bytes && !this.currentPdfBytes) {
         console.log('Restoring previous PDF session:', saved.name);
+        // A restored session has no live file handle/path anymore.
+        this._setSaveTarget(null);
         await this.loadArrayBuffer(saved.bytes, saved.name, false);
         if (saved.page && saved.page > 1) {
           setTimeout(() => {

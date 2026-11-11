@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """UI flow tests for merge, organizer, undo, selection markup, protect, flatten."""
+import base64
 import json
 import sys
 from pathlib import Path
@@ -524,6 +525,112 @@ def main():
                bool(portrait) and portrait["w"] < portrait["h"] and
                rotated.get("w", 0) > rotated.get("h", 0) and rotated.get("loading") == 0,
                f"portrait {portrait} -> {rotated}")
+
+        # ---------- In-place Save (writes back, no duplicate download) ----------
+        load_sample(page)
+        page.wait_for_timeout(2000)
+        page.click(".mode-tab[data-mode='annotate']")
+        page.wait_for_timeout(400)
+
+        save_handle = page.evaluate("""async () => {
+          window.__written = null;
+          window.__downloadCalled = false;
+          window.__originalDownload = window.app.exporter.downloadFile.bind(window.app.exporter);
+          window.app.exporter.downloadFile = async () => {
+            window.__downloadCalled = true;
+            return { success: true, destination: 'Downloads folder' };
+          };
+          const handle = {
+            name: 'in-place.pdf',
+            createWritable: async () => ({
+              write: async (data) => { window.__written = new Uint8Array(data); },
+              close: async () => {}
+            }),
+            queryPermission: async () => 'granted',
+            requestPermission: async () => 'granted'
+          };
+          window.app.currentFileHandle = handle;
+          window.app.currentFilePath = null;
+          await window.app.saveDocument();
+          window.app.exporter.downloadFile = window.__originalDownload;
+          const w = window.__written;
+          return {
+            wrote: Boolean(w),
+            size: w ? w.length : 0,
+            magic: w ? String.fromCharCode(w[0], w[1], w[2], w[3], w[4]) : '',
+            downloaded: window.__downloadCalled,
+            keptHandle: window.app.currentFileHandle === handle
+          };
+        }""")
+        record("Save writes back into the opened file",
+               save_handle["wrote"] and save_handle["size"] > 1000 and save_handle["magic"] == "%PDF-",
+               save_handle)
+        record("Save no longer downloads a duplicate copy",
+               save_handle["downloaded"] is False, save_handle)
+        record("Save keeps the writable handle for later saves",
+               save_handle["keptHandle"], save_handle)
+
+        # ---------- Native Tauri Save path ----------
+        native_save = page.evaluate("""async () => {
+          const calls = [];
+          window.__TAURI__ = { core: { invoke: async (cmd, args) => {
+            calls.push({ cmd, path: args?.path, bytes: args?.data ? args.data.length : 0 });
+            return null;
+          } } };
+          window.app.currentFileHandle = null;
+          window.app.currentFilePath = 'C:/Users/Test/Documents/native-save.pdf';
+          await window.app.saveDocument();
+          delete window.__TAURI__;
+          return { calls, path: window.app.currentFilePath };
+        }""")
+        native_writes = [c for c in native_save["calls"] if c["cmd"] == "write_pdf_file"]
+        record("Tauri Save writes back to the native path",
+               len(native_writes) == 1 and native_writes[0]["bytes"] > 1000, native_save)
+        record("Tauri Save keeps the native path for later saves",
+               native_save["path"] == "C:/Users/Test/Documents/native-save.pdf", native_save.get("path"))
+
+        # ---------- Open picker retains the writable handle ----------
+        pdf_b64 = base64.b64encode((ROOT / "test-docs" / "a.pdf").read_bytes()).decode("ascii")
+        picker_open = page.evaluate("""async (b64) => {
+          window.showOpenFilePicker = async () => [{
+            name: 'picked.pdf',
+            getFile: async () => {
+              const bin = atob(b64);
+              const bytes = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+              return new File([bytes], 'picked.pdf', { type: 'application/pdf' });
+            }
+          }];
+          window.app.currentFileHandle = null;
+          window.app.currentFilePath = null;
+          await window.app.openDocumentPicker();
+          const result = {
+            name: window.app.currentDocName,
+            hasHandle: Boolean(window.app.currentFileHandle),
+            pages: window.app.viewer.totalPages
+          };
+          delete window.showOpenFilePicker;
+          return result;
+        }""", pdf_b64)
+        record("Open picker retains a writable handle",
+               picker_open["hasHandle"] and picker_open["name"] == "picked.pdf", picker_open)
+
+        # ---------- Platforms without file APIs still download ----------
+        fallback_save = page.evaluate("""async () => {
+          window.showOpenFilePicker = undefined;
+          window.showSaveFilePicker = undefined;
+          window.app.currentFileHandle = null;
+          window.app.currentFilePath = null;
+          let downloaded = false;
+          window.app.exporter.downloadFile = async () => {
+            downloaded = true;
+            return { success: true, destination: 'Downloads folder' };
+          };
+          await window.app.saveDocument();
+          return { downloaded };
+        }""")
+        record("Save falls back to download when no file API exists",
+               fallback_save["downloaded"] is True, fallback_save)
 
         print("\n--- PAGE ERRORS ---")
         for e in errors:

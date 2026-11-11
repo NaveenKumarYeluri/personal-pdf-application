@@ -236,6 +236,43 @@ def run_all_tests():
          "URL.revokeObjectURL" in export_js)
 
     # =========================================================================
+    # 8b. In-Place Save (writes back to the opened document)
+    # =========================================================================
+    print("\n--- 8b. In-Place Save & Retained File Handles ---")
+    with open('src/js/file-access.js', 'r', encoding='utf-8') as f:
+        file_access_js = f.read()
+    with open('src-tauri/src/lib.rs', 'r', encoding='utf-8') as f:
+        tauri_lib_rs = f.read()
+    with open('src-tauri/Cargo.toml', 'r', encoding='utf-8') as f:
+        tauri_cargo = f.read()
+    with open('src-tauri/capabilities/default.json', 'r', encoding='utf-8') as f:
+        tauri_caps = f.read()
+
+    test("app.js retains the writable handle/path of the opened document",
+         "this.currentFileHandle" in app_js and "this.currentFilePath" in app_js and
+         "FileAccessManager" in app_js)
+    test("Save writes back to the retained target instead of always downloading",
+         "return this._savePdfToDisk(false)" in app_js and
+         "this.fileAccess.write(existingTarget" in app_js and
+         "this.fileAccess.write(chosen.target" in app_js)
+    test("browser in-place writes use the File System Access API",
+         "showOpenFilePicker" in file_access_js and "showSaveFilePicker" in file_access_js and
+         "createWritable" in file_access_js)
+    test("Tauri shell exposes native open/save/read/write commands",
+         all(cmd in tauri_lib_rs for cmd in (
+             "pick_pdf_to_open", "pick_pdf_save_path", "read_pdf_file", "write_pdf_file")))
+    test("Tauri dialog plugin is registered for native file pickers",
+         "tauri_plugin_dialog::init()" in tauri_lib_rs and "tauri-plugin-dialog" in tauri_cargo and
+         "dialog:default" in tauri_caps)
+    test("native save writes through a temp file before replacing the original",
+         "fn write_atomic" in tauri_lib_rs and "std::fs::rename" in tauri_lib_rs)
+    test("all Open entry points share the picker and fall back to the file input",
+         app_js.count("openDocumentPicker") >= 3 and "openDocumentPicker" in ui_js and
+         "result.fallback" in app_js and "fallback: true" in file_access_js)
+    test("download fallback is preserved for Android/Firefox/restored sessions",
+         "this.exporter.downloadFile(outputBytes, fallbackName" in app_js)
+
+    # =========================================================================
     # 9. Search Highlighting Precision
     # =========================================================================
     print("\n--- 9. Search Highlighting Precision Verification ---")
