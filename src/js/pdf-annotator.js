@@ -914,6 +914,13 @@ export class PDFAnnotatorEngine {
     }
   }
 
+  /** Re-layout the edited page after a toolbar change alters text metrics. */
+  _scheduleActiveReflow() {
+    const span = this.activeInPlaceSpan;
+    if (!span || typeof window === 'undefined' || !window.app?._scheduleReflow) return;
+    window.app._scheduleReflow(span._pageNum || 1);
+  }
+
   clearActiveEditing() {
     if (this.activeTextBox) {
       this.activeTextBox.classList.remove('active');
@@ -1053,7 +1060,13 @@ export class PDFAnnotatorEngine {
       span,
       originalText: span._originalText,
       newText,
+      // normRect is the editable block (whole paragraph when merged);
+      // matchRect is the originally clicked fragment, used to find this span
+      // again after the text layer is rebuilt on zoom/rotate/restore.
       normRect: span._normRect,
+      matchRect: span._matchRect || span._normRect,
+      paragraphRect: span._paragraphMerge?.rect || null,
+      originalInlineStyle: span._originalInlineStyle,
       fontFamily: span._customFontStack || span.style.fontFamily,
       baseFontSize: span._baseFontSize,
       lineHeightRatio: span._lineHeightRatio,
@@ -1074,14 +1087,44 @@ export class PDFAnnotatorEngine {
     this._notifyAnnotationsChanged();
   }
 
+  /**
+   * Undo the visual merge of a paragraph so the untouched sibling runs become
+   * visible again. Safe to call on a span that was never merged.
+   */
+  _unmergeParagraph(span) {
+    if (!span || !span._paragraphMerge) return;
+    const merge = span._paragraphMerge;
+    if (Array.isArray(merge.hidden)) {
+      for (const entry of merge.hidden) {
+        const el = entry.el;
+        if (!el) continue;
+        delete el._mergeHidden;
+        if (entry.prevVisibility) el.style.visibility = entry.prevVisibility;
+        else el.style.removeProperty('visibility');
+        if (entry.prevPointerEvents) el.style.pointerEvents = entry.prevPointerEvents;
+        else el.style.removeProperty('pointer-events');
+      }
+    }
+    if (span._matchRect) span._normRect = span._matchRect;
+    span._paragraphMerge = null;
+    delete span._paragraphMerge;
+    delete span._matchRect;
+  }
+
   revertInPlaceEdit(span, pageNum) {
     if (this.inPlaceEdits.has(pageNum)) {
       this.inPlaceEdits.get(pageNum).delete(span);
     }
+    this._unmergeParagraph(span);
     span.textContent = span._originalText !== undefined ? span._originalText : span.textContent;
     span.classList.remove('inline-editing', 'in-place-modified');
     if (span._originalInlineStyle !== undefined) {
       span.setAttribute('style', span._originalInlineStyle);
+    }
+    delete span.dataset.reflowShift;
+    delete span._reflowBaseTransform;
+    if (typeof window !== 'undefined' && window.app?._scheduleReflow) {
+      window.app._scheduleReflow(pageNum);
     }
   }
 
@@ -1117,6 +1160,7 @@ export class PDFAnnotatorEngine {
     if (el) {
       el.style.fontFamily = family;
     }
+    this._scheduleActiveReflow();
   }
 
   setFontSize(size) {
@@ -1128,6 +1172,7 @@ export class PDFAnnotatorEngine {
         el.style.fontSize = `${parsed}px`;
       }
     }
+    this._scheduleActiveReflow();
   }
 
   setColor(color) {
@@ -1335,6 +1380,7 @@ export class PDFAnnotatorEngine {
     if (el) {
       el.style.lineHeight = height;
     }
+    this._scheduleActiveReflow();
   }
 
   deleteActiveTextBox() {
@@ -1534,6 +1580,7 @@ export class PDFAnnotatorEngine {
       if (action.span) {
         action.span.textContent = action.prevText;
         if (action.prevText === action.span._originalText) {
+          this._unmergeParagraph(action.span);
           action.span.classList.remove('inline-editing', 'in-place-modified');
           if (this.inPlaceEdits.has(action.pageNum)) {
             this.inPlaceEdits.get(action.pageNum).delete(action.span);
@@ -1541,6 +1588,8 @@ export class PDFAnnotatorEngine {
           if (action.span._originalInlineStyle !== undefined) {
             action.span.setAttribute('style', action.span._originalInlineStyle);
           }
+          delete action.span.dataset.reflowShift;
+          delete action.span._reflowBaseTransform;
         } else {
           action.span.classList.add('in-place-modified');
           if (this.inPlaceEdits.has(action.pageNum)) {
@@ -1552,6 +1601,9 @@ export class PDFAnnotatorEngine {
               pageNum: action.pageNum
             });
           }
+        }
+        if (typeof window !== 'undefined' && window.app?._scheduleReflow) {
+          window.app._scheduleReflow(action.pageNum);
         }
       }
     } else if (action.type === 'element') {
@@ -1614,6 +1666,10 @@ export class PDFAnnotatorEngine {
       if (action.span) {
         action.span.textContent = action.newText;
         action.span.classList.add('in-place-modified');
+        // Re-create the whole-paragraph editor block that undo removed.
+        if (action.edit?.paragraphRect && !action.span._paragraphMerge && typeof window !== 'undefined' && window.app?._applyParagraphLayout) {
+          window.app._applyParagraphLayout(action.span, action.edit);
+        }
         if (!this.inPlaceEdits.has(action.pageNum)) {
           this.inPlaceEdits.set(action.pageNum, new Map());
         }
@@ -1624,6 +1680,9 @@ export class PDFAnnotatorEngine {
           newText: action.newText,
           pageNum: action.pageNum
         });
+        if (typeof window !== 'undefined' && window.app?._scheduleReflow) {
+          window.app._scheduleReflow(action.pageNum);
+        }
       }
     } else if (action.type === 'element') {
       // Redo an addition: reattach the element.
@@ -1713,6 +1772,27 @@ export class PDFAnnotatorEngine {
       compCanvas.width = annotCanvas ? annotCanvas.width : wrapper.clientWidth * 2;
       compCanvas.height = annotCanvas ? annotCanvas.height : wrapper.clientHeight * 2;
       const compCtx = compCanvas.getContext('2d');
+
+      // If an edited paragraph grew, the live page canvas already contains the
+      // whole reflowed page (text and images below it shifted together). Use
+      // it as the base so the saved PDF matches the editor exactly; otherwise
+      // keep the original vector page and only overlay annotations.
+      const pageCanvasEl = wrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
+      let hasReflow = false;
+      if (hasInPlaceEdits) {
+        const wrapH = wrapper.clientHeight || 1;
+        for (const [span, edit] of pageInPlaceEdits.entries()) {
+          const norm = span._normRect || edit.normRect;
+          if (!norm) continue;
+          if ((span.offsetHeight || 0) > norm.h * wrapH + 1) {
+            hasReflow = true;
+            break;
+          }
+        }
+      }
+      if (hasReflow && pageCanvasEl) {
+        compCtx.drawImage(pageCanvasEl, 0, 0, compCanvas.width, compCanvas.height);
+      }
 
       // 1. Draw ink canvas
       if (annotCanvas) {

@@ -94,10 +94,15 @@ export class PDFExportEngine {
       const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
       const fontStyle = cs.fontStyle || 'normal';
       const color = cs.color || span._originalColor || '#111827';
-      const sx = span.offsetLeft * scaleX;
-      const sy = span.offsetTop * scaleY;
+      // Use the visual position: previous paragraph edits may have shifted
+      // this span with translateY(), and offsetTop ignores transforms.
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const spanRect = span.getBoundingClientRect();
+      const sx = (spanRect.left - wrapperRect.left) * scaleX;
+      const sy = (spanRect.top - wrapperRect.top) * scaleY;
       const origH = (span._originalHeight || 18) * scaleY;
-      const origW = Math.max(span._originalWidth || 0, span.offsetWidth || 0) * scaleX;
+      const maxW = parseFloat(span.style.maxWidth) || spanRect.width || span.offsetWidth || 100;
+      const maskW = Math.max(span._originalWidth || 0, spanRect.width, maxW) * scaleX;
       const csFontPx = parseFloat(cs.fontSize) || 1;
       const csLinePx = parseFloat(cs.lineHeight);
       const lineRatio = span._lineHeightRatio || (csLinePx && !isNaN(csLinePx) ? csLinePx / csFontPx : 1.2);
@@ -109,11 +114,11 @@ export class PDFExportEngine {
       ctx.textBaseline = 'top';
 
       const textContentVal = String(span.innerText !== undefined ? span.innerText : span.textContent || '');
-      const lines = this._wrapCanvasText(ctx, textContentVal, Math.max(1, origW));
+      const lines = this._wrapCanvasText(ctx, textContentVal, Math.max(1, maskW));
       const blockH = Math.max(origH, lines.length * lineHeight);
 
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(origW) + 4, Math.ceil(blockH) + 4);
+      ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(maskW) + 4, Math.ceil(blockH) + 4);
 
       ctx.fillStyle = color;
       lines.forEach((line, idx) => {

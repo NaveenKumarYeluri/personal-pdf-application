@@ -25,6 +25,11 @@ class PersonalPDFApp {
     this.fileAccess = new FileAccessManager();
     this._openPickerInFlight = false;
     this.organizerCards = [];
+    // Pristine page-canvas snapshots (keyed by page number) so paragraph
+    // reflow can be recomputed after every keystroke without compounding
+    // earlier shifts.
+    this._pageSnapshots = new Map();
+    this._reflowFrame = 0;
     this.wakeLock = new ScreenWakeLockManager();
     this.storage = new StorageEngine();
 
@@ -60,8 +65,14 @@ class PersonalPDFApp {
       onPageChange: (current, total) => this._onPageChange(current, total),
       onDocumentLoaded: (meta) => this._onDocumentLoaded(meta),
       onContentEdited: (editData) => this._handleDirectContentEdit(editData),
-      onPageRendered: (pageNum, textLayer) => {
-        this._restoreInPlaceEdits(pageNum, textLayer);
+      onPageRendered: (pageNum, textLayer, pageWrapper) => {
+        // A fresh render invalidates any captured canvas; recapture before
+        // restoring edits so reflow (if any) starts from pristine pixels.
+        this._pageSnapshots.delete(pageNum);
+        if (this.annotator?.inPlaceEdits?.get(pageNum)?.size) {
+          this._capturePageSnapshot(pageNum, pageWrapper);
+        }
+        this._restoreInPlaceEdits(pageNum, textLayer, pageWrapper);
         // Canvas ink is cleared whenever the annotation layer is rebuilt on
         // zoom/rotate, so repaint it from the persistent annotation store.
         if (this.annotator) this.annotator._redrawPageAnnotations(pageNum);
@@ -558,6 +569,9 @@ class PersonalPDFApp {
     const pageNum = editData.pageNum;
     const pageWrapper = editData.pageWrapper || document.getElementById(`page-wrapper-${pageNum}`);
 
+    // Snapshot the pristine page before any pixel of it is shifted for reflow.
+    if (pageWrapper) this._capturePageSnapshot(pageNum, pageWrapper);
+
     // If already editing this span, re-focus
     if (span.classList.contains('inline-editing')) {
       span.focus();
@@ -580,18 +594,23 @@ class PersonalPDFApp {
         span.textContent = healPdfTextLigatures(span.textContent);
       }
       span._originalText = span.textContent;
-      const wrapRect = pageWrapper.getBoundingClientRect();
-      const sRect = span.getBoundingClientRect();
-      const wW = wrapRect.width || 1;
-      const wH = wrapRect.height || 1;
+      // Use layout (offset) metrics rather than transformed bounding boxes so
+      // a re-edited paragraph keeps its pristine position after reflow.
+      const wW = pageWrapper.clientWidth || 1;
+      const wH = pageWrapper.clientHeight || 1;
       span._normRect = {
-        x: Math.max(0, (sRect.left - wrapRect.left) / wW),
-        y: Math.max(0, (sRect.top - wrapRect.top) / wH),
-        w: Math.min(1, Math.max(0.005, sRect.width / wW)),
-        h: Math.min(1, Math.max(0.005, sRect.height / wH))
+        x: Math.max(0, span.offsetLeft / wW),
+        y: Math.max(0, span.offsetTop / wH),
+        w: Math.min(1, Math.max(0.005, span.offsetWidth / wW)),
+        h: Math.min(1, Math.max(0.005, span.offsetHeight / wH))
       };
-      span._originalWidth = sRect.width;
-      span._originalHeight = sRect.height;
+      span._originalWidth = span.offsetWidth;
+      span._originalHeight = span.offsetHeight;
+
+      // Edit the whole paragraph (all runs/lines of the same text block), not
+      // just the clicked fragment. Otherwise the rest of the line stays put
+      // and the new text is drawn on top of it.
+      this._prepareParagraphEdit(span, pageNum, pageWrapper);
     }
 
     // Resolve native PDF font family and size with cross-platform fallback stack
@@ -679,7 +698,11 @@ class PersonalPDFApp {
     }
 
     let calculatedMaxW;
-    if (minNextLeft !== Infinity) {
+    if (span._paragraphMerge) {
+      // Paragraph edits use the full original paragraph width so the merged
+      // text re-wraps naturally instead of into the clicked fragment's slot.
+      calculatedMaxW = span._paragraphMerge.widthPx;
+    } else if (minNextLeft !== Infinity) {
       calculatedMaxW = Math.max(span._originalWidth || 40, minNextLeft - span.offsetLeft - 4);
     } else {
       // No same-line sibling: wrap within the original line width so typed text
@@ -724,6 +747,7 @@ class PersonalPDFApp {
       span.style.webkitTextSizeAdjust = '100%';
       span.style.textSizeAdjust = '100%';
       span.style.transform = 'none';
+      span._reflowBaseTransform = 'none';
       span.style.maxWidth = `${Math.floor(maxW)}px`;
       span.style.whiteSpace = 'pre-wrap';
       span.style.overflowWrap = 'break-word';
@@ -732,10 +756,20 @@ class PersonalPDFApp {
       span.style.height = 'auto';
       span.style.color = span._originalColor || '#111827';
       span.style.backgroundColor = '#ffffff';
+      if (span._paragraphMerge) {
+        const pm = span._paragraphMerge;
+        const wrapW = pageWrapper.clientWidth || 1;
+        const wrapH = pageWrapper.clientHeight || 1;
+        span.style.left = `${(pm.rect.x * wrapW).toFixed(2)}px`;
+        span.style.top = `${(pm.rect.y * wrapH).toFixed(2)}px`;
+        span.style.width = `${Math.floor(pm.widthPx)}px`;
+        span.style.maxWidth = `${Math.floor(pm.widthPx)}px`;
+      }
     };
 
     // Execute immediately on edit start
     cleanSpanContent();
+    this._reflowEditedPage(pageNum, pageWrapper);
 
     // Sync toolbar font, size, bold, italic, color to match native PDF styling
     if (this.ui) {
@@ -755,6 +789,7 @@ class PersonalPDFApp {
         span._isComposing = false;
         cleanSpanContent();
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+        this._reflowEditedPage(pageNum, pageWrapper);
       });
 
       span.addEventListener('input', (e) => {
@@ -763,6 +798,7 @@ class PersonalPDFApp {
         }
         cleanSpanContent();
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+        this._reflowEditedPage(pageNum, pageWrapper);
       });
 
       span.addEventListener('paste', (e) => {
@@ -778,6 +814,7 @@ class PersonalPDFApp {
           kEvt.preventDefault();
           this.annotator.revertInPlaceEdit(span, pageNum);
           span.blur();
+          this._reflowEditedPage(pageNum, pageWrapper);
           this.ui.setStatus('Reverted in-place text edit');
         }
         // Enter is intentionally left alone: it inserts a paragraph line break and
@@ -833,6 +870,7 @@ class PersonalPDFApp {
           }
 
           this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+          this._reflowEditedPage(pageNum, pageWrapper);
           this.ui.setStatus('In-place text edit saved');
         } else {
           span.classList.remove('in-place-modified');
@@ -840,6 +878,7 @@ class PersonalPDFApp {
             tLayer.classList.remove('has-modifications');
           }
           this.annotator.revertInPlaceEdit(span, pageNum);
+          this._reflowEditedPage(pageNum, pageWrapper);
         }
       });
     }
@@ -882,27 +921,245 @@ class PersonalPDFApp {
     this.ui.setStatus(`In-place edit active: editing with PDF's embedded font`);
   }
 
-  _restoreInPlaceEdits(pageNum, textLayer) {
+  /**
+   * Group the text layer into visual lines (PDF.js often splits one line into
+   * several positioned spans/runs).
+   */
+  _collectTextLines(pageWrapper) {
+    const spans = Array.from(pageWrapper.querySelectorAll('.textLayer span')).filter(span => {
+      if (!span.textContent || !span.textContent.trim()) return false;
+      if (span._mergeHidden || span._paragraphMerge) return false;
+      return true;
+    });
+    spans.sort((a, b) => (a.offsetTop - b.offsetTop) || (a.offsetLeft - b.offsetLeft));
+
+    // PDF.js stretches each run horizontally with scaleX(), and offsetWidth
+    // ignores that transform. Use the visual width so the paragraph box does
+    // not run past the page edge.
+    const visualRight = (span) => {
+      const match = /scaleX\(([-\d.]+)\)/.exec(span.style.transform || '');
+      const scaleX = match ? Math.abs(parseFloat(match[1])) : 1;
+      return span.offsetLeft + span.offsetWidth * (isNaN(scaleX) ? 1 : scaleX);
+    };
+
+    const lines = [];
+    for (const span of spans) {
+      let line = lines.find(item => Math.abs(item.top - span.offsetTop) <= 4);
+      if (!line) {
+        line = { top: span.offsetTop, bottom: 0, left: Infinity, right: 0, height: 0, fontSize: 0, spans: [] };
+        lines.push(line);
+      }
+      line.spans.push(span);
+      line.top = Math.min(line.top, span.offsetTop);
+      line.bottom = Math.max(line.bottom, span.offsetTop + span.offsetHeight);
+      line.left = Math.min(line.left, span.offsetLeft);
+      line.right = Math.max(line.right, visualRight(span));
+      line.height = Math.max(line.height, span.offsetHeight);
+      line.fontSize = Math.max(line.fontSize, parseFloat(window.getComputedStyle(span).fontSize) || 0);
+    }
+    lines.sort((a, b) => a.top - b.top);
+    return lines;
+  }
+
+  /** Join a paragraph's runs/lines into one re-wrappable string. */
+  _buildParagraphText(groups) {
+    const joinRuns = (line) => {
+      let text = '';
+      let prevRight = null;
+      const runs = line.spans.slice().sort((a, b) => a.offsetLeft - b.offsetLeft);
+      for (const run of runs) {
+        const value = run.textContent || '';
+        if (!value.trim()) continue;
+        if (text && !/\s$/.test(text) && !/^\s/.test(value)) {
+          const prevChar = text.slice(-1);
+          const nextChar = value[0];
+          const wordish = /[A-Za-z0-9,;:)\]]/.test(prevChar) && /[A-Za-z0-9(\[]/.test(nextChar);
+          if (wordish || (prevRight !== null && run.offsetLeft > prevRight + 1.2)) {
+            text += ' ';
+          }
+        }
+        text += value;
+        prevRight = run.offsetLeft + run.offsetWidth;
+      }
+      return text.trim();
+    };
+
+    let paragraph = '';
+    for (const line of groups) {
+      const text = joinRuns(line);
+      if (!text) continue;
+      if (paragraph) {
+        const joiner = /[-–—]$/.test(paragraph) ? '' : ' ';
+        paragraph += joiner + text;
+      } else {
+        paragraph = text;
+      }
+    }
+    return paragraph;
+  }
+
+  /**
+   * Turn the clicked text fragment into an editor for its whole paragraph so
+   * line fragments and overprints cannot be left behind.
+   */
+  _prepareParagraphEdit(span, pageNum, pageWrapper) {
+    const lines = this._collectTextLines(pageWrapper);
+    const clickedIndex = lines.findIndex(line => line.spans.includes(span));
+    if (clickedIndex < 0) return;
+
+    const clicked = lines[clickedIndex];
+    const baseFont = clicked.fontSize || 0;
+    const baseHeight = Math.max(8, clicked.height || 16);
+    const isContinuation = (prev, next) => {
+      const gap = next.top - prev.bottom;
+      const aligned =
+        Math.abs(next.left - clicked.left) <= Math.max(28, baseHeight * 1.4) &&
+        Math.abs(prev.left - clicked.left) <= Math.max(28, baseHeight * 1.4);
+      // Both the line above and the line below must match the clicked line's
+      // font, otherwise a heading with the same alignment would be swallowed.
+      const fontOk = !baseFont ||
+        (Math.abs((next.fontSize || 0) - baseFont) <= 0.75 &&
+         Math.abs((prev.fontSize || 0) - baseFont) <= 0.75);
+      return gap >= -2 && gap <= baseHeight * 1.7 && aligned && fontOk;
+    };
+
+    let start = clickedIndex;
+    let end = clickedIndex;
+    while (start > 0 && isContinuation(lines[start - 1], lines[start])) start -= 1;
+    while (end < lines.length - 1 && isContinuation(lines[end], lines[end + 1])) end += 1;
+
+    const groups = lines.slice(start, end + 1);
+    const totalSpans = groups.reduce((count, line) => count + line.spans.length, 0);
+    if (totalSpans <= 1) return; // Single fragment: keep the light editor.
+
+    const left = Math.min(...groups.map(line => line.left));
+    const right = Math.max(...groups.map(line => line.right));
+    const top = Math.min(...groups.map(line => line.top));
+    const bottom = Math.max(...groups.map(line => line.bottom));
+    const wrapW = pageWrapper.clientWidth || 1;
+    const wrapH = pageWrapper.clientHeight || 1;
+    // Never let the editable block extend past the page's right edge.
+    const widthPx = Math.max(40, Math.min(right - left, wrapW - left - 6));
+
+    // Keep the document's real leading: the merged block must use the same
+    // baseline-to-baseline distance as the original PDF lines, not the 1.0
+    // line-height that PDF.js sets on each individual fragment.
+    const steps = [];
+    for (let i = 1; i < groups.length; i++) {
+      const step = groups[i].top - groups[i - 1].top;
+      if (step > 0) steps.push(step);
+    }
+    if (steps.length && baseFont > 0) {
+      steps.sort((a, b) => a - b);
+      const medStep = steps[Math.floor(steps.length / 2)];
+      span._lineHeightRatio = Math.max(0.9, Math.min(2.5, medStep / baseFont));
+    }
+
+    const rect = {
+      x: left / wrapW,
+      y: top / wrapH,
+      w: widthPx / wrapW,
+      h: Math.max(0.005, (bottom - top) / wrapH)
+    };
+    const paragraphText = this._buildParagraphText(groups);
+
+    const hidden = [];
+    groups.forEach(line => {
+      line.spans.forEach(el => {
+        if (el === span) return;
+        const entry = {
+          el,
+          prevVisibility: el.style.visibility,
+          prevPointerEvents: el.style.pointerEvents
+        };
+        el._mergeHidden = true;
+        el.style.setProperty('visibility', 'hidden', 'important');
+        el.style.setProperty('pointer-events', 'none', 'important');
+        hidden.push(entry);
+      });
+    });
+
+    span._matchRect = { ...span._normRect };
+    span._normRect = rect;
+    span._originalWidth = widthPx;
+    span._originalHeight = bottom - top;
+    span._paragraphMerge = { rect, widthPx, hidden, paragraphText };
+    span.textContent = paragraphText;
+    span.style.left = `${left.toFixed(2)}px`;
+    span.style.top = `${top.toFixed(2)}px`;
+    span.style.width = `${Math.floor(widthPx)}px`;
+    span.style.maxWidth = `${Math.floor(widthPx)}px`;
+  }
+
+  /**
+   * Re-apply a saved paragraph merge after the text layer is rebuilt (zoom,
+   * rotate, or document re-render).
+   */
+  _applyParagraphLayout(span, edit, pageWrapperArg) {
+    if (!span || !edit?.paragraphRect) return;
+    const pageNum = edit.pageNum || span._pageNum;
+    const pageWrapper = pageWrapperArg || document.getElementById(`page-wrapper-${pageNum}`);
+    if (!pageWrapper) return;
+
+    const rect = edit.paragraphRect;
+    const wrapW = pageWrapper.clientWidth || 1;
+    const wrapH = pageWrapper.clientHeight || 1;
+    const left = rect.x * wrapW;
+    const top = rect.y * wrapH;
+    const widthPx = Math.max(40, rect.w * wrapW);
+    const bottom = top + rect.h * wrapH;
+
+    const hidden = [];
+    pageWrapper.querySelectorAll('.textLayer span').forEach(el => {
+      if (el === span || el._mergeHidden) return;
+      const elTop = el.offsetTop;
+      const elLeft = el.offsetLeft;
+      if (elTop < top - 6 || elTop > bottom + 6) return;
+      if (elLeft < left - 6 || elLeft > left + widthPx + 6) return;
+      const entry = {
+        el,
+        prevVisibility: el.style.visibility,
+        prevPointerEvents: el.style.pointerEvents
+      };
+      el._mergeHidden = true;
+      el.style.setProperty('visibility', 'hidden', 'important');
+      el.style.setProperty('pointer-events', 'none', 'important');
+      hidden.push(entry);
+    });
+
+    span._matchRect = edit.matchRect || span._matchRect || { ...rect };
+    span._normRect = rect;
+    span._originalWidth = widthPx;
+    span._originalHeight = rect.h * wrapH;
+    span._paragraphMerge = { rect, widthPx, hidden, paragraphText: edit.newText };
+    span.style.left = `${left.toFixed(2)}px`;
+    span.style.top = `${top.toFixed(2)}px`;
+    span.style.width = `${Math.floor(widthPx)}px`;
+    span.style.maxWidth = `${Math.floor(widthPx)}px`;
+  }
+
+  _restoreInPlaceEdits(pageNum, textLayer, pageWrapperArg) {
     if (!this.annotator || !this.annotator.inPlaceEdits) return;
     const pageEdits = this.annotator.inPlaceEdits.get(pageNum);
     if (!pageEdits || pageEdits.size === 0) return;
 
     textLayer.classList.add('has-modifications');
-    const pageWrapper = textLayer.closest('.page-wrapper');
+    const pageWrapper = pageWrapperArg || textLayer.closest('.page-wrapper');
     const pageCanvas = pageWrapper ? pageWrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]') : null;
 
     const spans = Array.from(textLayer.querySelectorAll('span'));
     for (const [origSpan, edit] of Array.from(pageEdits.entries())) {
       let matchedSpan = null;
+      const matchRect = edit.matchRect || edit.normRect;
 
-      // 1. First try matching by normRect position proximity
-      if (edit.normRect && pageWrapper) {
+      // 1. First try matching by the clicked fragment's position proximity.
+      if (matchRect && pageWrapper) {
         const wrapW = pageWrapper.clientWidth || 1;
         const wrapH = pageWrapper.clientHeight || 1;
         for (const s of spans) {
           const sLeft = s.offsetLeft / wrapW;
           const sTop = s.offsetTop / wrapH;
-          const dist = Math.hypot(sLeft - edit.normRect.x, sTop - edit.normRect.y);
+          const dist = Math.hypot(sLeft - matchRect.x, sTop - matchRect.y);
           if (dist < 0.05 && (s.textContent === edit.originalText || (edit.originalText && s.textContent.includes(edit.originalText)))) {
             matchedSpan = s;
             break;
@@ -920,6 +1177,11 @@ class PersonalPDFApp {
         matchedSpan._normRect = edit.normRect || origSpan._normRect || matchedSpan._normRect;
         matchedSpan._baseFontSize = edit.baseFontSize || origSpan._baseFontSize;
         matchedSpan._customFontStack = edit.fontFamily || origSpan._customFontStack;
+        matchedSpan._lineHeightRatio = edit.lineHeightRatio || origSpan._lineHeightRatio;
+        matchedSpan._originalColor = edit.color || origSpan._originalColor;
+        if (edit.originalInlineStyle !== undefined) {
+          matchedSpan._originalInlineStyle = edit.originalInlineStyle;
+        }
 
         matchedSpan.textContent = edit.newText;
         matchedSpan.classList.add('in-place-modified');
@@ -927,6 +1189,7 @@ class PersonalPDFApp {
         matchedSpan.style.textSizeAdjust = 'none';
         matchedSpan.style.lineHeight = String(edit.lineHeightRatio || matchedSpan._lineHeightRatio || 1.2);
         matchedSpan.style.transform = 'none';
+        matchedSpan._reflowBaseTransform = 'none';
         matchedSpan.style.letterSpacing = 'normal';
         matchedSpan.style.whiteSpace = 'pre-wrap';
         matchedSpan.style.overflowWrap = 'break-word';
@@ -949,6 +1212,12 @@ class PersonalPDFApp {
         const restoredMaxW = edit.maxWidth || Math.max(80, (pageWrapper?.clientWidth || 800) - matchedSpan.offsetLeft - 48);
         matchedSpan.style.maxWidth = `${restoredMaxW}px`;
 
+        // Restore the whole-paragraph editor block (merged runs hidden, full
+        // paragraph width) before measuring, so reflow sees the same layout.
+        if (edit.paragraphRect) {
+          this._applyParagraphLayout(matchedSpan, edit, pageWrapper);
+        }
+
         const normRect = matchedSpan._normRect;
         if (pageCanvas && pageWrapper && normRect) {
           const canvasCtx = pageCanvas.getContext('2d');
@@ -970,6 +1239,191 @@ class PersonalPDFApp {
 
         pageEdits.delete(origSpan);
         pageEdits.set(matchedSpan, edit);
+      }
+    }
+
+    // Re-apply canvas reflow after the text layer has been rebuilt.
+    this._reflowEditedPage(pageNum, pageWrapper);
+  }
+
+  /**
+   * Keep a pristine copy of the rendered page so paragraph reflow can always
+   * be recomputed from the original pixels instead of stacking shifts.
+   */
+  _capturePageSnapshot(pageNum, pageWrapper) {
+    const wrapper = pageWrapper || document.getElementById(`page-wrapper-${pageNum}`);
+    const canvas = wrapper?.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
+    if (!canvas || !canvas.width || !canvas.height) return null;
+
+    const existing = this._pageSnapshots.get(pageNum);
+    if (existing && existing.width === canvas.width && existing.height === canvas.height) {
+      return existing;
+    }
+
+    const snapshotCanvas = document.createElement('canvas');
+    snapshotCanvas.width = canvas.width;
+    snapshotCanvas.height = canvas.height;
+    snapshotCanvas.getContext('2d').drawImage(canvas, 0, 0);
+    const snapshot = { canvas: snapshotCanvas, width: canvas.width, height: canvas.height };
+    this._pageSnapshots.set(pageNum, snapshot);
+    return snapshot;
+  }
+
+  _getPageCanvas(pageWrapper) {
+    return pageWrapper?.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]') || null;
+  }
+
+  /** Schedule reflow on the next frame (used after undo/redo/toolbar changes). */
+  _scheduleReflow(pageNum) {
+    if (typeof requestAnimationFrame !== 'function') {
+      this._reflowEditedPage(pageNum);
+      return;
+    }
+    this._reflowPageNum = pageNum;
+    cancelAnimationFrame(this._reflowFrame);
+    this._reflowFrame = requestAnimationFrame(() => {
+      const pending = this._reflowPageNum;
+      this._reflowPageNum = null;
+      if (pending) this._reflowEditedPage(pending);
+    });
+  }
+
+  /**
+   * Re-layout a page after in-place text growth.
+   *
+   * The visible PDF is a canvas raster plus transparent text-layer spans.
+   * When an edited paragraph grows, every pixel below its original bottom is
+   * shifted down in the canvas (so text AND images below move together), and
+   * the transparent text spans are shifted to keep hit-testing aligned.
+   */
+  _reflowEditedPage(pageNum, pageWrapperArg) {
+    const pageWrapper = pageWrapperArg || document.getElementById(`page-wrapper-${pageNum}`);
+    if (!pageWrapper) return;
+
+    const pageCanvas = this._getPageCanvas(pageWrapper);
+    const pageEdits = this.annotator?.inPlaceEdits?.get(pageNum);
+    const snapshot = this._pageSnapshots.get(pageNum);
+    const wrapH = pageWrapper.clientHeight || 1;
+
+    // Nothing edited any more (e.g. undo/revert): restore pristine pixels and
+    // drop any transforms left on the text layer.
+    if (!pageEdits || pageEdits.size === 0) {
+      if (snapshot && pageCanvas) {
+        const ctx = pageCanvas.getContext('2d');
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(snapshot.canvas, 0, 0);
+        ctx.restore();
+      }
+      pageWrapper.querySelectorAll('.textLayer span').forEach(span => {
+        if (span.dataset.reflowShift) {
+          span.style.transform = span._reflowBaseTransform || '';
+          delete span.dataset.reflowShift;
+        }
+      });
+      return;
+    }
+
+    const ops = [];
+    for (const [span, edit] of pageEdits.entries()) {
+      if (!span || !span.isConnected) continue;
+      const norm = span._normRect || edit.normRect;
+      if (!norm) continue;
+      const origHeightPx = norm.h * wrapH;
+      const currentHeightPx = span.offsetHeight || 0;
+      ops.push({
+        span,
+        edit,
+        norm,
+        topNorm: norm.y,
+        bottomNorm: norm.y + norm.h,
+        origHeightPx,
+        extraNorm: Math.max(0, (currentHeightPx - origHeightPx) / wrapH),
+        extraPx: Math.max(0, currentHeightPx - origHeightPx)
+      });
+    }
+    ops.sort((a, b) => a.topNorm - b.topNorm);
+
+    // 1. Rebuild the page raster from pristine pixels and shift content below
+    //    each grown paragraph down, including images and painted text.
+    if (pageCanvas) {
+      if (!snapshot || snapshot.width !== pageCanvas.width || snapshot.height !== pageCanvas.height) {
+        this._capturePageSnapshot(pageNum, pageWrapper);
+      }
+      const pristine = this._pageSnapshots.get(pageNum);
+      if (pristine) {
+        const ctx = pageCanvas.getContext('2d');
+        const W = pageCanvas.width;
+        const H = pageCanvas.height;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(pristine.canvas, 0, 0);
+
+        let priorExtra = 0;
+        for (const op of ops) {
+          const deltaPx = Math.round(op.extraNorm * H);
+          const bottomPx = Math.round((op.bottomNorm + priorExtra) * H);
+          if (deltaPx > 0 && bottomPx < H && bottomPx >= 0) {
+            const srcH = H - bottomPx;
+            const scratch = document.createElement('canvas');
+            scratch.width = W;
+            scratch.height = srcH;
+            scratch.getContext('2d').drawImage(pageCanvas, 0, bottomPx, W, srcH, 0, 0, W, srcH);
+            ctx.clearRect(0, bottomPx, W, srcH);
+            // The vacated strip is exactly the extra height added to the
+            // paragraph and is covered by its white editable block.
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, bottomPx, W, Math.min(deltaPx, srcH));
+            ctx.drawImage(scratch, 0, 0, W, srcH, 0, bottomPx + deltaPx, W, srcH);
+          }
+          priorExtra += op.extraNorm;
+        }
+
+        // Mask the original line behind every edited paragraph at its
+        // reflowed position so the canvas never shows old + new text together.
+        let maskShift = 0;
+        const wrapW = pageWrapper.clientWidth || 1;
+        for (const op of ops) {
+          const topPx = (op.topNorm + maskShift) * H;
+          const maskW = Math.max(op.norm.w * W, (parseFloat(op.span.style.maxWidth) || 0) * W / wrapW);
+          const maskH = (op.origHeightPx + op.extraPx) * H / wrapH;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(
+            Math.max(0, Math.floor(op.norm.x * W) - 2),
+            Math.max(0, Math.floor(topPx) - 2),
+            Math.ceil(maskW) + 4,
+            Math.ceil(maskH) + 4
+          );
+          maskShift += op.extraNorm;
+        }
+        ctx.restore();
+      }
+    }
+
+    // 2. Shift the transparent text spans by the same amount so selection,
+    //    hover and the next edit target stay aligned with the moved pixels.
+    const spans = pageWrapper.querySelectorAll('.textLayer span');
+    for (const span of spans) {
+      const spanTopNorm = span.offsetTop / wrapH;
+      let shiftNorm = 0;
+      for (const op of ops) {
+        if (op.span === span) continue;
+        if (op.bottomNorm <= spanTopNorm + 0.0001) shiftNorm += op.extraNorm;
+      }
+      const shiftPx = Math.round(shiftNorm * wrapH);
+      if (span._reflowBaseTransform === undefined) {
+        span._reflowBaseTransform = span.style.transform || '';
+      }
+      const base = span._reflowBaseTransform;
+      if (shiftPx) {
+        const translate = `translateY(${shiftPx}px)`;
+        span.style.transform = (base && base !== 'none') ? `${base} ${translate}` : translate;
+        span.dataset.reflowShift = String(shiftPx);
+      } else if (span.dataset.reflowShift) {
+        span.style.transform = base;
+        delete span.dataset.reflowShift;
       }
     }
   }
@@ -1109,6 +1563,7 @@ class PersonalPDFApp {
 
   async loadArrayBuffer(data, docName = 'document.pdf', persist = true) {
     this.currentDocName = docName;
+    this._pageSnapshots.clear();
     if (data instanceof Uint8Array) {
       this.currentPdfBytes = data.slice();
     } else if (data instanceof ArrayBuffer) {
