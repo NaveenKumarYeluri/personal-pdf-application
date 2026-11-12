@@ -647,26 +647,27 @@ class PersonalPDFApp {
     const isSerif = !isSansSerif && !isMonospace && (isDirectTimes || /(?<!sans-)serif|times|georgia|cambria|garamond/i.test(existingFont));
 
     const docFonts = Array.from(this.viewer.documentFonts || []);
-    const matchingDocFont = directFont || docFonts.find(f => {
+    const specificDirect = (directFont && !/sans-serif|serif|monospace/i.test(directFont)) ? directFont : null;
+    const matchingDocFont = specificDirect || docFonts.find(f => {
       const fl = f.toLowerCase();
       if (isMonospace || isDirectMono) return fl.includes('consolas') || fl.includes('courier') || fl.includes('mono');
       if (isSerif || isDirectTimes) return fl.includes('times') || fl.includes('cambria') || (fl.includes('serif') && !fl.includes('sans'));
       return fl.includes('calibri') || fl.includes('arial') || fl.includes('helvetica') || fl.includes('sans');
-    }) || docFonts[0];
+    }) || directFont || docFonts[0];
 
     let fontStack = '';
     if (isMonospace || isDirectMono) {
-      fontStack = `'Consolas', 'Cousine', 'Courier New', 'Liberation Mono', Menlo, Monaco, monospace`;
+      fontStack = `'Consolas', 'Cousine', 'Roboto Mono', 'Courier New', 'Liberation Mono', monospace`;
     } else if (isSerif || isDirectTimes) {
-      fontStack = `'Cambria', 'Times New Roman', 'Tinos', 'Liberation Serif', Georgia, serif`;
+      fontStack = `'Cambria', 'Times New Roman', 'Noto Serif', 'Tinos', 'Liberation Serif', Georgia, serif`;
     } else if (isDirectCalibri || (matchingDocFont && /calibri/i.test(matchingDocFont))) {
-      fontStack = `'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
+      fontStack = `'Calibri', 'Carlito', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`;
     } else if (isDirectArial || (matchingDocFont && /arial|helvetica/i.test(matchingDocFont))) {
-      fontStack = `Arial, 'Arimo', 'Helvetica Neue', Helvetica, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+      fontStack = `Arial, 'Arimo', 'Roboto', 'Helvetica Neue', Helvetica, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
     } else if (matchingDocFont && !/sans-serif|serif|monospace/i.test(matchingDocFont)) {
-      fontStack = `'${matchingDocFont}', 'Calibri', 'Carlito', 'Arimo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
+      fontStack = `'${matchingDocFont}', 'Calibri', 'Carlito', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`;
     } else {
-      fontStack = `'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
+      fontStack = `'Calibri', 'Carlito', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`;
     }
 
     span.style.fontFamily = fontStack;
@@ -682,21 +683,24 @@ class PersonalPDFApp {
     span.style.fontStyle = isItalic ? 'italic' : 'normal';
     span._customFontStyle = isItalic ? 'italic' : 'normal';
 
-    // Extract exact unscaled CSS pixel base size from PDF.js style
-    let baseFontSize = 14;
-    const fsMatch = (span.style.fontSize || '').match(/([\d\.]+)\s*px/);
-    if (fsMatch) {
-      baseFontSize = parseFloat(fsMatch[1]);
-    } else {
-      const compFs = parseFloat(compStyle.fontSize) || 16;
-      const scaleFactor = (this.viewer && this.viewer.scale) || 1;
-      baseFontSize = compFs / scaleFactor;
+    // Extract exact unscaled CSS pixel base size from PDF stream or style
+    let baseFontSize = span._pdfPtFontSize || 0;
+    if (!baseFontSize) {
+      const fsMatch = (span.style.fontSize || '').match(/([\d\.]+)\s*px/);
+      if (fsMatch) {
+        baseFontSize = parseFloat(fsMatch[1]);
+      } else {
+        const compFs = parseFloat(compStyle.fontSize) || 16;
+        const scaleFactor = (this.viewer && this.viewer.scale) || 1;
+        baseFontSize = compFs / scaleFactor;
+      }
     }
     span._baseFontSize = baseFontSize;
     span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
     span.style.lineHeight = String(span._lineHeightRatio || 1.2);
-    span.style.webkitTextSizeAdjust = '100%';
-    span.style.textSizeAdjust = '100%';
+    span.style.webkitTextSizeAdjust = 'none';
+    span.style.textSizeAdjust = 'none';
+    span.style.maxHeight = '999999px';
 
     // Reset artificial PDF.js transform and spacing so typography flows naturally
     span.style.transform = 'none';
@@ -760,8 +764,9 @@ class PersonalPDFApp {
       span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
       span.style.lineHeight = String(span._lineHeightRatio || 1.2);
       span.style.letterSpacing = 'normal';
-      span.style.webkitTextSizeAdjust = '100%';
-      span.style.textSizeAdjust = '100%';
+      span.style.webkitTextSizeAdjust = 'none';
+      span.style.textSizeAdjust = 'none';
+      span.style.maxHeight = '999999px';
       span.style.transform = 'none';
       span._reflowBaseTransform = 'none';
       span.style.maxWidth = `${Math.floor(maxW)}px`;
@@ -859,6 +864,9 @@ class PersonalPDFApp {
           span.style.height = 'auto';
           span.style.width = 'auto';
           span.style.minWidth = '0';
+          span.style.webkitTextSizeAdjust = 'none';
+          span.style.textSizeAdjust = 'none';
+          span.style.maxHeight = '999999px';
           span.style.color = span._originalColor || '#111827';
           span.style.backgroundColor = '#ffffff';
           span.style.opacity = '1';
@@ -1025,20 +1033,43 @@ class PersonalPDFApp {
 
     const clicked = lines[clickedIndex];
     const baseFont = clicked.fontSize || 0;
-    const baseHeight = Math.max(8, clicked.height || 16);
+    const actualLineHeight = clicked.height || (baseFont ? baseFont * 1.2 : 16);
+    const maxIntraLineGap = Math.max(3, actualLineHeight * 0.45);
+
+    // Calculate maximum visual line length on this page for detecting terminal paragraph lines
+    const maxLineWidth = lines.reduce((max, l) => Math.max(max, l.right - l.left), 0);
+
     const isContinuation = (prev, next) => {
       const gap = next.top - prev.bottom;
+      
+      // If gap exceeds normal line spacing (leading), this is a paragraph break or section gap
+      if (gap < -2 || gap > maxIntraLineGap) {
+        return false;
+      }
+
+      // If prev line ended significantly early, it is the last line of a paragraph
+      const prevLineWidth = prev.right - prev.left;
+      if (maxLineWidth > 100 && prevLineWidth < maxLineWidth * 0.75 && prevLineWidth < 350) {
+        return false;
+      }
+
+      // Check horizontal left alignment (must be on the same left margin or column)
       const aligned =
-        Math.abs(next.left - clicked.left) <= Math.max(28, baseHeight * 1.4) &&
-        Math.abs(prev.left - clicked.left) <= Math.max(28, baseHeight * 1.4);
-      // Both the line above and the line below must match the clicked line's
-      // font, otherwise a heading with the same alignment would be swallowed.
+        Math.abs(next.left - clicked.left) <= Math.max(8, actualLineHeight * 0.4) &&
+        Math.abs(prev.left - clicked.left) <= Math.max(8, actualLineHeight * 0.4);
+      if (!aligned) {
+        return false;
+      }
+
+      // Font size check: Both lines must match clicked line's font size
       const fontOk = !baseFont ||
-        (Math.abs((next.fontSize || 0) - baseFont) <= 0.75 &&
-         Math.abs((prev.fontSize || 0) - baseFont) <= 0.75);
-      // Only merge lines that are as tightly spaced as normal leading. A
-      // slightly larger gap marks a new paragraph even when the font matches.
-      return gap >= -2 && gap <= baseHeight * 1.05 && aligned && fontOk;
+        (Math.abs((next.fontSize || 0) - baseFont) <= 0.6 &&
+         Math.abs((prev.fontSize || 0) - baseFont) <= 0.6);
+      if (!fontOk) {
+        return false;
+      }
+
+      return true;
     };
 
     let start = clickedIndex;
@@ -1281,11 +1312,92 @@ class PersonalPDFApp {
       return existing;
     }
 
+    const wrapH = wrapper.clientHeight || 1;
+    const wrapW = wrapper.clientWidth || 1;
+    const scaleY = canvas.height / wrapH;
+
     const snapshotCanvas = document.createElement('canvas');
     snapshotCanvas.width = canvas.width;
     snapshotCanvas.height = canvas.height;
     snapshotCanvas.getContext('2d').drawImage(canvas, 0, 0);
-    const snapshot = { canvas: snapshotCanvas, width: canvas.width, height: canvas.height };
+
+    // Freeze pristine native text spans before ANY mutation
+    const nativeSpans = Array.from(wrapper.querySelectorAll('.textLayer span:not(.reflow-overflow-span)')).map(s => ({
+      span: s,
+      topNorm: s.offsetTop / wrapH,
+      bottomNorm: (s.offsetTop + s.offsetHeight) / wrapH,
+      leftNorm: s.offsetLeft / wrapW,
+      rightNorm: (s.offsetLeft + s.offsetWidth) / wrapW,
+      origOffsetTop: s.offsetTop,
+      origOffsetHeight: s.offsetHeight,
+      origOffsetLeft: s.offsetLeft,
+      origOffsetWidth: s.offsetWidth,
+      textContent: s.textContent,
+      styleText: s.getAttribute('style') || '',
+      className: s.className,
+      fontFamily: s.style.fontFamily,
+      fontSize: s.style.fontSize
+    }));
+
+    // Find pristine content boundaries
+    let maxCssBottom = 0;
+    let minCssTop = wrapH;
+    for (const s of nativeSpans) {
+      if (s.textContent && s.textContent.trim()) {
+        maxCssBottom = Math.max(maxCssBottom, s.origOffsetTop + s.origOffsetHeight);
+        minCssTop = Math.min(minCssTop, s.origOffsetTop);
+      }
+    }
+    wrapper.querySelectorAll('.annotation-textbox, .placed-stamp, .whiteout-box, .redaction-box').forEach(el => {
+      maxCssBottom = Math.max(maxCssBottom, el.offsetTop + el.offsetHeight);
+      minCssTop = Math.min(minCssTop, el.offsetTop);
+    });
+
+    let contentBottomPx = Math.round(maxCssBottom * scaleY);
+    let contentTopPx = Math.round(minCssTop * scaleY);
+
+    // Scan canvas raster for non-white ink below text layer (e.g. diagrams, images, or footer)
+    const ctx = snapshotCanvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    try {
+      const checkRows = 40;
+      for (let rowBottom = H; rowBottom > contentBottomPx; rowBottom -= checkRows) {
+        const rowTop = Math.max(contentBottomPx, rowBottom - checkRows);
+        const blockH = rowBottom - rowTop;
+        if (blockH <= 0) break;
+        const imgData = ctx.getImageData(0, rowTop, W, blockH);
+        const data = imgData.data;
+        let hasInk = false;
+        let inkMaxY = 0;
+        for (let y = blockH - 1; y >= 0; y--) {
+          const rowOffset = y * W * 4;
+          for (let x = 0; x < W; x += 16) {
+            const idx = rowOffset + x * 4;
+            const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
+            if (a > 20 && (r < 240 || g < 240 || b < 240)) {
+              hasInk = true;
+              inkMaxY = rowTop + y;
+              break;
+            }
+          }
+          if (hasInk) break;
+        }
+        if (hasInk) {
+          contentBottomPx = Math.max(contentBottomPx, inkMaxY);
+          break;
+        }
+      }
+    } catch (_) {}
+
+    const snapshot = {
+      canvas: snapshotCanvas,
+      width: canvas.width,
+      height: canvas.height,
+      pristineBottomPx: Math.min(H, Math.max(0, contentBottomPx)),
+      pristineTopPx: Math.max(0, Math.min(H, contentTopPx)),
+      nativeSpans
+    };
     this._pageSnapshots.set(pageNum, snapshot);
     return snapshot;
   }
@@ -1418,6 +1530,9 @@ class PersonalPDFApp {
   _getPageContentBottom(pageWrapper, pageCanvas, pristine) {
     if (pageWrapper.classList.contains('overflow-page')) {
       return 0; // Pure overflow page has no inherent pristine content
+    }
+    if (pristine && pristine.pristineBottomPx !== undefined) {
+      return pristine.pristineBottomPx;
     }
     const H = pageCanvas.height;
     const wrapH = pageWrapper.clientHeight || 1;
@@ -1595,16 +1710,39 @@ class PersonalPDFApp {
       const incomingH = hasIncoming ? incomingSlice.height : 0;
       const incomingCssH = incomingH / scaleY;
 
-      const pristineBottomPx = this._getPageContentBottom(pageWrapper, pageCanvas, pristine);
+      // Ensure pristine content bottom & top bounds from frozen snapshot
+      const pristineBottomPx = (pristine && pristine.pristineBottomPx !== undefined)
+        ? pristine.pristineBottomPx
+        : this._getPageContentBottom(pageWrapper, pageCanvas, pristine);
+      const pristineTopPx = (pristine && pristine.pristineTopPx !== undefined)
+        ? pristine.pristineTopPx
+        : Math.round(40 * scaleY);
+
+      // Safe bottom padding: Ensure content NEVER reaches the bottom edge of the page
+      const bottomPaddingPx = Math.max(
+        Math.round(45 * scaleY),
+        Math.min(Math.round(80 * scaleY), H - (pristineBottomPx || Math.round(H - 50 * scaleY)))
+      );
+      const maxContentY = H - bottomPaddingPx;
+
+      // Top padding for incoming content on this page
+      const topPaddingPx = pageWrapper.classList.contains('overflow-page')
+        ? Math.round(45 * scaleY)
+        : pristineTopPx;
+      const topPaddingCss = topPaddingPx / scaleY;
+
+      // Paragraph spacing gap between incoming overflow and existing page content
+      const paragraphGapPx = (hasIncoming && pristineBottomPx > 0) ? Math.round(14 * scaleY) : 0;
+      const incomingTotalShiftPx = hasIncoming ? (incomingH + paragraphGapPx) : 0;
+      const incomingTotalShiftCss = incomingTotalShiftPx / scaleY;
+
       const totalDirectDeltaPx = ops.reduce((acc, op) => acc + Math.round(op.extraNorm * H), 0);
       const newBottomPx = pristineBottomPx > 0
-        ? (pristineBottomPx + incomingH + totalDirectDeltaPx)
-        : (incomingH + totalDirectDeltaPx);
+        ? (pristineBottomPx + incomingTotalShiftPx + totalDirectDeltaPx)
+        : (topPaddingPx + incomingTotalShiftPx + totalDirectDeltaPx);
 
-      // Content only overflows to the next page if its shifted bottom exceeds page height H
-      const overflowH = Math.max(0, newBottomPx - H);
-      const virtualH = H + overflowH;
-
+      // Virtual canvas holds full continuous content of this page + overflow
+      const virtualH = Math.max(H, newBottomPx + bottomPaddingPx);
       const virtualCanvas = document.createElement('canvas');
       virtualCanvas.width = W;
       virtualCanvas.height = virtualH;
@@ -1612,31 +1750,31 @@ class PersonalPDFApp {
       vCtx.fillStyle = '#ffffff';
       vCtx.fillRect(0, 0, W, virtualH);
 
-      // A. Draw incoming slice at y = 0
+      // A. Draw incoming slice at y = topPaddingPx
       if (hasIncoming && incomingSlice.canvas) {
-        vCtx.drawImage(incomingSlice.canvas, 0, 0, incomingSlice.canvas.width, incomingSlice.height, 0, 0, W, incomingH);
+        vCtx.drawImage(incomingSlice.canvas, 0, 0, incomingSlice.canvas.width, incomingSlice.height, 0, topPaddingPx, W, incomingH);
       }
 
-      // B. Draw pristine page at y = incomingH
-      if (pristine) {
-        vCtx.drawImage(pristine.canvas, 0, incomingH, W, H);
+      // B. Draw pristine page at y = incomingTotalShiftPx
+      if (pristine && !pageWrapper.classList.contains('overflow-page')) {
+        vCtx.drawImage(pristine.canvas, 0, incomingTotalShiftPx, W, H);
       }
 
       // C. Shift content below direct in-place edits on this page
       let priorExtra = 0;
       for (const op of ops) {
         const deltaPx = Math.round(op.extraNorm * H);
-        const bottomPx = Math.round((op.bottomNorm + priorExtra) * H) + incomingH;
+        const bottomPx = Math.round((op.bottomNorm + priorExtra) * H) + incomingTotalShiftPx;
         if (deltaPx > 0 && bottomPx < virtualH && bottomPx >= 0) {
-          const srcH = virtualH - (bottomPx + deltaPx);
-          if (srcH > 0) {
+          const contentBelowH = virtualH - (bottomPx + deltaPx);
+          if (contentBelowH > 0) {
             const scratch = document.createElement('canvas');
             scratch.width = W;
-            scratch.height = srcH;
-            scratch.getContext('2d').drawImage(virtualCanvas, 0, bottomPx, W, srcH, 0, 0, W, srcH);
+            scratch.height = contentBelowH;
+            scratch.getContext('2d').drawImage(virtualCanvas, 0, bottomPx, W, contentBelowH, 0, 0, W, contentBelowH);
             vCtx.fillStyle = '#ffffff';
-            vCtx.fillRect(0, bottomPx, W, srcH + deltaPx);
-            vCtx.drawImage(scratch, 0, 0, W, srcH, 0, bottomPx + deltaPx, W, srcH);
+            vCtx.fillRect(0, bottomPx, W, contentBelowH + deltaPx);
+            vCtx.drawImage(scratch, 0, 0, W, contentBelowH, 0, bottomPx + deltaPx, W, contentBelowH);
           }
         }
         priorExtra += op.extraNorm;
@@ -1645,7 +1783,7 @@ class PersonalPDFApp {
       // D. Mask original lines behind direct in-place edits on this page
       let maskShift = 0;
       for (const op of ops) {
-        const topPx = (op.topNorm + maskShift) * H + incomingH;
+        const topPx = (op.topNorm + maskShift) * H + incomingTotalShiftPx;
         const maskW = Math.max(op.norm.w * W, (parseFloat(op.span.style.maxWidth) || 0) * W / wrapW);
         const maskH = (op.origHeightPx + op.extraPx) * H / wrapH;
         vCtx.fillStyle = '#ffffff';
@@ -1658,12 +1796,48 @@ class PersonalPDFApp {
         maskShift += op.extraNorm;
       }
 
-      // E. Draw first H pixels onto live page canvas
+      // E. Check overflow to next page and determine CLEAN cut point (splitY)
+      let splitY = H;
+      let hasOverflow = false;
+
+      if (newBottomPx > maxContentY) {
+        hasOverflow = true;
+        // Collect candidate line bottoms from native spans and incoming spans
+        const lineBottoms = [];
+        if (hasIncoming && incomingSlice.spans) {
+          for (const s of incomingSlice.spans) {
+            const botPx = Math.round((topPaddingCss + s.topPx + (s.heightPx || 16)) * scaleY);
+            lineBottoms.push(botPx);
+          }
+        }
+        if (pristine && pristine.nativeSpans) {
+          for (const s of pristine.nativeSpans) {
+            let directShiftNorm = 0;
+            for (const op of ops) {
+              if (op.bottomNorm <= s.topNorm + 0.0001) directShiftNorm += op.extraNorm;
+            }
+            const shiftedBottomPx = Math.round((s.bottomNorm + directShiftNorm) * H) + incomingTotalShiftPx;
+            lineBottoms.push(shiftedBottomPx);
+          }
+        }
+        lineBottoms.sort((a, b) => a - b);
+
+        // Find last line that fits within maxContentY
+        const fitting = lineBottoms.filter(b => b <= maxContentY);
+        if (fitting.length > 0) {
+          const lastFittingBottom = fitting[fitting.length - 1];
+          splitY = Math.min(maxContentY, lastFittingBottom + 4);
+        } else {
+          splitY = maxContentY;
+        }
+      }
+
+      // Draw onto live page canvas: 0 to splitY, leaving bottom margin pure white!
       const ctx = pageCanvas.getContext('2d');
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, W, H);
-      ctx.drawImage(virtualCanvas, 0, 0, W, H, 0, 0, W, H);
+      ctx.drawImage(virtualCanvas, 0, 0, W, splitY, 0, 0, W, splitY);
       ctx.restore();
 
       // F. TextLayer spans
@@ -1672,14 +1846,17 @@ class PersonalPDFApp {
         textLayer.querySelectorAll('span.reflow-overflow-span').forEach(s => s.remove());
       }
       const outgoingSpans = [];
+      const splitYCss = splitY / scaleY;
 
       // Add incoming spans to text layer
       if (hasIncoming && incomingSlice.spans && textLayer) {
         for (const sData of incomingSlice.spans) {
-          if (sData.topPx >= wrapH - 2) {
+          const placedTopCss = topPaddingCss + sData.topPx;
+          const placedBottomCss = placedTopCss + (sData.heightPx || 16);
+          if (hasOverflow && placedBottomCss > splitYCss) {
             outgoingSpans.push({
               ...sData,
-              topPx: sData.topPx - wrapH
+              topPx: placedTopCss - splitYCss
             });
           } else {
             const overflowSpan = document.createElement('span');
@@ -1688,7 +1865,7 @@ class PersonalPDFApp {
             if (sData.styleText) overflowSpan.style.cssText = sData.styleText;
             overflowSpan.style.position = 'absolute';
             overflowSpan.style.left = `${sData.leftPx}px`;
-            overflowSpan.style.top = `${sData.topPx}px`;
+            overflowSpan.style.top = `${placedTopCss}px`;
             overflowSpan.style.transform = 'none';
             overflowSpan.style.display = '';
             overflowSpan.style.visibility = sData.visibility || '';
@@ -1701,34 +1878,53 @@ class PersonalPDFApp {
         }
       }
 
-      // Shift native spans on this page
-      const nativeSpans = textLayer ? Array.from(textLayer.querySelectorAll('span:not(.reflow-overflow-span)')) : [];
-      for (const span of nativeSpans) {
-        const spanTopNorm = span.offsetTop / wrapH;
+      // Shift native spans on this page using pristine records
+      const nativeSpanRecords = (pristine && pristine.nativeSpans)
+        ? pristine.nativeSpans
+        : Array.from(pageWrapper.querySelectorAll('.textLayer span:not(.reflow-overflow-span)')).map(s => ({
+            span: s,
+            topNorm: s.offsetTop / wrapH,
+            bottomNorm: (s.offsetTop + s.offsetHeight) / wrapH,
+            origOffsetTop: s.offsetTop,
+            origOffsetHeight: s.offsetHeight,
+            origOffsetLeft: s.offsetLeft,
+            origOffsetWidth: s.offsetWidth,
+            textContent: s.textContent,
+            styleText: s.getAttribute('style') || '',
+            className: s.className,
+            fontFamily: s.style.fontFamily,
+            fontSize: s.style.fontSize
+          }));
+
+      for (const sRec of nativeSpanRecords) {
+        const span = sRec.span;
+        if (!span || !span.isConnected) continue;
+
         let directShiftNorm = 0;
         for (const op of ops) {
           if (op.span === span) continue;
-          if (op.bottomNorm <= spanTopNorm + 0.0001) directShiftNorm += op.extraNorm;
+          if (op.bottomNorm <= sRec.topNorm + 0.0001) directShiftNorm += op.extraNorm;
         }
-        const shiftNorm = (incomingCssH / wrapH) + directShiftNorm;
+        const shiftNorm = (incomingTotalShiftCss / wrapH) + directShiftNorm;
         const shiftPx = Math.round(shiftNorm * wrapH);
 
         if (span._reflowBaseTransform === undefined) {
           span._reflowBaseTransform = span.style.transform || '';
         }
         const base = span._reflowBaseTransform;
-        const newTop = span.offsetTop + shiftPx;
+        const newTopCss = sRec.origOffsetTop + shiftPx;
+        const newBottomCss = newTopCss + (sRec.origOffsetHeight || 16);
 
-        if (newTop >= wrapH - 2) {
+        if (hasOverflow && newBottomCss > splitYCss) {
           span.style.display = 'none';
           const cs = window.getComputedStyle(span);
           outgoingSpans.push({
             className: span.className,
             textContent: span.textContent,
             styleText: span.getAttribute('style') || '',
-            leftPx: span.offsetLeft,
-            topPx: newTop - wrapH,
-            heightPx: span.offsetHeight || 16,
+            leftPx: sRec.origOffsetLeft,
+            topPx: Math.max(0, newTopCss - splitYCss),
+            heightPx: sRec.origOffsetHeight || 16,
             visibility: span.style.visibility,
             fontFamily: span.style.fontFamily || cs.fontFamily,
             fontSize: span.style.fontSize || cs.fontSize,
@@ -1749,25 +1945,26 @@ class PersonalPDFApp {
       }
 
       // G. Shift any overlay elements on this page
-      if (incomingCssH > 0) {
+      if (incomingTotalShiftCss > 0) {
         pageWrapper.querySelectorAll('.annotation-textbox, .placed-stamp, .whiteout-box, .redaction-box').forEach(el => {
           if (el._reflowBaseTransform === undefined) {
             el._reflowBaseTransform = el.style.transform || '';
           }
           const base = el._reflowBaseTransform;
-          const translate = `translateY(${Math.round(incomingCssH)}px)`;
+          const translate = `translateY(${Math.round(incomingTotalShiftCss)}px)`;
           el.style.transform = (base && base !== 'none') ? `${base} ${translate}` : translate;
-          el.dataset.reflowShift = String(Math.round(incomingCssH));
+          el.dataset.reflowShift = String(Math.round(incomingTotalShiftCss));
         });
       }
 
       // H. Check overflow to next page
-      if (overflowH > 0) {
+      if (hasOverflow && virtualH > splitY) {
+        const overflowH = virtualH - splitY;
         const nextOverflowCanvas = document.createElement('canvas');
         nextOverflowCanvas.width = W;
         nextOverflowCanvas.height = overflowH;
         const oCtx = nextOverflowCanvas.getContext('2d');
-        oCtx.drawImage(virtualCanvas, 0, H, W, overflowH, 0, 0, W, overflowH);
+        oCtx.drawImage(virtualCanvas, 0, splitY, W, overflowH, 0, 0, W, overflowH);
 
         incomingSlice = {
           canvas: nextOverflowCanvas,
