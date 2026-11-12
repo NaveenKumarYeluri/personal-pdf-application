@@ -1768,10 +1768,29 @@ export class PDFAnnotatorEngine {
       if (!hasContent) continue;
 
       // Composite onto a high-res temporary canvas matching PDF coordinate resolution
+      const rotObj = page.getRotation ? page.getRotation() : 0;
+      const pageRot = (((rotObj && typeof rotObj.angle === 'number') ? rotObj.angle : (typeof rotObj === 'number' ? rotObj : 0)) % 360 + 360) % 360;
+      const isQuarterRot = (pageRot === 90 || pageRot === 270);
+
+      const targetW = annotCanvas ? annotCanvas.width : wrapper.clientWidth * 2;
+      const targetH = annotCanvas ? annotCanvas.height : wrapper.clientHeight * 2;
+
       const compCanvas = document.createElement('canvas');
-      compCanvas.width = annotCanvas ? annotCanvas.width : wrapper.clientWidth * 2;
-      compCanvas.height = annotCanvas ? annotCanvas.height : wrapper.clientHeight * 2;
+      compCanvas.width = isQuarterRot ? targetH : targetW;
+      compCanvas.height = isQuarterRot ? targetW : targetH;
       const compCtx = compCanvas.getContext('2d');
+
+      compCtx.save();
+      if (pageRot === 90) {
+        compCtx.translate(compCanvas.width, 0);
+        compCtx.rotate(Math.PI / 2);
+      } else if (pageRot === 180) {
+        compCtx.translate(compCanvas.width, compCanvas.height);
+        compCtx.rotate(Math.PI);
+      } else if (pageRot === 270) {
+        compCtx.translate(0, compCanvas.height);
+        compCtx.rotate(3 * Math.PI / 2);
+      }
 
       // If an edited paragraph grew, the live page canvas already contains the
       // whole reflowed page (text and images below it shifted together). Use
@@ -1791,7 +1810,7 @@ export class PDFAnnotatorEngine {
         }
       }
       if (hasReflow && pageCanvasEl) {
-        compCtx.drawImage(pageCanvasEl, 0, 0, compCanvas.width, compCanvas.height);
+        compCtx.drawImage(pageCanvasEl, 0, 0, targetW, targetH);
       }
 
       // 1. Draw ink canvas
@@ -1799,8 +1818,8 @@ export class PDFAnnotatorEngine {
         compCtx.drawImage(annotCanvas, 0, 0);
       }
 
-      const scaleX = compCanvas.width / wrapper.clientWidth;
-      const scaleY = compCanvas.height / wrapper.clientHeight;
+      const scaleX = targetW / wrapper.clientWidth;
+      const scaleY = targetH / wrapper.clientHeight;
 
       // 2. Draw whiteout boxes first (so text or ink can appear over them)
       for (const wb of whiteouts) {
@@ -2069,6 +2088,8 @@ export class PDFAnnotatorEngine {
           console.warn('Could not preserve sticky notes as PDF annotations:', noteErr);
         }
       }
+
+      compCtx.restore();
 
       // Embed composite canvas image into PDF page
       const pngDataUrl = compCanvas.toDataURL('image/png');

@@ -14,6 +14,16 @@ import { StorageEngine } from './storage.js';
 import { UIController } from './ui.js';
 import { FileAccessManager, fileNameFromPath } from './file-access.js';
 
+export function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 class PersonalPDFApp {
   constructor() {
     this.currentDocName = 'document.pdf';
@@ -357,7 +367,8 @@ class PersonalPDFApp {
         this.ui.setStatus('Splitting document...');
         try {
           const baseName = (this.currentDocName || 'document').replace(/\.pdf$/i, '');
-          const parts = await this.organizer.splitByRanges(this.currentPdfBytes, rangeStr, baseName);
+          const basePdfBytes = await this._compositeDocumentAnnotations(this.currentPdfBytes);
+          const parts = await this.organizer.splitByRanges(basePdfBytes, rangeStr, baseName);
           document.getElementById('modal-split').classList.remove('open');
 
           const filesToDownload = parts.map(p => ({
@@ -400,7 +411,8 @@ class PersonalPDFApp {
           const position = document.getElementById('bates-position').value;
 
           this.ui.setStatus('Applying header/footer page numbers...');
-          const updated = await this.security.addPageNumbers(this.currentPdfBytes, {
+          const basePdfBytes = await this._compositeDocumentAnnotations(this.currentPdfBytes);
+          const updated = await this.security.addPageNumbers(basePdfBytes, {
             prefix,
             startNumber,
             format,
@@ -1741,6 +1753,17 @@ class PersonalPDFApp {
     }
   }
 
+  async _compositeDocumentAnnotations(bytes = this.currentPdfBytes) {
+    if (this.annotator && typeof this.annotator['burnAnnotationsToPdf'] === 'function') {
+      try {
+        return await this.annotator['burnAnnotationsToPdf'](bytes);
+      } catch (burnErr) {
+        console.warn('Could not composite annotations:', burnErr);
+      }
+    }
+    return bytes;
+  }
+
   async saveDocument() {
     return this._savePdfToDisk(false);
   }
@@ -2071,17 +2094,18 @@ class PersonalPDFApp {
     return { pageNum: 1, x: 120, y: 150 };
   }
 
-  openMergeModal() {
+  async openMergeModal() {
     const modal = document.getElementById('modal-merge');
     const mergeInput = document.getElementById('merge-files-input');
     if (mergeInput) mergeInput.value = '';
 
     this.mergeItems = [];
     if (this.currentPdfBytes) {
+      const currentBytes = await this._compositeDocumentAnnotations(this.currentPdfBytes);
       this.mergeItems.push({
         name: this.currentDocName,
-        bytes: this.currentPdfBytes,
-        size: this.currentPdfBytes.length,
+        bytes: currentBytes,
+        size: currentBytes.length,
         isCurrent: true
       });
     }
@@ -2117,7 +2141,7 @@ class PersonalPDFApp {
       helper.style.borderRadius = '6px';
       helper.style.border = '1px solid rgba(59, 130, 246, 0.2)';
       helper.style.color = 'var(--text-primary)';
-      helper.innerHTML = `ℹ️ Current document <strong>${this.mergeItems[0].name}</strong> is loaded. Click <strong>+ Add PDF Files to Combine...</strong> above to select at least 1 more document to combine.`;
+      helper.innerHTML = `ℹ️ Current document <strong>${escapeHtml(this.mergeItems[0].name)}</strong> is loaded. Click <strong>+ Add PDF Files to Combine...</strong> above to select at least 1 more document to combine.`;
       mergeList.appendChild(helper);
     }
 
@@ -2137,7 +2161,7 @@ class PersonalPDFApp {
       left.style.display = 'flex';
       left.style.alignItems = 'center';
       left.style.gap = '8px';
-      left.innerHTML = `<span>📄 <strong>${idx + 1}.</strong> ${item.name}</span>` + 
+      left.innerHTML = `<span>📄 <strong>${idx + 1}.</strong> ${escapeHtml(item.name)}</span>` + 
         (item.isCurrent ? ' <span style="background:var(--accent-red); color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; font-weight:600;">Current Document</span>' : ` <span class="text-muted">(${Math.round(item.size / 1024)} KB)</span>`);
 
       const right = document.createElement('div');
@@ -2850,7 +2874,8 @@ class PersonalPDFApp {
           const size = parseInt(document.getElementById('watermark-size').value, 10) || 48;
 
           this.ui.setStatus('Applying watermark to all pages...');
-          const modified = await this.security.applyWatermark(this.currentPdfBytes, {
+          const baseBytes = await this._compositeDocumentAnnotations(this.currentPdfBytes);
+          const modified = await this.security.applyWatermark(baseBytes, {
             text, angle, opacity, color, size
           });
           await this.loadArrayBuffer(modified, this.currentDocName);
@@ -2984,16 +3009,16 @@ class PersonalPDFApp {
       this.ui.showToast('Please open a PDF document first', 'warning');
       return false;
     }
-    this.ui.setStatus('Flattening form fields...');
+    this.ui.setStatus('Flattening form fields and annotations...');
     try {
-      const result = await this.organizer.flattenForm(this.currentPdfBytes);
-      if (!result || result.fieldCount === 0) {
-        this.ui.setStatus('No interactive form fields found');
-        this.ui.showToast('This document has no fillable form fields to flatten', 'info');
-        return false;
-      }
-      await this.loadArrayBuffer(result.bytes, this.currentDocName);
-      const msg = `Flattened ${result.fieldCount} form field${result.fieldCount === 1 ? '' : 's'}`;
+      const baseBytes = await this._compositeDocumentAnnotations(this.currentPdfBytes);
+      const result = await this.organizer.flattenForm(baseBytes);
+      const outputBytes = result ? result.bytes : baseBytes;
+      await this.loadArrayBuffer(outputBytes, this.currentDocName);
+      const count = result?.fieldCount || 0;
+      const msg = count > 0
+        ? `Flattened ${count} form field${count === 1 ? '' : 's'} & baked annotations`
+        : 'Baked all annotations permanently into document stream';
       this.ui.setStatus(msg);
       this.ui.showToast(msg, 'success');
       return true;
@@ -3009,7 +3034,8 @@ class PersonalPDFApp {
   async applyPageNumbers() {
     if (!this.currentPdfBytes) return;
     this.ui.setStatus('Adding page numbers...');
-    const updated = await this.security.addPageNumbers(this.currentPdfBytes);
+    const baseBytes = await this._compositeDocumentAnnotations(this.currentPdfBytes);
+    const updated = await this.security.addPageNumbers(baseBytes);
     await this.loadArrayBuffer(updated, this.currentDocName);
     this.ui.setStatus('Page numbers added');
   }

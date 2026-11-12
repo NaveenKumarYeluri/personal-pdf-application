@@ -2131,20 +2131,20 @@ export class UIController {
       modal.innerHTML = `
         <div class="modal-box">
           <div class="modal-header">
-            <h3 id="export-result-title">${title}</h3>
+            <h3 id="export-result-title"></h3>
             <button class="modal-close">&times;</button>
           </div>
           <div class="modal-body">
             <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
               <div style="width:42px; height:42px; border-radius:50%; background:rgba(34,197,94,0.15); color:#16a34a; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:bold; flex-shrink:0;">✔</div>
               <div>
-                <p id="export-result-message" style="margin:0; font-weight:500; font-size:14px; color:var(--text-primary);">${message}</p>
+                <p id="export-result-message" style="margin:0; font-weight:500; font-size:14px; color:var(--text-primary);"></p>
                 <p style="margin:4px 0 0 0; font-size:12px; color:var(--text-secondary);">Saved location:</p>
-                <div id="export-result-destination" style="display:inline-block; margin-top:2px; padding:4px 10px; border-radius:4px; background:var(--bg-main); border:1px solid var(--border-color); font-family:monospace; font-size:12px; color:var(--accent-color); word-break:break-all;">${destination}</div>
+                <div id="export-result-destination" style="display:inline-block; margin-top:2px; padding:4px 10px; border-radius:4px; background:var(--bg-main); border:1px solid var(--border-color); font-family:monospace; font-size:12px; color:var(--accent-color); word-break:break-all;"></div>
               </div>
             </div>
             <div style="margin-top:12px;">
-              <label style="font-size:12px; font-weight:600; text-transform:uppercase; color:var(--text-secondary);">Saved Files (<span id="export-result-count">${files.length}</span>):</label>
+              <label style="font-size:12px; font-weight:600; text-transform:uppercase; color:var(--text-secondary);">Saved Files (<span id="export-result-count">0</span>):</label>
               <ul id="export-result-list" style="list-style:none; padding:0; margin:6px 0 0 0; max-height:160px; overflow-y:auto; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-main);">
               </ul>
             </div>
@@ -2240,13 +2240,18 @@ export class UIController {
         item.innerHTML = `
           <div class="bookmark-list-left">
             <span>🔖</span>
-            <span class="bookmark-title" title="${bm.title}">${bm.title}</span>
+            <span class="bookmark-title"></span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
             <span class="annot-page-badge" style="cursor:pointer;">Page ${bm.pageNum}</span>
             <button class="bookmark-delete-btn" title="Delete Bookmark">&times;</button>
           </div>
         `;
+        const titleSpan = item.querySelector('.bookmark-title');
+        if (titleSpan) {
+          titleSpan.textContent = bm.title;
+          titleSpan.title = bm.title;
+        }
         item.onclick = (e) => {
           if (e.target.classList.contains('bookmark-delete-btn')) {
             e.stopPropagation();

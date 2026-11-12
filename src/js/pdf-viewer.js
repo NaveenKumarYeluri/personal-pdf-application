@@ -288,6 +288,17 @@ export class PDFViewerEngine {
       }
 
       const loadingTask = window.pdfjsLib.getDocument({ data: this.pdfBytes.slice() });
+      loadingTask.onPassword = (callback, reason) => {
+        const promptMsg = reason === 2
+          ? `Incorrect password. Enter password to open "${fileName}":`
+          : `This document is password-protected. Enter password to open "${fileName}":`;
+        const pw = prompt(promptMsg);
+        if (pw !== null && pw !== '') {
+          callback(pw);
+        } else {
+          callback(new Error('Password prompt was cancelled'));
+        }
+      };
       this.pdfDoc = await loadingTask.promise;
       this.totalPages = this.pdfDoc.numPages;
       this.currentPage = 1;

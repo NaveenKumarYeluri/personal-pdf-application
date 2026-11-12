@@ -201,9 +201,20 @@ export class PDFSecurityEngine {
     box.style.top = `${y}px`;
     box.style.width = `${width}px`;
     box.style.height = `${height}px`;
-    box.title = 'Double-click to remove redaction';
+    box.title = 'Drag to position, use handles to resize, double-click to remove';
 
     box.ondblclick = () => box.remove();
+
+    const app = typeof window !== 'undefined' ? window.app : null;
+    if (app && app.annotator) {
+      if (typeof app.annotator._makeDraggable === 'function') {
+        app.annotator._makeDraggable(box, wrapper);
+      }
+      if (typeof app.annotator._makeResizable === 'function') {
+        app.annotator._makeResizable(box, wrapper, { keepAspectRatio: false });
+      }
+    }
+
     wrapper.appendChild(box);
   }
 }

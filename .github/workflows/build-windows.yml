@@ -59,8 +59,21 @@ jobs:
           }
 
       - name: Build Tauri Windows Application
+        shell: powershell
         run: |
-          npx @tauri-apps/cli build --bundles nsis || npx @tauri-apps/cli build --bundles msi || npx @tauri-apps/cli build --no-bundle
+          $buildSuccess = $false
+          foreach ($bundle in @("nsis", "msi")) {
+            Write-Host "Attempting Tauri build with bundle: $bundle..."
+            & npx @tauri-apps/cli build --bundles $bundle
+            if ($LASTEXITCODE -eq 0) {
+              $buildSuccess = $true
+              break
+            }
+          }
+          if (-not $buildSuccess) {
+            Write-Host "Bundle build failed, attempting standalone binary build (--no-bundle)..."
+            & npx @tauri-apps/cli build --no-bundle
+          }
 
           # Prepare clean distribution folder
           New-Item -ItemType Directory -Force -Path "dist-windows\Installer" | Out-Null

@@ -32,19 +32,23 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 def launch_browser():
     time.sleep(1)
     url = f"http://localhost:{PORT}"
+    platform_name = "Windows" if sys.platform == "win32" else "Linux" if sys.platform.startswith("linux") else sys.platform.capitalize()
     print(f"\n=======================================================")
-    print(f"  Personal PDF Suite - Running locally on Windows")
+    print(f"  Personal PDF Suite - Running locally on {platform_name}")
     print(f"  URL: {url}")
     print(f"  RAM usage: < 20 MB | CPU usage: 0%")
     print(f"=======================================================\n")
     
-    # Try opening Edge in native App Window mode for desktop-feel
-    edge_app_cmd = f'start msedge --app="{url}"'
-    try:
-        res = os.system(edge_app_cmd)
-        if res != 0:
+    # On Windows, try opening Edge in native App Window mode for desktop-feel
+    if sys.platform == "win32":
+        edge_app_cmd = f'start msedge --app="{url}"'
+        try:
+            res = os.system(edge_app_cmd)
+            if res != 0:
+                webbrowser.open(url)
+        except Exception:
             webbrowser.open(url)
-    except Exception:
+    else:
         webbrowser.open(url)
 
 if __name__ == "__main__":
@@ -55,7 +59,7 @@ if __name__ == "__main__":
     threading.Thread(target=launch_browser, daemon=True).start()
     
     try:
-        with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
+        with socketserver.TCPServer(("127.0.0.1", PORT), CustomHandler) as httpd:
             print(f"Serving Personal PDF Suite from {DIRECTORY} on port {PORT}...")
             print("Press Ctrl+C to stop.")
             httpd.serve_forever()

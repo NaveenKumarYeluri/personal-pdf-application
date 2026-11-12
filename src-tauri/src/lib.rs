@@ -46,16 +46,30 @@ fn ensure_pdf_extension(path: String) -> String {
 /// Read a PDF from disk and return it base64 encoded (compact over IPC).
 #[tauri::command]
 async fn read_pdf_file(path: String) -> Result<String, String> {
-    let bytes = std::fs::read(&path).map_err(|e| format!("Could not read {path}: {e}"))?;
+    let p = PathBuf::from(&path);
+    if !path.to_lowercase().ends_with(".pdf") {
+        return Err("Access denied: only .pdf files may be read".to_string());
+    }
+    let bytes = std::fs::read(&p).map_err(|e| format!("Could not read {path}: {e}"))?;
+    // Verify basic PDF magic bytes (%PDF-)
+    if bytes.len() >= 4 && !bytes.starts_with(b"%PDF") {
+        return Err("File is not a valid PDF document (missing %PDF header)".to_string());
+    }
     Ok(STANDARD.encode(bytes))
 }
 
 /// Replace a PDF on disk with the supplied bytes.
 #[tauri::command]
 async fn write_pdf_file(path: String, data: String) -> Result<(), String> {
+    if !path.to_lowercase().ends_with(".pdf") {
+        return Err("Access denied: destination file must have a .pdf extension".to_string());
+    }
     let bytes = STANDARD
         .decode(data)
         .map_err(|e| format!("Invalid PDF data: {e}"))?;
+    if bytes.len() >= 4 && !bytes.starts_with(b"%PDF") {
+        return Err("Payload is not a valid PDF document (missing %PDF header)".to_string());
+    }
     write_atomic(PathBuf::from(path), &bytes)
 }
 
