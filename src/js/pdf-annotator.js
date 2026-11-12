@@ -1739,14 +1739,20 @@ export class PDFAnnotatorEngine {
     const { PDFDocument, rgb, PDFName, PDFString } = lib;
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
     const doc = await PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
-    const pages = doc.getPages();
+    const existingPages = doc.getPages();
+    const totalViewerPages = Math.max(existingPages.length, this.viewer?.totalPages || 0);
 
-    for (let i = 0; i < pages.length; i++) {
+    for (let i = 0; i < totalViewerPages; i++) {
       const pageNum = i + 1;
       const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
       if (!wrapper) continue;
 
-      const page = pages[i];
+      let page = i < existingPages.length ? existingPages[i] : null;
+      if (!page) {
+        const lastExisting = existingPages[existingPages.length - 1];
+        const lastSize = lastExisting ? lastExisting.getSize() : { width: 595.28, height: 841.89 };
+        page = doc.addPage([lastSize.width, lastSize.height]);
+      }
       const { width, height } = page.getSize();
 
       // Check if there are annotations or drawings on this page
@@ -1757,13 +1763,30 @@ export class PDFAnnotatorEngine {
       const whiteouts = wrapper.querySelectorAll('.whiteout-box');
       const pageInPlaceEdits = this.inPlaceEdits?.get(pageNum);
       const hasInPlaceEdits = pageInPlaceEdits && pageInPlaceEdits.size > 0;
+      const pageCanvasEl = wrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
+
+      let hasReflow = false;
+      if (wrapper.dataset.hasReflow === 'true') {
+        hasReflow = true;
+      } else if (hasInPlaceEdits) {
+        const wrapH = wrapper.clientHeight || 1;
+        for (const [span, edit] of pageInPlaceEdits.entries()) {
+          const norm = span._normRect || edit.normRect;
+          if (!norm) continue;
+          if ((span.offsetHeight || 0) > norm.h * wrapH + 1) {
+            hasReflow = true;
+            break;
+          }
+        }
+      }
 
       const hasContent = (this.annotations.has(pageNum) && this.annotations.get(pageNum).length > 0) ||
                          textboxes.length > 0 ||
                          stamps.length > 0 ||
                          redactions.length > 0 ||
                          whiteouts.length > 0 ||
-                         hasInPlaceEdits;
+                         hasInPlaceEdits ||
+                         hasReflow;
 
       if (!hasContent) continue;
 
@@ -1792,23 +1815,9 @@ export class PDFAnnotatorEngine {
         compCtx.rotate(3 * Math.PI / 2);
       }
 
-      // If an edited paragraph grew, the live page canvas already contains the
-      // whole reflowed page (text and images below it shifted together). Use
-      // it as the base so the saved PDF matches the editor exactly; otherwise
-      // keep the original vector page and only overlay annotations.
-      const pageCanvasEl = wrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"]');
-      let hasReflow = false;
-      if (hasInPlaceEdits) {
-        const wrapH = wrapper.clientHeight || 1;
-        for (const [span, edit] of pageInPlaceEdits.entries()) {
-          const norm = span._normRect || edit.normRect;
-          if (!norm) continue;
-          if ((span.offsetHeight || 0) > norm.h * wrapH + 1) {
-            hasReflow = true;
-            break;
-          }
-        }
-      }
+      // If an edited paragraph grew or content cascaded from prior pages,
+      // the live page canvas already contains the reflowed raster. Use it as
+      // the base so the saved PDF matches the editor exactly.
       if (hasReflow && pageCanvasEl) {
         compCtx.drawImage(pageCanvasEl, 0, 0, targetW, targetH);
       }

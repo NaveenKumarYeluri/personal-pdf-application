@@ -494,6 +494,10 @@ def run_all_tests():
          "compCtx.fillText(line, sx, sy + idx * lineHeight)" in annot_js)
     test("pdf-export.js renders wrapped in-place text onto the print canvas without shrinking",
          "ctx.fillText(line, sx, sy + idx * lineHeight)" in export_js)
+    test("app.js implements multi-page reflow cascade and dynamic overflow page lifecycle",
+         "_createOverflowPage" in app_js and "_removeOverflowPage" in app_js and "incomingSlice" in app_js)
+    test("pdf-annotator.js preserves reflowed canvases across multi-page cascade and new overflow pages",
+         "totalViewerPages" in annot_js and "doc.addPage" in annot_js and "hasReflow" in annot_js)
 
     # =========================================================================
     # 16. Annotate Text Box Bounds, Resize Handles & Dedicated Drag Bar Verification

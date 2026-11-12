@@ -40,6 +40,7 @@ class PersonalPDFApp {
     // earlier shifts.
     this._pageSnapshots = new Map();
     this._reflowFrame = 0;
+    this._lastReflowedMaxPage = 1;
     this.wakeLock = new ScreenWakeLockManager();
     this.storage = new StorageEngine();
 
@@ -79,13 +80,16 @@ class PersonalPDFApp {
         // A fresh render invalidates any captured canvas; recapture before
         // restoring edits so reflow (if any) starts from pristine pixels.
         this._pageSnapshots.delete(pageNum);
-        if (this.annotator?.inPlaceEdits?.get(pageNum)?.size) {
+        if (this.annotator?.inPlaceEdits?.size) {
           this._capturePageSnapshot(pageNum, pageWrapper);
         }
         this._restoreInPlaceEdits(pageNum, textLayer, pageWrapper);
         // Canvas ink is cleared whenever the annotation layer is rebuilt on
         // zoom/rotate, so repaint it from the persistent annotation store.
         if (this.annotator) this.annotator._redrawPageAnnotations(pageNum);
+        if (this.annotator?.inPlaceEdits?.size) {
+          this._scheduleReflow(1);
+        }
       }
     });
 
@@ -1296,153 +1300,486 @@ class PersonalPDFApp {
       this._reflowEditedPage(pageNum);
       return;
     }
-    this._reflowPageNum = pageNum;
+    this._reflowPageNum = Math.min(this._reflowPageNum || pageNum || 1, pageNum || 1);
     cancelAnimationFrame(this._reflowFrame);
     this._reflowFrame = requestAnimationFrame(() => {
-      const pending = this._reflowPageNum;
+      const pending = this._reflowPageNum || 1;
       this._reflowPageNum = null;
       if (pending) this._reflowEditedPage(pending);
     });
   }
 
+  _createOverflowPage(pageNum) {
+    const existing = document.getElementById(`page-wrapper-${pageNum}`);
+    if (existing) return existing;
+
+    const prevWrapper = document.getElementById(`page-wrapper-${pageNum - 1}`);
+    if (!prevWrapper) return null;
+
+    const pageWrapper = document.createElement('div');
+    pageWrapper.className = 'page-wrapper overflow-page';
+    if (document.body.classList.contains('mode-edit')) {
+      pageWrapper.classList.add('editing-content');
+    }
+    pageWrapper.id = `page-wrapper-${pageNum}`;
+    pageWrapper.dataset.pageNumber = String(pageNum);
+    pageWrapper.style.width = prevWrapper.style.width || `${prevWrapper.clientWidth}px`;
+    pageWrapper.style.height = prevWrapper.style.height || `${prevWrapper.clientHeight}px`;
+    pageWrapper.dataset.renderWidth = prevWrapper.dataset.renderWidth || `${prevWrapper.clientWidth}`;
+    pageWrapper.dataset.renderHeight = prevWrapper.dataset.renderHeight || `${prevWrapper.clientHeight}`;
+
+    const prevCanvas = this._getPageCanvas(prevWrapper);
+    const w = prevCanvas ? prevCanvas.width : (prevWrapper.clientWidth * 2);
+    const h = prevCanvas ? prevCanvas.height : (prevWrapper.clientHeight * 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.id = `page-canvas-${pageNum}`;
+    canvas.className = 'pdf-canvas';
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = `${Math.floor(parseFloat(pageWrapper.style.width) || prevWrapper.clientWidth)}px`;
+    canvas.style.height = `${Math.floor(parseFloat(pageWrapper.style.height) || prevWrapper.clientHeight)}px`;
+
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+
+    const textLayer = document.createElement('div');
+    textLayer.className = 'textLayer';
+    textLayer.id = `text-layer-${pageNum}`;
+    textLayer.style.width = canvas.style.width;
+    textLayer.style.height = canvas.style.height;
+
+    const annotationLayer = document.createElement('div');
+    annotationLayer.className = 'annotation-layer';
+    annotationLayer.id = `annotation-layer-${pageNum}`;
+    const annotCanvas = document.createElement('canvas');
+    annotCanvas.id = `annot-canvas-${pageNum}`;
+    annotCanvas.width = w;
+    annotCanvas.height = h;
+    annotCanvas.style.width = canvas.style.width;
+    annotCanvas.style.height = canvas.style.height;
+    annotationLayer.appendChild(annotCanvas);
+
+    pageWrapper.appendChild(canvas);
+    pageWrapper.appendChild(textLayer);
+    pageWrapper.appendChild(annotationLayer);
+
+    const container = this.viewer?.pagesContainer || document.getElementById('viewer-container');
+    if (container) {
+      container.appendChild(pageWrapper);
+    }
+
+    if (this.viewer) {
+      if (this.viewer.observer) {
+        this.viewer.observer.observe(pageWrapper);
+      }
+      this.viewer.totalPages = Math.max(this.viewer.totalPages, pageNum);
+      if (this.ui) {
+        this.ui.updatePageInfo(this.viewer.currentPage || 1, this.viewer.totalPages);
+      }
+    }
+
+    const snapshotCanvas = document.createElement('canvas');
+    snapshotCanvas.width = w;
+    snapshotCanvas.height = h;
+    const sCtx = snapshotCanvas.getContext('2d');
+    sCtx.fillStyle = '#ffffff';
+    sCtx.fillRect(0, 0, w, h);
+    this._pageSnapshots.set(pageNum, { canvas: snapshotCanvas, width: w, height: h });
+
+    return pageWrapper;
+  }
+
+  _removeOverflowPage(pageNum) {
+    const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+    if (!wrapper || !wrapper.classList.contains('overflow-page')) return;
+
+    if (this.viewer?.observer) {
+      this.viewer.observer.unobserve(wrapper);
+    }
+    wrapper.remove();
+    this._pageSnapshots.delete(pageNum);
+
+    if (this.viewer && this.viewer.totalPages >= pageNum) {
+      const wrappers = document.querySelectorAll('.page-wrapper');
+      let maxPage = 1;
+      wrappers.forEach(w => {
+        const n = parseInt(w.dataset.pageNumber, 10);
+        if (n && n > maxPage) maxPage = n;
+      });
+      this.viewer.totalPages = maxPage;
+      if (this.ui) {
+        this.ui.updatePageInfo(this.viewer.currentPage || 1, this.viewer.totalPages);
+      }
+    }
+  }
+
+  _getPageContentBottom(pageWrapper, pageCanvas, pristine) {
+    if (pageWrapper.classList.contains('overflow-page')) {
+      return 0; // Pure overflow page has no inherent pristine content
+    }
+    const H = pageCanvas.height;
+    const wrapH = pageWrapper.clientHeight || 1;
+    const scaleY = H / wrapH;
+
+    let maxCssBottom = 0;
+    // 1. Spans in text layer
+    pageWrapper.querySelectorAll('.textLayer span:not(.reflow-overflow-span)').forEach(s => {
+      if (s.textContent && s.textContent.trim()) {
+        maxCssBottom = Math.max(maxCssBottom, s.offsetTop + s.offsetHeight);
+      }
+    });
+
+    // 2. Overlays (stamps, textboxes, images)
+    pageWrapper.querySelectorAll('.annotation-textbox, .placed-stamp, .whiteout-box, .redaction-box').forEach(el => {
+      maxCssBottom = Math.max(maxCssBottom, el.offsetTop + el.offsetHeight);
+    });
+
+    let contentBottomPx = Math.round(maxCssBottom * scaleY);
+
+    // 3. Check canvas for non-white pixels below textLayer (e.g. diagrams or images at page bottom)
+    if (pristine && pristine.canvas) {
+      const pCanvas = pristine.canvas;
+      const W = pCanvas.width;
+      const ctx = pCanvas.getContext('2d');
+      try {
+        const checkRows = 40;
+        for (let rowBottom = H; rowBottom > contentBottomPx; rowBottom -= checkRows) {
+          const rowTop = Math.max(contentBottomPx, rowBottom - checkRows);
+          const blockH = rowBottom - rowTop;
+          if (blockH <= 0) break;
+          const imgData = ctx.getImageData(0, rowTop, W, blockH);
+          const data = imgData.data;
+          let hasInk = false;
+          let inkMaxY = 0;
+          for (let y = blockH - 1; y >= 0; y--) {
+            const rowOffset = y * W * 4;
+            for (let x = 0; x < W; x += 16) {
+              const idx = rowOffset + x * 4;
+              const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
+              if (a > 20 && (r < 240 || g < 240 || b < 240)) {
+                hasInk = true;
+                inkMaxY = rowTop + y;
+                break;
+              }
+            }
+            if (hasInk) break;
+          }
+          if (hasInk) {
+            contentBottomPx = Math.max(contentBottomPx, inkMaxY);
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return Math.min(H, Math.max(0, contentBottomPx));
+  }
+
   /**
-   * Re-layout a page after in-place text growth.
+   * Re-layout document pages after in-place text growth.
    *
    * The visible PDF is a canvas raster plus transparent text-layer spans.
-   * When an edited paragraph grows, every pixel below its original bottom is
-   * shifted down in the canvas (so text AND images below move together), and
-   * the transparent text spans are shifted to keep hit-testing aligned.
+   * When an edited paragraph grows, content below it is shifted down. If content
+   * reaches the bottom boundary of a page, it cascades seamlessly onto following pages,
+   * pushing their existing content down and creating dynamic overflow pages if necessary,
+   * guaranteeing that zero text or diagram elements are lost off the page edge.
    */
   _reflowEditedPage(pageNum, pageWrapperArg) {
-    const pageWrapper = pageWrapperArg || document.getElementById(`page-wrapper-${pageNum}`);
-    if (!pageWrapper) return;
+    const totalPages = this.viewer?.totalPages || 1;
+    const maxPagesToCheck = Math.max(totalPages, this._lastReflowedMaxPage || totalPages, 1) + 20;
 
-    const pageCanvas = this._getPageCanvas(pageWrapper);
-    const pageEdits = this.annotator?.inPlaceEdits?.get(pageNum);
-    const snapshot = this._pageSnapshots.get(pageNum);
-    const wrapH = pageWrapper.clientHeight || 1;
+    let incomingSlice = null;
+    let highestReflowedPage = 1;
 
-    // Nothing edited any more (e.g. undo/revert): restore pristine pixels and
-    // drop any transforms left on the text layer.
-    if (!pageEdits || pageEdits.size === 0) {
-      if (snapshot && pageCanvas) {
-        const ctx = pageCanvas.getContext('2d');
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-        ctx.drawImage(snapshot.canvas, 0, 0);
-        ctx.restore();
-      }
-      pageWrapper.querySelectorAll('.textLayer span').forEach(span => {
-        if (span.dataset.reflowShift) {
-          span.style.transform = span._reflowBaseTransform || '';
-          delete span.dataset.reflowShift;
+    for (let p = 1; p <= maxPagesToCheck; p++) {
+      let pageWrapper = document.getElementById(`page-wrapper-${p}`);
+      if (!pageWrapper) {
+        if (incomingSlice && incomingSlice.height > 0) {
+          pageWrapper = this._createOverflowPage(p);
+          if (!pageWrapper) break;
+        } else {
+          break;
         }
-      });
-      return;
-    }
-
-    const ops = [];
-    for (const [span, edit] of pageEdits.entries()) {
-      if (!span || !span.isConnected) continue;
-      const norm = span._normRect || edit.normRect;
-      if (!norm) continue;
-      const origHeightPx = norm.h * wrapH;
-      const currentHeightPx = span.offsetHeight || 0;
-      ops.push({
-        span,
-        edit,
-        norm,
-        topNorm: norm.y,
-        bottomNorm: norm.y + norm.h,
-        origHeightPx,
-        extraNorm: Math.max(0, (currentHeightPx - origHeightPx) / wrapH),
-        extraPx: Math.max(0, currentHeightPx - origHeightPx)
-      });
-    }
-    ops.sort((a, b) => a.topNorm - b.topNorm);
-
-    // 1. Rebuild the page raster from pristine pixels and shift content below
-    //    each grown paragraph down, including images and painted text.
-    if (pageCanvas) {
-      if (!snapshot || snapshot.width !== pageCanvas.width || snapshot.height !== pageCanvas.height) {
-        this._capturePageSnapshot(pageNum, pageWrapper);
       }
-      const pristine = this._pageSnapshots.get(pageNum);
-      if (pristine) {
-        const ctx = pageCanvas.getContext('2d');
-        const W = pageCanvas.width;
-        const H = pageCanvas.height;
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, W, H);
-        ctx.drawImage(pristine.canvas, 0, 0);
 
-        let priorExtra = 0;
-        for (const op of ops) {
-          const deltaPx = Math.round(op.extraNorm * H);
-          const bottomPx = Math.round((op.bottomNorm + priorExtra) * H);
-          if (deltaPx > 0 && bottomPx < H && bottomPx >= 0) {
-            const srcH = H - bottomPx;
+      const pageCanvas = this._getPageCanvas(pageWrapper);
+      if (!pageCanvas) break;
+
+      // Ensure pristine copy exists
+      if (!this._pageSnapshots.has(p) ||
+          this._pageSnapshots.get(p).width !== pageCanvas.width ||
+          this._pageSnapshots.get(p).height !== pageCanvas.height) {
+        this._capturePageSnapshot(p, pageWrapper);
+      }
+      const pristine = this._pageSnapshots.get(p);
+
+      const pageEdits = this.annotator?.inPlaceEdits?.get(p);
+      const wrapH = pageWrapper.clientHeight || 1;
+      const wrapW = pageWrapper.clientWidth || 1;
+      const W = pageCanvas.width;
+      const H = pageCanvas.height;
+      const scaleY = H / wrapH;
+
+      const ops = [];
+      if (pageEdits && pageEdits.size > 0) {
+        for (const [span, edit] of pageEdits.entries()) {
+          if (!span || !span.isConnected) continue;
+          const norm = span._normRect || edit.normRect;
+          if (!norm) continue;
+          const origHeightPx = norm.h * wrapH;
+          const currentHeightPx = span.offsetHeight || 0;
+          ops.push({
+            span,
+            edit,
+            norm,
+            topNorm: norm.y,
+            bottomNorm: norm.y + norm.h,
+            origHeightPx,
+            extraNorm: Math.max(0, (currentHeightPx - origHeightPx) / wrapH),
+            extraPx: Math.max(0, currentHeightPx - origHeightPx)
+          });
+        }
+        ops.sort((a, b) => a.topNorm - b.topNorm);
+      }
+
+      const hasIncoming = Boolean(incomingSlice && incomingSlice.height > 0);
+      const hasDirectGrowth = ops.some(op => op.extraPx > 0);
+      const hasEdits = Boolean(pageEdits && pageEdits.size > 0);
+
+      if (!hasIncoming && !hasDirectGrowth && !hasEdits) {
+        if (pageWrapper.classList.contains('overflow-page')) {
+          this._removeOverflowPage(p);
+          incomingSlice = null;
+          continue;
+        }
+
+        // Restore pristine page canvas
+        if (pristine) {
+          const ctx = pageCanvas.getContext('2d');
+          ctx.save();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, W, H);
+          ctx.drawImage(pristine.canvas, 0, 0);
+          ctx.restore();
+        }
+
+        const textLayer = pageWrapper.querySelector('.textLayer');
+        if (textLayer) {
+          textLayer.querySelectorAll('span.reflow-overflow-span').forEach(s => s.remove());
+          textLayer.querySelectorAll('span').forEach(span => {
+            if (span.dataset.reflowShift) {
+              span.style.transform = span._reflowBaseTransform || '';
+              delete span.dataset.reflowShift;
+            }
+            if (span.style.display === 'none') {
+              span.style.display = '';
+            }
+          });
+        }
+        pageWrapper.querySelectorAll('.annotation-textbox, .placed-stamp, .whiteout-box, .redaction-box').forEach(el => {
+          if (el.dataset.reflowShift) {
+            el.style.transform = el._reflowBaseTransform || '';
+            delete el.dataset.reflowShift;
+          }
+        });
+        delete pageWrapper.dataset.hasReflow;
+        incomingSlice = null;
+        continue;
+      }
+
+      highestReflowedPage = p;
+      pageWrapper.dataset.hasReflow = 'true';
+
+      const incomingH = hasIncoming ? incomingSlice.height : 0;
+      const incomingCssH = incomingH / scaleY;
+
+      const pristineBottomPx = this._getPageContentBottom(pageWrapper, pageCanvas, pristine);
+      const totalDirectDeltaPx = ops.reduce((acc, op) => acc + Math.round(op.extraNorm * H), 0);
+      const newBottomPx = pristineBottomPx > 0
+        ? (pristineBottomPx + incomingH + totalDirectDeltaPx)
+        : (incomingH + totalDirectDeltaPx);
+
+      // Content only overflows to the next page if its shifted bottom exceeds page height H
+      const overflowH = Math.max(0, newBottomPx - H);
+      const virtualH = H + overflowH;
+
+      const virtualCanvas = document.createElement('canvas');
+      virtualCanvas.width = W;
+      virtualCanvas.height = virtualH;
+      const vCtx = virtualCanvas.getContext('2d');
+      vCtx.fillStyle = '#ffffff';
+      vCtx.fillRect(0, 0, W, virtualH);
+
+      // A. Draw incoming slice at y = 0
+      if (hasIncoming && incomingSlice.canvas) {
+        vCtx.drawImage(incomingSlice.canvas, 0, 0, incomingSlice.canvas.width, incomingSlice.height, 0, 0, W, incomingH);
+      }
+
+      // B. Draw pristine page at y = incomingH
+      if (pristine) {
+        vCtx.drawImage(pristine.canvas, 0, incomingH, W, H);
+      }
+
+      // C. Shift content below direct in-place edits on this page
+      let priorExtra = 0;
+      for (const op of ops) {
+        const deltaPx = Math.round(op.extraNorm * H);
+        const bottomPx = Math.round((op.bottomNorm + priorExtra) * H) + incomingH;
+        if (deltaPx > 0 && bottomPx < virtualH && bottomPx >= 0) {
+          const srcH = virtualH - (bottomPx + deltaPx);
+          if (srcH > 0) {
             const scratch = document.createElement('canvas');
             scratch.width = W;
             scratch.height = srcH;
-            scratch.getContext('2d').drawImage(pageCanvas, 0, bottomPx, W, srcH, 0, 0, W, srcH);
-            ctx.clearRect(0, bottomPx, W, srcH);
-            // The vacated strip is exactly the extra height added to the
-            // paragraph and is covered by its white editable block.
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, bottomPx, W, Math.min(deltaPx, srcH));
-            ctx.drawImage(scratch, 0, 0, W, srcH, 0, bottomPx + deltaPx, W, srcH);
+            scratch.getContext('2d').drawImage(virtualCanvas, 0, bottomPx, W, srcH, 0, 0, W, srcH);
+            vCtx.fillStyle = '#ffffff';
+            vCtx.fillRect(0, bottomPx, W, srcH + deltaPx);
+            vCtx.drawImage(scratch, 0, 0, W, srcH, 0, bottomPx + deltaPx, W, srcH);
           }
-          priorExtra += op.extraNorm;
         }
-
-        // Mask the original line behind every edited paragraph at its
-        // reflowed position so the canvas never shows old + new text together.
-        let maskShift = 0;
-        const wrapW = pageWrapper.clientWidth || 1;
-        for (const op of ops) {
-          const topPx = (op.topNorm + maskShift) * H;
-          const maskW = Math.max(op.norm.w * W, (parseFloat(op.span.style.maxWidth) || 0) * W / wrapW);
-          const maskH = (op.origHeightPx + op.extraPx) * H / wrapH;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(
-            Math.max(0, Math.floor(op.norm.x * W) - 2),
-            Math.max(0, Math.floor(topPx) - 2),
-            Math.ceil(maskW) + 4,
-            Math.ceil(maskH) + 4
-          );
-          maskShift += op.extraNorm;
-        }
-        ctx.restore();
+        priorExtra += op.extraNorm;
       }
-    }
 
-    // 2. Shift the transparent text spans by the same amount so selection,
-    //    hover and the next edit target stay aligned with the moved pixels.
-    const spans = pageWrapper.querySelectorAll('.textLayer span');
-    for (const span of spans) {
-      const spanTopNorm = span.offsetTop / wrapH;
-      let shiftNorm = 0;
+      // D. Mask original lines behind direct in-place edits on this page
+      let maskShift = 0;
       for (const op of ops) {
-        if (op.span === span) continue;
-        if (op.bottomNorm <= spanTopNorm + 0.0001) shiftNorm += op.extraNorm;
+        const topPx = (op.topNorm + maskShift) * H + incomingH;
+        const maskW = Math.max(op.norm.w * W, (parseFloat(op.span.style.maxWidth) || 0) * W / wrapW);
+        const maskH = (op.origHeightPx + op.extraPx) * H / wrapH;
+        vCtx.fillStyle = '#ffffff';
+        vCtx.fillRect(
+          Math.max(0, Math.floor(op.norm.x * W) - 2),
+          Math.max(0, Math.floor(topPx) - 2),
+          Math.ceil(maskW) + 4,
+          Math.ceil(maskH) + 4
+        );
+        maskShift += op.extraNorm;
       }
-      const shiftPx = Math.round(shiftNorm * wrapH);
-      if (span._reflowBaseTransform === undefined) {
-        span._reflowBaseTransform = span.style.transform || '';
+
+      // E. Draw first H pixels onto live page canvas
+      const ctx = pageCanvas.getContext('2d');
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(virtualCanvas, 0, 0, W, H, 0, 0, W, H);
+      ctx.restore();
+
+      // F. TextLayer spans
+      const textLayer = pageWrapper.querySelector('.textLayer');
+      if (textLayer) {
+        textLayer.querySelectorAll('span.reflow-overflow-span').forEach(s => s.remove());
       }
-      const base = span._reflowBaseTransform;
-      if (shiftPx) {
-        const translate = `translateY(${shiftPx}px)`;
-        span.style.transform = (base && base !== 'none') ? `${base} ${translate}` : translate;
-        span.dataset.reflowShift = String(shiftPx);
-      } else if (span.dataset.reflowShift) {
-        span.style.transform = base;
-        delete span.dataset.reflowShift;
+      const outgoingSpans = [];
+
+      // Add incoming spans to text layer
+      if (hasIncoming && incomingSlice.spans && textLayer) {
+        for (const sData of incomingSlice.spans) {
+          if (sData.topPx >= wrapH - 2) {
+            outgoingSpans.push({
+              ...sData,
+              topPx: sData.topPx - wrapH
+            });
+          } else {
+            const overflowSpan = document.createElement('span');
+            overflowSpan.className = (sData.className || '') + ' reflow-overflow-span';
+            overflowSpan.textContent = sData.textContent;
+            if (sData.styleText) overflowSpan.style.cssText = sData.styleText;
+            overflowSpan.style.position = 'absolute';
+            overflowSpan.style.left = `${sData.leftPx}px`;
+            overflowSpan.style.top = `${sData.topPx}px`;
+            overflowSpan.style.transform = 'none';
+            overflowSpan.style.display = '';
+            overflowSpan.style.visibility = sData.visibility || '';
+            if (sData.fontFamily) overflowSpan.style.fontFamily = sData.fontFamily;
+            if (sData.fontSize) overflowSpan.style.fontSize = sData.fontSize;
+            if (sData.lineHeight) overflowSpan.style.lineHeight = sData.lineHeight;
+            if (sData.color) overflowSpan.style.color = sData.color;
+            textLayer.appendChild(overflowSpan);
+          }
+        }
+      }
+
+      // Shift native spans on this page
+      const nativeSpans = textLayer ? Array.from(textLayer.querySelectorAll('span:not(.reflow-overflow-span)')) : [];
+      for (const span of nativeSpans) {
+        const spanTopNorm = span.offsetTop / wrapH;
+        let directShiftNorm = 0;
+        for (const op of ops) {
+          if (op.span === span) continue;
+          if (op.bottomNorm <= spanTopNorm + 0.0001) directShiftNorm += op.extraNorm;
+        }
+        const shiftNorm = (incomingCssH / wrapH) + directShiftNorm;
+        const shiftPx = Math.round(shiftNorm * wrapH);
+
+        if (span._reflowBaseTransform === undefined) {
+          span._reflowBaseTransform = span.style.transform || '';
+        }
+        const base = span._reflowBaseTransform;
+        const newTop = span.offsetTop + shiftPx;
+
+        if (newTop >= wrapH - 2) {
+          span.style.display = 'none';
+          const cs = window.getComputedStyle(span);
+          outgoingSpans.push({
+            className: span.className,
+            textContent: span.textContent,
+            styleText: span.getAttribute('style') || '',
+            leftPx: span.offsetLeft,
+            topPx: newTop - wrapH,
+            heightPx: span.offsetHeight || 16,
+            visibility: span.style.visibility,
+            fontFamily: span.style.fontFamily || cs.fontFamily,
+            fontSize: span.style.fontSize || cs.fontSize,
+            lineHeight: span.style.lineHeight || cs.lineHeight,
+            color: span.style.color || cs.color
+          });
+        } else {
+          span.style.display = '';
+          if (shiftPx) {
+            const translate = `translateY(${shiftPx}px)`;
+            span.style.transform = (base && base !== 'none') ? `${base} ${translate}` : translate;
+            span.dataset.reflowShift = String(shiftPx);
+          } else if (span.dataset.reflowShift) {
+            span.style.transform = base;
+            delete span.dataset.reflowShift;
+          }
+        }
+      }
+
+      // G. Shift any overlay elements on this page
+      if (incomingCssH > 0) {
+        pageWrapper.querySelectorAll('.annotation-textbox, .placed-stamp, .whiteout-box, .redaction-box').forEach(el => {
+          if (el._reflowBaseTransform === undefined) {
+            el._reflowBaseTransform = el.style.transform || '';
+          }
+          const base = el._reflowBaseTransform;
+          const translate = `translateY(${Math.round(incomingCssH)}px)`;
+          el.style.transform = (base && base !== 'none') ? `${base} ${translate}` : translate;
+          el.dataset.reflowShift = String(Math.round(incomingCssH));
+        });
+      }
+
+      // H. Check overflow to next page
+      if (overflowH > 0) {
+        const nextOverflowCanvas = document.createElement('canvas');
+        nextOverflowCanvas.width = W;
+        nextOverflowCanvas.height = overflowH;
+        const oCtx = nextOverflowCanvas.getContext('2d');
+        oCtx.drawImage(virtualCanvas, 0, H, W, overflowH, 0, 0, W, overflowH);
+
+        incomingSlice = {
+          canvas: nextOverflowCanvas,
+          height: overflowH,
+          spans: outgoingSpans
+        };
+      } else {
+        incomingSlice = null;
       }
     }
+
+    this._lastReflowedMaxPage = highestReflowedPage;
   }
 
   addCustomBookmark(title, pageNum) {
@@ -1581,6 +1918,7 @@ class PersonalPDFApp {
   async loadArrayBuffer(data, docName = 'document.pdf', persist = true) {
     this.currentDocName = docName;
     this._pageSnapshots.clear();
+    this._lastReflowedMaxPage = 1;
     if (data instanceof Uint8Array) {
       this.currentPdfBytes = data.slice();
     } else if (data instanceof ArrayBuffer) {
