@@ -1020,7 +1020,9 @@ class PersonalPDFApp {
       const fontOk = !baseFont ||
         (Math.abs((next.fontSize || 0) - baseFont) <= 0.75 &&
          Math.abs((prev.fontSize || 0) - baseFont) <= 0.75);
-      return gap >= -2 && gap <= baseHeight * 1.7 && aligned && fontOk;
+      // Only merge lines that are as tightly spaced as normal leading. A
+      // slightly larger gap marks a new paragraph even when the font matches.
+      return gap >= -2 && gap <= baseHeight * 1.05 && aligned && fontOk;
     };
 
     let start = clickedIndex;
@@ -1061,7 +1063,10 @@ class PersonalPDFApp {
       w: widthPx / wrapW,
       h: Math.max(0.005, (bottom - top) / wrapH)
     };
-    const paragraphText = this._buildParagraphText(groups);
+    let paragraphText = this._buildParagraphText(groups);
+    if (typeof healPdfTextLigatures === 'function') {
+      paragraphText = healPdfTextLigatures(paragraphText);
+    }
 
     const hidden = [];
     groups.forEach(line => {
