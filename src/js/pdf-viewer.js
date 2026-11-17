@@ -1052,13 +1052,21 @@ export class PDFViewerEngine {
     if (!query) return null;
     const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Normalize English ligatures to match both standard chars and unicode replacements (\uFFFD / ?)
-    const withLigatures = escaped
-      .replace(/ti/gi, '(?:ti|[\\uFFFD?])')
-      .replace(/tt/gi, '(?:tt|[\\uFFFD?])')
-      .replace(/ft/gi, '(?:ft|[\\uFFFD?])')
-      .replace(/fi/gi, '(?:fi|[\\uFFFD?])')
-      .replace(/fl/gi, '(?:fl|[\\uFFFD?])')
-      .replace(/ff/gi, '(?:ff|[\\uFFFD?])');
+    // Single-pass regex avoids re-matching hex digits like FF in \uFFFD when replacing ff
+    const ligatureMap = {
+      'ffi': '(?:ffi|[\\uFB03\\uFFFD?])',
+      'ffl': '(?:ffl|[\\uFB04\\uFFFD?])',
+      'ff': '(?:ff|[\\uFB00\\uFFFD?])',
+      'fi': '(?:fi|[\\uFB01\\uFFFD?])',
+      'fl': '(?:fl|[\\uFB02\\uFFFD?])',
+      'ti': '(?:ti|[\\uFFFD?])',
+      'tt': '(?:tt|[\\uFFFD?])',
+      'ft': '(?:ft|[\\uFFFD?])'
+    };
+    const withLigatures = escaped.replace(/ffi|ffl|ff|fi|fl|ti|tt|ft/gi, (match) => {
+      const lower = match.toLowerCase();
+      return ligatureMap[lower] || match;
+    });
     return new RegExp(withLigatures, 'gi');
   }
 

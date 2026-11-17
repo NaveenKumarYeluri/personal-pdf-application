@@ -498,6 +498,30 @@ class PersonalPDFApp {
 
     // Global Keyboard Shortcuts (Desktop suite compatible)
     window.addEventListener('keydown', (e) => {
+      // Handle Escape globally to dismiss open modals, clear active search, or deselect elements
+      if (e.key === 'Escape') {
+        const openModals = document.querySelectorAll('.modal-backdrop.open');
+        if (openModals.length > 0) {
+          e.preventDefault();
+          openModals.forEach(m => m.classList.remove('open'));
+          return;
+        }
+        if (searchInput && (searchInput.value || this.viewer?.currentSearchQuery)) {
+          e.preventDefault();
+          blurSearchInput();
+          return;
+        }
+        if (this.annotator) {
+          this.annotator._deselectAllElements?.();
+          if (this.annotator.activeTextBox) {
+            this.annotator.activeTextBox.classList.remove('active');
+            this.annotator.activeTextBox = null;
+            this.annotator.onActiveTextBoxChange(null);
+          }
+        }
+        return;
+      }
+
       if (
         e.target.tagName === 'INPUT' ||
         e.target.tagName === 'TEXTAREA' ||
@@ -1977,6 +2001,10 @@ class PersonalPDFApp {
     }
 
     this._lastReflowedMaxPage = highestReflowedPage;
+  }
+
+  addBookmark(title, pageNum) {
+    this.addCustomBookmark(title, pageNum);
   }
 
   addCustomBookmark(title, pageNum) {

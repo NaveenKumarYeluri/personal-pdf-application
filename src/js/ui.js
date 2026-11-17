@@ -483,12 +483,14 @@ export class UIController {
     });
 
     document.getElementById('m3-btn-add-bookmark')?.addEventListener('click', () => {
-      const title = prompt('Enter bookmark title for current page:');
-      if (title && title.trim()) {
-        const pageNum = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
-        this.app.addBookmark(title.trim(), pageNum);
+      const pageNum = (this.app.viewer.getCurrentVisiblePage && this.app.viewer.getCurrentVisiblePage()) || this.app.viewer.currentPage || 1;
+      const defaultTitle = `Page ${pageNum} Bookmark`;
+      const title = prompt('Enter bookmark title for current page:', defaultTitle);
+      if (title !== null) {
+        const finalTitle = (title && title.trim()) ? title.trim() : defaultTitle;
+        this.app.addCustomBookmark(finalTitle, pageNum);
         this._syncMobileDrawerContent();
-        this.showToast(`Bookmark added: "${title.trim()}" (Page ${pageNum})`, 'success');
+        this.showToast(`Bookmark added: "${finalTitle}" (Page ${pageNum})`, 'success');
       }
     });
 
@@ -820,8 +822,9 @@ export class UIController {
 
         const defaultTitle = `Page ${pageNum} Bookmark`;
         const title = prompt(`Enter bookmark title for Page ${pageNum}:`, defaultTitle);
-        if (title && title.trim()) {
-          this.app.addCustomBookmark(title.trim(), pageNum);
+        if (title !== null) {
+          const finalTitle = (title && title.trim()) ? title.trim() : defaultTitle;
+          this.app.addCustomBookmark(finalTitle, pageNum);
           this.syncBookmarks();
           this.showToast(`Bookmark added for Page ${pageNum}`, 'success');
         }
