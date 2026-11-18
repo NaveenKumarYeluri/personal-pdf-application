@@ -606,20 +606,22 @@ class PersonalPDFApp {
   /**
    * Sample non-background pixel colors directly from the rendered PDF canvas
    * under a text span to extract the exact native PDF text color.
+   * Completely filters out anti-aliasing edge blur (e.g. #e0e0e0) to guarantee
+   * high-contrast readability and true native color matching.
    */
   _extractSpanColor(span, pageWrapper) {
-    if (!span) return '#111827';
+    if (!span) return '#000000';
     if (span._originalColor && span._originalColor !== 'transparent' && span._originalColor !== 'rgba(0, 0, 0, 0)') {
       return span._originalColor;
     }
     const pageNum = span._pageNum || (span.closest('.page-wrapper') ? parseInt(span.closest('.page-wrapper').dataset.pageNumber, 10) : null);
     const wrapper = pageWrapper || (pageNum ? document.getElementById(`page-wrapper-${pageNum}`) : null) || span.closest('.page-wrapper');
-    if (!wrapper) return '#111827';
+    if (!wrapper) return '#000000';
 
     // Prefer pristine snapshot canvas if already captured, to avoid reflow shift/mask artifacts
     const snapshot = pageNum ? this._pageSnapshots.get(pageNum) : null;
     const canvas = (snapshot && snapshot.canvas) || wrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"], canvas');
-    if (!canvas) return '#111827';
+    if (!canvas) return '#000000';
 
     // If span has a pristine record, use its pristine layout metrics before any reflow shift
     const pristineSpanRec = snapshot?.nativeSpans?.find(item => item.span === span);
@@ -634,7 +636,7 @@ class PersonalPDFApp {
     const y = Math.max(0, Math.floor(topNorm * canvas.height));
     const w = Math.min(canvas.width - x, Math.ceil(widthNorm * canvas.width));
     const h = Math.min(canvas.height - y, Math.ceil(heightNorm * canvas.height));
-    if (w <= 0 || h <= 0) return '#111827';
+    if (w <= 0 || h <= 0) return '#000000';
 
     let ctx;
     try {
@@ -642,20 +644,26 @@ class PersonalPDFApp {
     } catch (_) {
       ctx = canvas.getContext('2d');
     }
-    if (!ctx) return '#111827';
+    if (!ctx) return '#000000';
 
     let imgData;
     try {
       imgData = ctx.getImageData(x, y, w, h).data;
     } catch (_) {
-      return '#111827';
+      return '#000000';
     }
 
-    const bins = {};
-    let maxCount = 0;
-    let peakBin = null;
+    const chromaticBins = {};
+    let maxChromaticCount = 0;
+    let peakChromaticBin = null;
+
+    let minBrightness = 255;
+    let maxBrightness = 0;
+    let darkPixelCount = 0;
+    let lightPixelCount = 0;
+
     const totalPixels = w * h;
-    const step = Math.max(1, Math.floor(totalPixels / 1500)) * 4;
+    const step = Math.max(1, Math.floor(totalPixels / 2000)) * 4;
 
     for (let i = 0; i < imgData.length; i += step) {
       const r = imgData[i];
@@ -663,27 +671,48 @@ class PersonalPDFApp {
       const b = imgData[i + 2];
       const a = imgData[i + 3];
       if (a < 128) continue;
-      // Skip pure white or near-white background
-      if (r > 235 && g > 235 && b > 235) continue;
 
-      const qr = Math.min(255, Math.round(r / 16) * 16);
-      const qg = Math.min(255, Math.round(g / 16) * 16);
-      const qb = Math.min(255, Math.round(b / 16) * 16);
-      const key = `${qr},${qg},${qb}`;
-      const count = (bins[key] || 0) + 1;
-      bins[key] = count;
-      if (count > maxCount) {
-        maxCount = count;
-        peakBin = { r: qr, g: qg, b: qb };
+      const brightness = (r + g + b) / 3;
+      const saturation = Math.max(r, g, b) - Math.min(r, g, b);
+
+      if (brightness < minBrightness) minBrightness = brightness;
+      if (brightness > maxBrightness) maxBrightness = brightness;
+      if (brightness < 110) darkPixelCount++;
+      if (brightness > 200) lightPixelCount++;
+
+      // If chromatic / colored text (e.g. blue hyperlink #4472c4, red heading, purple, etc.)
+      if (saturation >= 28 && brightness < 225 && brightness > 30) {
+        const qr = Math.min(255, Math.round(r / 16) * 16);
+        const qg = Math.min(255, Math.round(g / 16) * 16);
+        const qb = Math.min(255, Math.round(b / 16) * 16);
+        const key = `${qr},${qg},${qb}`;
+        const count = (chromaticBins[key] || 0) + 1;
+        chromaticBins[key] = count;
+        if (count > maxChromaticCount) {
+          maxChromaticCount = count;
+          peakChromaticBin = { r: qr, g: qg, b: qb };
+        }
       }
     }
 
-    if (peakBin && maxCount >= 2) {
+    // 1. If clear chromatic cluster exists (colored text like blue links), use it
+    if (peakChromaticBin && maxChromaticCount >= 3) {
       const toHex = (n) => n.toString(16).padStart(2, '0');
-      return `#${toHex(peakBin.r)}${toHex(peakBin.g)}${toHex(peakBin.b)}`;
+      return `#${toHex(peakChromaticBin.r)}${toHex(peakChromaticBin.g)}${toHex(peakChromaticBin.b)}`;
     }
 
-    return '#111827';
+    // 2. Dark text on light background (standard document): return pure black #000000
+    // Anti-aliased transition pixels (e.g. #e0e0e0 / 224,224,224) are completely filtered out.
+    if (darkPixelCount >= 2 || minBrightness < 140) {
+      return '#000000';
+    }
+
+    // 3. Inverted / dark mode page (white text on dark background)
+    if (lightPixelCount >= 2 && maxBrightness > 200 && minBrightness < 60) {
+      return '#ffffff';
+    }
+
+    return '#000000';
   }
 
   /**
@@ -796,7 +825,9 @@ class PersonalPDFApp {
       return;
     }
 
-    if (span._fullReflowText) {
+    if (span._fullReflowHtml) {
+      span.innerHTML = span._fullReflowHtml;
+    } else if (span._fullReflowText) {
       span.textContent = span._fullReflowText;
     }
 
@@ -807,14 +838,7 @@ class PersonalPDFApp {
       const initialFontPx = parseFloat(initialStyle.fontSize) || 16;
       const initialLinePx = parseFloat(initialStyle.lineHeight) || initialFontPx * 1.2;
       span._lineHeightRatio = Math.max(0.9, Math.min(2.5, initialLinePx / initialFontPx));
-      
-      // Sample true text color directly from pristine PDF canvas under this span's glyphs
-      span._originalColor = this._extractSpanColor(span, pageWrapper);
 
-      if (typeof healPdfTextLigatures === 'function') {
-        span.textContent = healPdfTextLigatures(span.textContent);
-      }
-      span._originalText = span.textContent;
       // Use layout (offset) metrics rather than transformed bounding boxes so
       // a re-edited paragraph keeps its pristine position after reflow.
       const wW = pageWrapper.clientWidth || 1;
@@ -832,11 +856,20 @@ class PersonalPDFApp {
       // just the clicked fragment. Otherwise the rest of the line stays put
       // and the new text is drawn on top of it.
       this._prepareParagraphEdit(span, pageNum, pageWrapper);
+
+      // If not merged into a paragraph (single isolated fragment):
+      if (!span._paragraphMerge) {
+        span._originalColor = this._extractSpanColor(span, pageWrapper);
+        if (typeof healPdfTextLigatures === 'function') {
+          span.textContent = healPdfTextLigatures(span.textContent);
+        }
+        span._originalText = span.textContent;
+      }
     }
 
     // Resolve native PDF font family and size with cross-platform fallback stack
     const compStyle = window.getComputedStyle(span);
-    const directFont = span._pdfFontName || '';
+    const directFont = span._paragraphMerge?.dominantFontName || span._pdfFontName || '';
     const isDirectMono = /mono|consolas|courier|code|inconsolata/i.test(directFont);
     const isDirectTimes = /times|cambria|georgia|garamond|serif/i.test(directFont) && !/sans/i.test(directFont);
     const isMonospace = isDirectMono || /mono|courier|consolas|code/i.test(compStyle.fontFamily || '');
@@ -852,22 +885,25 @@ class PersonalPDFApp {
           return fl.includes('calibri') || fl.includes('arial') || fl.includes('helvetica') || fl.includes('sans');
         }) || directFont || docFonts[0]);
 
-    const fontStack = this._resolveFontStack(matchingDocFont, isMonospace, isSerif);
+    const fontStack = span._paragraphMerge?.dominantFontStack || this._resolveFontStack(matchingDocFont, isMonospace, isSerif);
     span.style.fontFamily = fontStack;
     span._customFontStack = fontStack;
 
-    // Preserve font weight and style
-    const fontWeight = compStyle.fontWeight || 'normal';
-    const isBold = span._pdfIsBold || parseInt(fontWeight, 10) >= 600 || /bold/i.test(fontWeight);
-    span.style.fontWeight = isBold ? '700' : '400';
-    span._customFontWeight = isBold ? '700' : '400';
+    // Use dominant paragraph weight and style if merged, otherwise span's own
+    const fontWeight = span._paragraphMerge?.dominantWeight || (span._pdfIsBold || parseInt(compStyle.fontWeight, 10) >= 600 || /bold/i.test(compStyle.fontWeight) ? '700' : '400');
+    span.style.fontWeight = fontWeight;
+    span._customFontWeight = fontWeight;
 
-    const isItalic = span._pdfIsItalic || compStyle.fontStyle === 'italic' || /italic|oblique/i.test(compStyle.fontStyle);
-    span.style.fontStyle = isItalic ? 'italic' : 'normal';
-    span._customFontStyle = isItalic ? 'italic' : 'normal';
+    const fontStyle = span._paragraphMerge?.dominantStyle || (span._pdfIsItalic || compStyle.fontStyle === 'italic' || /italic|oblique/i.test(compStyle.fontStyle) ? 'italic' : 'normal');
+    span.style.fontStyle = fontStyle;
+    span._customFontStyle = fontStyle;
+
+    const fontColor = span._paragraphMerge?.dominantColor || span._originalColor || '#000000';
+    span.style.color = fontColor;
+    span._originalColor = fontColor;
 
     // Extract exact unscaled CSS pixel base size from PDF stream or style
-    let baseFontSize = span._pdfPtFontSize || 0;
+    let baseFontSize = span._paragraphMerge?.dominantBaseFontSize || span._pdfPtFontSize || 0;
     if (!baseFontSize) {
       const fsMatch = (span.style.fontSize || '').match(/([\d\.]+)\s*px/);
       if (fsMatch) {
@@ -880,7 +916,7 @@ class PersonalPDFApp {
     }
     span._baseFontSize = baseFontSize;
     span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
-    span.style.lineHeight = String(span._lineHeightRatio || 1.2);
+    span.style.lineHeight = String(span._paragraphMerge?.dominantLineHeightRatio || span._lineHeightRatio || 1.2);
     span.style.webkitTextSizeAdjust = 'none';
     span.style.textSizeAdjust = 'none';
     span.style.maxHeight = '999999px';
@@ -958,7 +994,7 @@ class PersonalPDFApp {
       span.style.wordBreak = 'normal';
       span.style.overflow = 'visible';
       span.style.height = 'auto';
-      span.style.color = span._originalColor || '#111827';
+      span.style.color = span._originalColor || '#000000';
       span.style.backgroundColor = '#ffffff';
       if (span._paragraphMerge) {
         const pm = span._paragraphMerge;
@@ -975,6 +1011,27 @@ class PersonalPDFApp {
     cleanSpanContent();
     this._reflowEditedPage(pageNum, pageWrapper);
 
+    // Place caret at clicked coordinates if available
+    span.focus();
+    if (editData.clientX !== undefined && editData.clientY !== undefined) {
+      let range = null;
+      if (document.caretRangeFromPoint) {
+        range = document.caretRangeFromPoint(editData.clientX, editData.clientY);
+      } else if (document.caretPositionFromPoint) {
+        const pos = document.caretPositionFromPoint(editData.clientX, editData.clientY);
+        if (pos && pos.offsetNode) {
+          range = document.createRange();
+          range.setStart(pos.offsetNode, pos.offset);
+          range.collapse(true);
+        }
+      }
+      if (range) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+
     // Sync toolbar font, size, bold, italic, color to match native PDF styling
     if (this.ui) {
       this.ui.syncInPlaceSpan(span);
@@ -983,6 +1040,16 @@ class PersonalPDFApp {
     // Attach listeners on this span if not yet attached
     if (!span._hasDirectEditListeners) {
       span._hasDirectEditListeners = true;
+
+      // When caret moves within span, sync toolbar controls to the style under the caret
+      document.addEventListener('selectionchange', () => {
+        if (span.classList.contains('inline-editing') && this.ui) {
+          const sel = window.getSelection();
+          if (sel && sel.anchorNode && span.contains(sel.anchorNode)) {
+            this.ui.syncInPlaceSpan(span);
+          }
+        }
+      });
 
       // Track IME / soft keyboard composition (Gboard on Android) to prevent character corruption
       span._isComposing = false;
@@ -1001,6 +1068,7 @@ class PersonalPDFApp {
           return; // Allow soft keyboard composition without resetting DOM
         }
         span._fullReflowText = null;
+        span._fullReflowHtml = null;
         span._fittingReflowText = null;
         span._overflowReflowText = null;
         cleanSpanContent();
@@ -1015,6 +1083,7 @@ class PersonalPDFApp {
         e.preventDefault();
         text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         span._fullReflowText = null;
+        span._fullReflowHtml = null;
         span._fittingReflowText = null;
         span._overflowReflowText = null;
         const sel = window.getSelection();
@@ -1075,7 +1144,7 @@ class PersonalPDFApp {
           span.style.webkitTextSizeAdjust = 'none';
           span.style.textSizeAdjust = 'none';
           span.style.maxHeight = '999999px';
-          span.style.color = span._originalColor || '#111827';
+          span.style.color = span._originalColor || '#000000';
           span.style.backgroundColor = '#ffffff';
           span.style.opacity = '1';
           span.style.visibility = 'visible';
@@ -1193,46 +1262,106 @@ class PersonalPDFApp {
     return lines;
   }
 
-  /** Join a paragraph's runs/lines into one re-wrappable string. */
-  _buildParagraphText(groups) {
+  /**
+   * Build both plain text and rich HTML preserving inline formatting runs
+   * (e.g. bold keywords, italic phrases, colored links) within the paragraph.
+   */
+  _buildParagraphContent(groups, pageWrapper, dominant) {
+    const escapeHtml = (str) => {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
     const joinRuns = (line) => {
-      let text = '';
+      let lineText = '';
+      let lineHtml = '';
       let prevRight = null;
       const runs = line.spans.slice().sort((a, b) => a.offsetLeft - b.offsetLeft);
+
       for (const run of runs) {
-        const value = run.textContent || '';
+        let value = run.textContent || '';
+        if (typeof healPdfTextLigatures === 'function') {
+          value = healPdfTextLigatures(value);
+        }
         if (!value.trim()) continue;
-        if (text && !/\s$/.test(text) && !/^\s/.test(value)) {
-          const prevChar = text.slice(-1);
+
+        let needsSpace = false;
+        if (lineText && !/\s$/.test(lineText) && !/^\s/.test(value)) {
+          const prevChar = lineText.slice(-1);
           const nextChar = value[0];
           const wordish = /[A-Za-z0-9,;:)\]]/.test(prevChar) && /[A-Za-z0-9(\[]/.test(nextChar);
           if (wordish || (prevRight !== null && run.offsetLeft > prevRight + 1.2)) {
-            text += ' ';
+            needsSpace = true;
           }
         }
-        text += value;
+        if (needsSpace) {
+          lineText += ' ';
+          lineHtml += ' ';
+        }
+
+        lineText += value;
         prevRight = run.offsetLeft + run.offsetWidth;
+
+        const cs = window.getComputedStyle(run);
+        const runIsBold = run._pdfIsBold || parseInt(cs.fontWeight, 10) >= 600 || /bold/i.test(cs.fontWeight);
+        const runIsItalic = run._pdfIsItalic || cs.fontStyle === 'italic' || /italic|oblique/i.test(cs.fontStyle);
+        const runColor = this._extractSpanColor(run, pageWrapper) || '#000000';
+        const runUnderline = (run.style.textDecoration || cs.textDecoration || '').includes('underline');
+
+        let runInner = escapeHtml(value);
+        const diffBold = Boolean(dominant) && (Boolean(runIsBold) !== Boolean(dominant.isBold));
+        const diffItalic = Boolean(dominant) && (Boolean(runIsItalic) !== Boolean(dominant.isItalic));
+        const diffColor = Boolean(dominant) && Boolean(dominant.color) && (runColor.toLowerCase() !== dominant.color.toLowerCase());
+
+        if (diffBold) {
+          runInner = `<strong style="font-weight: ${runIsBold ? '700' : '400'};">${runInner}</strong>`;
+        }
+        if (diffItalic) {
+          runInner = `<em style="font-style: ${runIsItalic ? 'italic' : 'normal'};">${runInner}</em>`;
+        }
+        if (diffColor) {
+          runInner = `<span style="color: ${runColor};">${runInner}</span>`;
+        }
+        if (runUnderline) {
+          runInner = `<u>${runInner}</u>`;
+        }
+
+        lineHtml += runInner;
       }
-      return text.trim();
+      return { lineText: lineText.trim(), lineHtml: lineHtml.trim() };
     };
 
-    let paragraph = '';
+    let paragraphText = '';
+    let paragraphHtml = '';
     for (const line of groups) {
-      const text = joinRuns(line);
-      if (!text) continue;
-      if (paragraph) {
-        const joiner = /[-–—]$/.test(paragraph) ? '' : ' ';
-        paragraph += joiner + text;
+      const { lineText, lineHtml } = joinRuns(line);
+      if (!lineText) continue;
+      if (paragraphText) {
+        const joiner = /[-–—]$/.test(paragraphText) ? '' : ' ';
+        paragraphText += joiner + lineText;
+        paragraphHtml += joiner + lineHtml;
       } else {
-        paragraph = text;
+        paragraphText = lineText;
+        paragraphHtml = lineHtml;
       }
     }
-    return paragraph;
+    return { paragraphText, paragraphHtml };
+  }
+
+  /** Join a paragraph's runs/lines into one re-wrappable string. */
+  _buildParagraphText(groups) {
+    return this._buildParagraphContent(groups, null, { isBold: false, isItalic: false, color: '#000000' }).paragraphText;
   }
 
   /**
    * Turn the clicked text fragment into an editor for its whole paragraph so
    * line fragments and overprints cannot be left behind.
+   * Accurately distinguishes separate small paragraphs, lists, and headings,
+   * while preserving dominant paragraph styling and inline formatting.
    */
   _prepareParagraphEdit(span, pageNum, pageWrapper) {
     const lines = this._collectTextLines(pageWrapper);
@@ -1242,38 +1371,99 @@ class PersonalPDFApp {
     const clicked = lines[clickedIndex];
     const baseFont = clicked.fontSize || 0;
     const actualLineHeight = clicked.height || (baseFont ? baseFont * 1.2 : 16);
-    const maxIntraLineGap = Math.max(3, actualLineHeight * 0.45);
 
     // Calculate maximum visual line length on this page for detecting terminal paragraph lines
     const maxLineWidth = lines.reduce((max, l) => Math.max(max, l.right - l.left), 0);
 
+    // Calculate median body font size across all lines on the page with text
+    const bodyFontSizes = lines
+      .filter(l => l.spans.some(s => (s.textContent || '').trim().length > 10))
+      .map(l => l.fontSize || 16)
+      .sort((a, b) => a - b);
+    const medianBodyFontSize = bodyFontSizes.length
+      ? bodyFontSizes[Math.floor(bodyFontSizes.length / 2)]
+      : baseFont;
+
     const isContinuation = (prev, next) => {
+      const prevText = (prev.spans.map(s => s.textContent || '').join(' ')).trim();
+      const nextText = (next.spans.map(s => s.textContent || '').join(' ')).trim();
+      if (!prevText || !nextText) return false;
+
+      // 1. Strict vertical spacing (leading)
       const gap = next.top - prev.bottom;
-      
-      // If gap exceeds normal line spacing (leading), this is a paragraph break or section gap
-      if (gap < -2 || gap > maxIntraLineGap) {
+      const maxLeading = Math.max(8, actualLineHeight * 0.45);
+      if (gap < -2 || gap > maxLeading) {
         return false;
       }
 
-      // If prev line ended significantly early, it is the last line of a paragraph
+      // 2. Colon endings: headings / labels (e.g. "Heap Table:", "Physical Implementation:")
+      if (prevText.endsWith(':') || nextText.endsWith(':')) {
+        return false;
+      }
+
+      // 3. Bullet points and numbered lists
+      const listMarkerRegex = /^[\s]*(?:[•\-\*▪▫►▸–—]|\d+[\.\)]|\([0-9a-zA-Z]+\)|[a-zA-Z][\.\)])\s/;
+      if (listMarkerRegex.test(nextText)) {
+        return false;
+      }
+      if (listMarkerRegex.test(prevText) && /[.!?:]$/.test(prevText)) {
+        return false;
+      }
+
+      // 4. Terminal punctuation on short lines
       const prevLineWidth = prev.right - prev.left;
-      if (maxLineWidth > 100 && prevLineWidth < maxLineWidth * 0.75 && prevLineWidth < 350) {
+      const isTerminalPunct = /[.!?]["']?$/.test(prevText);
+      if (isTerminalPunct) {
+        if (maxLineWidth > 100 && prevLineWidth < maxLineWidth * 0.88) {
+          return false;
+        }
+        if (gap > 2.5) {
+          return false;
+        }
+      }
+
+      // 5. Font size check
+      const prevFs = prev.fontSize || baseFont;
+      const nextFs = next.fontSize || baseFont;
+      if (Math.abs(nextFs - prevFs) > 1.2 || Math.abs(nextFs - baseFont) > 1.2 || Math.abs(prevFs - baseFont) > 1.2) {
+        return false;
+      }
+      if (medianBodyFontSize && (prevFs >= medianBodyFontSize * 1.15 || nextFs >= medianBodyFontSize * 1.15)) {
         return false;
       }
 
-      // Check horizontal left alignment (must be on the same left margin or column)
-      const aligned =
-        Math.abs(next.left - clicked.left) <= Math.max(8, actualLineHeight * 0.4) &&
-        Math.abs(prev.left - clicked.left) <= Math.max(8, actualLineHeight * 0.4);
-      if (!aligned) {
+      // 6. Full-line font weight check (headings vs body text)
+      const isLineBold = (line) => {
+        let boldCount = 0;
+        let totalCount = 0;
+        for (const s of line.spans) {
+          const t = (s.textContent || '').trim();
+          if (!t) continue;
+          totalCount += t.length;
+          const fw = window.getComputedStyle(s).fontWeight;
+          if (s._pdfIsBold || parseInt(fw, 10) >= 600 || /bold/i.test(fw)) {
+            boldCount += t.length;
+          }
+        }
+        return totalCount > 0 && (boldCount / totalCount) >= 0.75;
+      };
+      if (isLineBold(prev) !== isLineBold(next)) {
         return false;
       }
 
-      // Font size check: Both lines must match clicked line's font size
-      const fontOk = !baseFont ||
-        (Math.abs((next.fontSize || 0) - baseFont) <= 0.6 &&
-         Math.abs((prev.fontSize || 0) - baseFont) <= 0.6);
-      if (!fontOk) {
+      // 7. Monospace / code block mismatch
+      const isLineMono = (line) => {
+        return line.spans.some(s => {
+          const fn = (s._pdfFontName || window.getComputedStyle(s).fontFamily || '').toLowerCase();
+          return /mono|consolas|courier|code|inconsolata/i.test(fn);
+        });
+      };
+      if (isLineMono(prev) !== isLineMono(next)) {
+        return false;
+      }
+
+      // 8. Horizontal left alignment
+      if (Math.abs(next.left - prev.left) > 6 || Math.abs(next.left - clicked.left) > 8) {
         return false;
       }
 
@@ -1286,7 +1476,8 @@ class PersonalPDFApp {
     while (end < lines.length - 1 && isContinuation(lines[end], lines[end + 1])) end += 1;
 
     const groups = lines.slice(start, end + 1);
-    const totalSpans = groups.reduce((count, line) => count + line.spans.length, 0);
+    const allSpans = groups.flatMap(line => line.spans);
+    const totalSpans = allSpans.length;
     if (totalSpans <= 1) return; // Single fragment: keep the light editor.
 
     const left = Math.min(...groups.map(line => line.left));
@@ -1295,22 +1486,78 @@ class PersonalPDFApp {
     const bottom = Math.max(...groups.map(line => line.bottom));
     const wrapW = pageWrapper.clientWidth || 1;
     const wrapH = pageWrapper.clientHeight || 1;
-    // Never let the editable block extend past the page's right edge. Include small margin for padding/subpixel metrics so lines wrap identically.
     const widthPx = Math.max(40, Math.min(right - left + 8, wrapW - left - 6));
 
-    // Keep the document's real leading: the merged block must use the same
-    // baseline-to-baseline distance as the original PDF lines, not the 1.0
-    // line-height that PDF.js sets on each individual fragment.
+    // Keep the document's real leading
     const steps = [];
     for (let i = 1; i < groups.length; i++) {
       const step = groups[i].top - groups[i - 1].top;
       if (step > 0) steps.push(step);
     }
+    let dominantLineHeightRatio = 1.2;
     if (steps.length && baseFont > 0) {
       steps.sort((a, b) => a - b);
       const medStep = steps[Math.floor(steps.length / 2)];
-      span._lineHeightRatio = Math.max(0.9, Math.min(2.5, medStep / baseFont));
+      dominantLineHeightRatio = Math.max(0.9, Math.min(2.5, medStep / baseFont));
     }
+    span._lineHeightRatio = dominantLineHeightRatio;
+
+    // Calculate dominant typography across all spans in this paragraph
+    let totalChars = 0;
+    let boldChars = 0;
+    let italicChars = 0;
+    const colorCharCounts = {};
+    const fontCharCounts = {};
+
+    allSpans.forEach(s => {
+      const txt = (s.textContent || '').trim();
+      const len = txt.length;
+      if (len === 0) return;
+      totalChars += len;
+
+      const cs = window.getComputedStyle(s);
+      const isBold = s._pdfIsBold || parseInt(cs.fontWeight, 10) >= 600 || /bold/i.test(cs.fontWeight);
+      if (isBold) boldChars += len;
+
+      const isItalic = s._pdfIsItalic || cs.fontStyle === 'italic' || /italic|oblique/i.test(cs.fontStyle);
+      if (isItalic) italicChars += len;
+
+      const color = this._extractSpanColor(s, pageWrapper) || '#000000';
+      colorCharCounts[color] = (colorCharCounts[color] || 0) + len;
+
+      const fontName = s._pdfFontName || cs.fontFamily || '';
+      if (fontName) {
+        fontCharCounts[fontName] = (fontCharCounts[fontName] || 0) + len;
+      }
+    });
+
+    const dominantIsBold = totalChars > 0 ? (boldChars / totalChars) >= 0.5 : false;
+    const dominantWeight = dominantIsBold ? '700' : '400';
+
+    const dominantIsItalic = totalChars > 0 ? (italicChars / totalChars) >= 0.5 : false;
+    const dominantStyle = dominantIsItalic ? 'italic' : 'normal';
+
+    let dominantColor = '#000000';
+    let maxColorCount = 0;
+    for (const [col, count] of Object.entries(colorCharCounts)) {
+      if (count > maxColorCount) {
+        maxColorCount = count;
+        dominantColor = col;
+      }
+    }
+
+    let dominantFontName = span._pdfFontName || '';
+    let maxFontCount = 0;
+    for (const [fn, count] of Object.entries(fontCharCounts)) {
+      if (count > maxFontCount) {
+        maxFontCount = count;
+        dominantFontName = fn;
+      }
+    }
+
+    const isMono = /mono|consolas|courier|code|inconsolata/i.test(dominantFontName);
+    const isSerif = /times|cambria|georgia|garamond|serif/i.test(dominantFontName) && !/sans/i.test(dominantFontName);
+    const dominantFontStack = this._resolveFontStack(dominantFontName, isMono, isSerif);
 
     const rect = {
       x: left / wrapW,
@@ -1318,10 +1565,14 @@ class PersonalPDFApp {
       w: widthPx / wrapW,
       h: Math.max(0.005, (bottom - top) / wrapH)
     };
-    let paragraphText = this._buildParagraphText(groups);
-    if (typeof healPdfTextLigatures === 'function') {
-      paragraphText = healPdfTextLigatures(paragraphText);
-    }
+
+    const dominantObj = {
+      isBold: dominantIsBold,
+      isItalic: dominantIsItalic,
+      color: dominantColor
+    };
+
+    const { paragraphText, paragraphHtml } = this._buildParagraphContent(groups, pageWrapper, dominantObj);
 
     const hidden = [];
     groups.forEach(line => {
@@ -1343,12 +1594,37 @@ class PersonalPDFApp {
     span._normRect = rect;
     span._originalWidth = widthPx;
     span._originalHeight = bottom - top;
-    span._paragraphMerge = { rect, widthPx, hidden, paragraphText };
-    span.textContent = paragraphText;
+    span._paragraphMerge = {
+      rect,
+      widthPx,
+      hidden,
+      paragraphText,
+      paragraphHtml,
+      dominantWeight,
+      dominantStyle,
+      dominantColor,
+      dominantFontName,
+      dominantFontStack,
+      dominantBaseFontSize: baseFont,
+      dominantLineHeightRatio
+    };
+
+    span._fullReflowText = paragraphText;
+    span._fullReflowHtml = paragraphHtml;
+    span._originalText = paragraphText;
+    span._originalColor = dominantColor;
+    span._customFontWeight = dominantWeight;
+    span._customFontStyle = dominantStyle;
+    span._customFontStack = dominantFontStack;
+
+    span.innerHTML = paragraphHtml;
     span.style.left = `${left.toFixed(2)}px`;
     span.style.top = `${top.toFixed(2)}px`;
     span.style.width = `${Math.floor(widthPx)}px`;
     span.style.maxWidth = `${Math.floor(widthPx)}px`;
+    span.style.fontWeight = dominantWeight;
+    span.style.fontStyle = dominantStyle;
+    span.style.color = dominantColor;
   }
 
   /**
@@ -1391,7 +1667,33 @@ class PersonalPDFApp {
     span._normRect = rect;
     span._originalWidth = widthPx;
     span._originalHeight = rect.h * wrapH;
-    span._paragraphMerge = { rect, widthPx, hidden, paragraphText: edit.newText };
+    span._paragraphMerge = {
+      rect,
+      widthPx,
+      hidden,
+      paragraphText: edit.newText || span.textContent,
+      paragraphHtml: edit.htmlContent || span.innerHTML,
+      dominantWeight: edit.fontWeight || span.style.fontWeight,
+      dominantStyle: edit.fontStyle || span.style.fontStyle,
+      dominantColor: edit.color || span.style.color,
+      dominantFontName: edit.fontFamily || span.style.fontFamily,
+      dominantFontStack: edit.fontFamily || span.style.fontFamily,
+      dominantBaseFontSize: edit.baseFontSize || span._baseFontSize,
+      dominantLineHeightRatio: edit.lineHeightRatio || span._lineHeightRatio
+    };
+    if (edit.htmlContent) {
+      span.innerHTML = edit.htmlContent;
+    } else {
+      span.textContent = edit.newText || span.textContent;
+    }
+    if (edit.fontWeight) {
+      span.style.fontWeight = edit.fontWeight;
+      span._customFontWeight = edit.fontWeight;
+    }
+    if (edit.fontStyle) {
+      span.style.fontStyle = edit.fontStyle;
+      span._customFontStyle = edit.fontStyle;
+    }
     span.style.left = `${left.toFixed(2)}px`;
     span.style.top = `${top.toFixed(2)}px`;
     span.style.width = `${Math.floor(widthPx)}px`;
@@ -1443,7 +1745,19 @@ class PersonalPDFApp {
           matchedSpan._originalInlineStyle = edit.originalInlineStyle;
         }
 
-        matchedSpan.textContent = edit.newText;
+        if (edit.htmlContent) {
+          matchedSpan.innerHTML = edit.htmlContent;
+        } else {
+          matchedSpan.textContent = edit.newText;
+        }
+        if (edit.fontWeight) {
+          matchedSpan.style.fontWeight = edit.fontWeight;
+          matchedSpan._customFontWeight = edit.fontWeight;
+        }
+        if (edit.fontStyle) {
+          matchedSpan.style.fontStyle = edit.fontStyle;
+          matchedSpan._customFontStyle = edit.fontStyle;
+        }
         matchedSpan.classList.add('in-place-modified');
         matchedSpan.style.webkitTextSizeAdjust = 'none';
         matchedSpan.style.textSizeAdjust = 'none';
@@ -2204,7 +2518,7 @@ class PersonalPDFApp {
           lineHeight: cs.lineHeight,
           fontWeight: splitOp.span.style.fontWeight || cs.fontWeight,
           fontStyle: splitOp.span.style.fontStyle || cs.fontStyle,
-          color: splitOp.span.style.color || cs.color || '#111827',
+          color: splitOp.span.style.color || cs.color || '#000000',
           backgroundColor: '#ffffff'
         });
         continuationGapCss = splitOp.overflowHeightCss + 14;
@@ -2254,7 +2568,7 @@ class PersonalPDFApp {
               overflowSpan.style.setProperty('line-height', sData.lineHeight, 'important');
               overflowSpan.style.setProperty('font-weight', sData.fontWeight || 'normal', 'important');
               overflowSpan.style.setProperty('font-style', sData.fontStyle || 'normal', 'important');
-              overflowSpan.style.setProperty('color', sData.color || '#111827', 'important');
+              overflowSpan.style.setProperty('color', sData.color || '#000000', 'important');
               overflowSpan.style.setProperty('background-color', '#ffffff', 'important');
               overflowSpan.style.setProperty('white-space', 'pre-wrap', 'important');
               overflowSpan.style.setProperty('word-break', 'normal', 'important');

@@ -41,10 +41,10 @@ with sync_playwright() as p:
         // Wait for reflow
         await new Promise(r => setTimeout(r, 600));
         
-        // Check page 1 text and page 2 continuation spans
+        // Check page 1 text and continuation spans across subsequent pages
         const p1Text = paraSpan.textContent;
-        const contSpans = Array.from(document.querySelectorAll('#page-wrapper-2 .in-place-continuation'));
-        const p2ContText = contSpans.map(s => s.textContent).join(' ');
+        const contSpans = Array.from(document.querySelectorAll('.in-place-continuation'));
+        const contText = contSpans.map(s => s.textContent).join(' ');
         
         const contStyling = contSpans.map(s => ({
             fontFamily: window.getComputedStyle(s).fontFamily,
@@ -53,13 +53,14 @@ with sync_playwright() as p:
             fontWeight: window.getComputedStyle(s).fontWeight
         }));
         
-        // Check that "Heap Table" heading or next lines moved to page 2 or shifted down
-        const p2Spans = Array.from(document.querySelectorAll('#page-wrapper-2 .textLayer span'));
-        const hasHeapTableOrShifted = p2Spans.some(s => s.textContent.includes('Heap Table') || s.classList.contains('reflow-overflow-span'));
+        // Check that "Heap Table" heading or next lines moved to next pages or shifted down
+        const overflowSpans = Array.from(document.querySelectorAll('.reflow-overflow-span'));
+        const hasHeapTableOrShifted = overflowSpans.some(s => s.textContent.includes('Heap Table')) ||
+            Array.from(document.querySelectorAll('.page-wrapper')).slice(1).some(pw => pw.textContent.includes('Heap Table'));
         
         // Check total text length before vs combined after
         const totalPastedLen = pastedText.length;
-        const combinedLen = (p1Text + " " + p2ContText).length;
+        const combinedLen = (p1Text + " " + contText).length;
         
         // Test export to PDF
         const pdfBytes = await window.app.annotator.burnAnnotationsToPdf(window.app.currentPdfBytes);
@@ -69,7 +70,7 @@ with sync_playwright() as p:
             colorBefore,
             totalPastedLen,
             p1Len: p1Text.length,
-            p2ContLen: p2ContText.length,
+            contLen: contText.length,
             combinedLen,
             contSpansCount: contSpans.length,
             contStyling,
@@ -84,7 +85,7 @@ with sync_playwright() as p:
     assert "Calibri" in test_result["fontBefore"] or "Carlito" in test_result["fontBefore"]
     assert test_result["colorBefore"] == "rgb(0, 0, 0)"
     assert test_result["contSpansCount"] > 0
-    assert test_result["p2ContLen"] > 0
+    assert test_result["contLen"] > 0
     # Zero text lost! Combined text contains all pasted characters
     assert test_result["combinedLen"] >= test_result["totalPastedLen"] - 10
     assert test_result["exportPdfSize"] > 100000

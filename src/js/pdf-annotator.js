@@ -1060,6 +1060,7 @@ export class PDFAnnotatorEngine {
       span,
       originalText: span._originalText,
       newText,
+      htmlContent: span.innerHTML,
       // normRect is the editable block (whole paragraph when merged);
       // matchRect is the originally clicked fragment, used to find this span
       // again after the text layer is rebuilt on zoom/rotate/restore.
@@ -1072,6 +1073,8 @@ export class PDFAnnotatorEngine {
       lineHeightRatio: span._lineHeightRatio,
       maxWidth: parseFloat(span.style.maxWidth) || span.offsetWidth,
       color: span.style.color || span._originalColor || '#111827',
+      fontWeight: span._customFontWeight || span.style.fontWeight || '400',
+      fontStyle: span._customFontStyle || span.style.fontStyle || 'normal',
       pageNum
     };
     pageMap.set(span, edit);
@@ -1109,6 +1112,7 @@ export class PDFAnnotatorEngine {
     span._paragraphMerge = null;
     delete span._paragraphMerge;
     delete span._matchRect;
+    delete span._fullReflowHtml;
   }
 
   revertInPlaceEdit(span, pageNum) {
@@ -1179,7 +1183,12 @@ export class PDFAnnotatorEngine {
     this.color = color;
     const el = this._getTargetElement();
     if (el) {
-      el.style.color = color;
+      const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+      if (el.isContentEditable && sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) {
+        document.execCommand('foreColor', false, color);
+      } else {
+        el.style.color = color;
+      }
     }
   }
 
@@ -1187,7 +1196,13 @@ export class PDFAnnotatorEngine {
     const el = this._getTargetElement();
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
     let handled = false;
-    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
+    if (el && el.isContentEditable) {
+      document.execCommand('bold', false, null);
+      handled = true;
+      try {
+        return Boolean(document.queryCommandState('bold'));
+      } catch (_) {}
+    } else if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
       document.execCommand('bold', false, null);
       handled = true;
     }
@@ -1206,7 +1221,13 @@ export class PDFAnnotatorEngine {
     const el = this._getTargetElement();
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
     let handled = false;
-    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
+    if (el && el.isContentEditable) {
+      document.execCommand('italic', false, null);
+      handled = true;
+      try {
+        return Boolean(document.queryCommandState('italic'));
+      } catch (_) {}
+    } else if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el && el.contains(sel.anchorNode)) {
       document.execCommand('italic', false, null);
       handled = true;
     }
@@ -1225,13 +1246,13 @@ export class PDFAnnotatorEngine {
     const el = this._getTargetElement();
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
 
-    // 1. If currently inside active textbox, apply rich-text underline
-    if (el && sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) {
+    if (el && el.isContentEditable) {
       document.execCommand('underline', false, null);
       try {
-        const state = document.queryCommandState('underline');
-        return Boolean(state);
-      } catch (_) {}
+        return Boolean(document.queryCommandState('underline'));
+      } catch (_) {
+        return true;
+      }
     }
 
     // 2. If text is selected in native document textLayer, apply Acrobat-style markup underline!

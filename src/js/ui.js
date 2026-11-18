@@ -1888,7 +1888,14 @@ export class UIController {
       return;
     }
 
-    const targetEl = box.querySelector?.('.textbox-content') || box;
+    let targetEl = box.querySelector?.('.textbox-content') || box;
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (sel && sel.anchorNode && box.contains(sel.anchorNode)) {
+      const node = sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentElement : sel.anchorNode;
+      if (node && box.contains(node)) {
+        targetEl = node;
+      }
+    }
     const cs = window.getComputedStyle(targetEl);
     const fontFamEl = document.getElementById('edit-font-family') || document.getElementById('annot-font-family');
     const fontSizeEl = document.getElementById('edit-font-size') || document.getElementById('annot-font-size');
@@ -1929,18 +1936,20 @@ export class UIController {
           const hex = '#' + ((1 << 24) + (parseInt(rgb[0], 10) << 16) + (parseInt(rgb[1], 10) << 8) + parseInt(rgb[2], 10)).toString(16).slice(1);
           colorEl.value = hex;
         }
+      } else if (colorVal && colorVal.startsWith('#')) {
+        colorEl.value = colorVal;
       }
     }
     if (boldBtn) {
-      const isBold = targetEl.style.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 700;
+      const isBold = targetEl.style.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 600 || targetEl.tagName === 'STRONG' || targetEl.tagName === 'B';
       boldBtn.classList.toggle('active', isBold);
     }
     if (italicBtn) {
-      const isItalic = targetEl.style.fontStyle === 'italic';
+      const isItalic = targetEl.style.fontStyle === 'italic' || targetEl.tagName === 'EM' || targetEl.tagName === 'I';
       italicBtn.classList.toggle('active', isItalic);
     }
     if (underlineBtn) {
-      const isUnder = (targetEl.style.textDecoration || cs.textDecoration || '').includes('underline');
+      const isUnder = (targetEl.style.textDecoration || cs.textDecoration || '').includes('underline') || targetEl.tagName === 'U';
       underlineBtn.classList.toggle('active', isUnder);
     }
     if (strikeBtn) {
