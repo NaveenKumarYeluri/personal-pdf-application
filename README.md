@@ -185,3 +185,34 @@ personal-pdf-application/
 ## 🔒 Privacy & Offline Operation
 
 This application does not connect to any third-party cloud service or analytics. All document parsing, rendering, text editing, signing, and saving occur strictly client-side on your device.
+
+---
+
+## 🔤 Typography & Font Engine
+
+Personal PDF Suite includes an intelligent typography and color preservation engine for in-place text editing and PDF export:
+- **Direct PDF Font Resolution**: Resolves true embedded font names directly from PDF stream dictionaries and PDF.js object tables, accurately detecting font families, weights (`700` bold / `400` regular), and styles (`italic` / `normal`).
+- **Pristine Canvas Pixel Color Sampling**: Samples rendered glyph pixels directly from the unshifted PDF canvas to extract exact text colors (e.g., `#4070c0` for hyperlinks, `#000000` for body text, custom heading hues), preserving them throughout editing, blurring, multi-page reflow continuation spans, and PDF vector burning.
+- **Metric-Compatible Universal Typography Stacks**: Employs cross-platform font stacks pairing native operating system fonts with metric-compatible open-source typefaces so line wraps, kerning, and character widths align with subpixel accuracy.
+
+---
+
+## 📜 Font Attribution & Non-Commercial Notice
+
+This application is free, open source, and developed strictly for **non-commercial and educational purposes**.
+
+### Metric-Compatible & Open-Source Font Attributions
+- **Carlito**: Designed by Łukasz Dziedzic (Google), 100% metric-compatible drop-in replacement for Microsoft Calibri. Licensed under the SIL Open Font License (OFL).
+- **Caladea**: Designed by Carolina Giovagnoli & Andrés Torresi (Huerta Tipográfica), 100% metric-compatible drop-in replacement for Microsoft Cambria. Licensed under the SIL Open Font License (OFL).
+- **Arimo**: Designed by Steve Matteson (Monotype), metric-compatible replacement for Arial. Licensed under the Apache License, Version 2.0.
+- **Tinos**: Designed by Steve Matteson (Monotype), metric-compatible replacement for Times New Roman. Licensed under the Apache License, Version 2.0.
+- **Cousine**: Designed by Steve Matteson (Monotype), metric-compatible replacement for Courier New. Licensed under the Apache License, Version 2.0.
+- **EB Garamond**: Designed by Georg Duffner. Licensed under the SIL Open Font License (OFL).
+- **Libre Baskerville**: Designed by Impallari Type. Licensed under the SIL Open Font License (OFL).
+- **JetBrains Mono**: Designed by Philipp Nurullin, Konstantin Bulenkov (JetBrains). Licensed under the SIL Open Font License (OFL).
+- **Inconsolata**: Designed by Raph Levien. Licensed under the SIL Open Font License (OFL).
+- **Inter**: Designed by Rasmus Andersson. Licensed under the SIL Open Font License (OFL).
+- **Roboto & Roboto Mono**: Designed by Christian Robertson (Google). Licensed under the Apache License, Version 2.0.
+- **Open Sans, Lato, Montserrat, Poppins, Nunito, Merriweather, Source Sans 3, Playfair Display**: Licensed under the SIL Open Font License (OFL).
+
+All referenced proprietary font names (Calibri, Cambria, Arial, Times New Roman, Courier New, Segoe UI, Consolas, Georgia, Verdana, Tahoma, Trebuchet MS) are trademarks of their respective owners and are referenced solely for fallback compatibility matching.

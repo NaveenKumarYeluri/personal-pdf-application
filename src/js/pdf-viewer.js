@@ -718,6 +718,22 @@ export class PDFViewerEngine {
           await textTask.promise;
         }
 
+        // Asynchronously resolve all true embedded PDF font objects from PDF.js commonObjs
+        const fontKeys = Object.keys(textContent.styles || {});
+        const loadedFonts = {};
+        if (page.commonObjs && typeof page.commonObjs.get === 'function') {
+          await Promise.all(fontKeys.map(fk => new Promise(resolve => {
+            try {
+              page.commonObjs.get(fk, f => {
+                if (f) loadedFonts[fk] = f;
+                resolve();
+              });
+            } catch (_) {
+              resolve();
+            }
+          })));
+        }
+
         // Tag each span with its exact PDF stream font metadata for 100% native font matching
         if (textContent && textContent.items && textDivs.length > 0) {
           const itemsLen = textContent.items.length;
@@ -726,18 +742,27 @@ export class PDFViewerEngine {
             const div = textDivs[i];
             if (item && div) {
               const fontObj = textContent.styles ? textContent.styles[item.fontName] : null;
-              let detectedFont = fontObj ? (fontObj.fontFamily || '') : '';
-              detectedFont = detectedFont.replace(/^[A-Z0-9]{6}\+/, '').trim();
-              detectedFont = detectedFont.replace(/-(?:Bold|Italic|Regular|BoldItalic|Oblique|BoldOblique)$/i, '');
+              const realFont = loadedFonts[item.fontName];
+              let rawName = (realFont && realFont.name) ? realFont.name : (fontObj ? (fontObj.fontFamily || '') : '');
+              let detectedFont = rawName.replace(/^[A-Z0-9]{6}\+/, '').trim();
+              const isBold = /bold/i.test(rawName) || /bold/i.test(item.fontName || '') || (fontObj && /bold/i.test(fontObj.fontFamily || ''));
+              const isItalic = /italic|oblique/i.test(rawName) || /italic|oblique/i.test(item.fontName || '') || (fontObj && /italic|oblique/i.test(fontObj.fontFamily || ''));
+              detectedFont = detectedFont.replace(/-(?:Bold|Italic|Regular|BoldItalic|Oblique|BoldOblique|Roman|Medium|Light).*$/i, '').trim();
+              if (detectedFont && !detectedFont.startsWith('g_d') && !this.documentFonts.has(detectedFont)) {
+                this.documentFonts.add(detectedFont);
+              }
               div._pdfFontName = detectedFont;
-              div._pdfIsBold = /bold/i.test(item.fontName || '') || (fontObj && /bold/i.test(fontObj.fontFamily || ''));
-              div._pdfIsItalic = /italic|oblique/i.test(item.fontName || '') || (fontObj && /italic|oblique/i.test(fontObj.fontFamily || ''));
+              div._pdfIsBold = isBold;
+              div._pdfIsItalic = isItalic;
               if (item.transform && item.transform.length >= 2) {
                 const fs = Math.hypot(item.transform[0], item.transform[1]);
                 if (fs > 0) div._pdfPtFontSize = fs;
               }
             }
           }
+        }
+        if (this.documentFonts.size > 0 && window.app && window.app.ui) {
+          window.app.ui.setDocumentFonts(Array.from(this.documentFonts));
         }
       }
 

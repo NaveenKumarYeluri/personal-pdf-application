@@ -603,11 +603,189 @@ class PersonalPDFApp {
     });
   }
 
+  /**
+   * Sample non-background pixel colors directly from the rendered PDF canvas
+   * under a text span to extract the exact native PDF text color.
+   */
+  _extractSpanColor(span, pageWrapper) {
+    if (!span) return '#111827';
+    if (span._originalColor && span._originalColor !== 'transparent' && span._originalColor !== 'rgba(0, 0, 0, 0)') {
+      return span._originalColor;
+    }
+    const pageNum = span._pageNum || (span.closest('.page-wrapper') ? parseInt(span.closest('.page-wrapper').dataset.pageNumber, 10) : null);
+    const wrapper = pageWrapper || (pageNum ? document.getElementById(`page-wrapper-${pageNum}`) : null) || span.closest('.page-wrapper');
+    if (!wrapper) return '#111827';
+
+    // Prefer pristine snapshot canvas if already captured, to avoid reflow shift/mask artifacts
+    const snapshot = pageNum ? this._pageSnapshots.get(pageNum) : null;
+    const canvas = (snapshot && snapshot.canvas) || wrapper.querySelector('canvas.pdf-canvas, canvas[id^="page-canvas-"], canvas');
+    if (!canvas) return '#111827';
+
+    // If span has a pristine record, use its pristine layout metrics before any reflow shift
+    const pristineSpanRec = snapshot?.nativeSpans?.find(item => item.span === span);
+    const wrapW = wrapper.clientWidth || 1;
+    const wrapH = wrapper.clientHeight || 1;
+    const leftNorm = pristineSpanRec ? pristineSpanRec.leftNorm : (span.offsetLeft / wrapW);
+    const topNorm = pristineSpanRec ? pristineSpanRec.topNorm : (span.offsetTop / wrapH);
+    const widthNorm = pristineSpanRec ? (pristineSpanRec.rightNorm - pristineSpanRec.leftNorm) : (span.offsetWidth / wrapW);
+    const heightNorm = pristineSpanRec ? (pristineSpanRec.bottomNorm - pristineSpanRec.topNorm) : (span.offsetHeight / wrapH);
+
+    const x = Math.max(0, Math.floor(leftNorm * canvas.width));
+    const y = Math.max(0, Math.floor(topNorm * canvas.height));
+    const w = Math.min(canvas.width - x, Math.ceil(widthNorm * canvas.width));
+    const h = Math.min(canvas.height - y, Math.ceil(heightNorm * canvas.height));
+    if (w <= 0 || h <= 0) return '#111827';
+
+    let ctx;
+    try {
+      ctx = canvas.getContext('2d', { willReadFrequently: true });
+    } catch (_) {
+      ctx = canvas.getContext('2d');
+    }
+    if (!ctx) return '#111827';
+
+    let imgData;
+    try {
+      imgData = ctx.getImageData(x, y, w, h).data;
+    } catch (_) {
+      return '#111827';
+    }
+
+    const bins = {};
+    let maxCount = 0;
+    let peakBin = null;
+    const totalPixels = w * h;
+    const step = Math.max(1, Math.floor(totalPixels / 1500)) * 4;
+
+    for (let i = 0; i < imgData.length; i += step) {
+      const r = imgData[i];
+      const g = imgData[i + 1];
+      const b = imgData[i + 2];
+      const a = imgData[i + 3];
+      if (a < 128) continue;
+      // Skip pure white or near-white background
+      if (r > 235 && g > 235 && b > 235) continue;
+
+      const qr = Math.min(255, Math.round(r / 16) * 16);
+      const qg = Math.min(255, Math.round(g / 16) * 16);
+      const qb = Math.min(255, Math.round(b / 16) * 16);
+      const key = `${qr},${qg},${qb}`;
+      const count = (bins[key] || 0) + 1;
+      bins[key] = count;
+      if (count > maxCount) {
+        maxCount = count;
+        peakBin = { r: qr, g: qg, b: qb };
+      }
+    }
+
+    if (peakBin && maxCount >= 2) {
+      const toHex = (n) => n.toString(16).padStart(2, '0');
+      return `#${toHex(peakBin.r)}${toHex(peakBin.g)}${toHex(peakBin.b)}`;
+    }
+
+    return '#111827';
+  }
+
+  /**
+   * Build a rich, metric-compatible font stack ensuring subpixel typography match.
+   */
+  _resolveFontStack(detectedFont = '', isMonospace = false, isSerif = false) {
+    const fn = (detectedFont || '').toLowerCase();
+
+    if (isMonospace || /consolas|courier|mono|code|inconsolata|jetbrains/i.test(fn)) {
+      if (fn.includes('consolas')) {
+        return `'Consolas', 'Cousine', 'JetBrains Mono', 'Roboto Mono', 'Courier New', monospace`;
+      }
+      if (fn.includes('inconsolata')) {
+        return `'Inconsolata', 'Consolas', 'Cousine', 'Courier New', monospace`;
+      }
+      if (fn.includes('jetbrains')) {
+        return `'JetBrains Mono', 'Consolas', 'Cousine', 'Courier New', monospace`;
+      }
+      return `'Consolas', 'Cousine', 'Courier New', 'Roboto Mono', 'Liberation Mono', monospace`;
+    }
+
+    if (isSerif || /times|cambria|georgia|garamond|baskerville|merriweather|serif/i.test(fn)) {
+      if (fn.includes('cambria')) {
+        return `'Cambria', 'Caladea', 'Georgia', 'Times New Roman', 'Tinos', serif`;
+      }
+      if (fn.includes('times')) {
+        return `'Times New Roman', 'Tinos', 'Times', 'Cambria', 'Caladea', Georgia, serif`;
+      }
+      if (fn.includes('georgia')) {
+        return `'Georgia', 'Tinos', 'Times New Roman', 'Cambria', serif`;
+      }
+      if (fn.includes('garamond')) {
+        return `'Garamond', 'EB Garamond', 'Cormorant Garamond', 'Georgia', serif`;
+      }
+      if (fn.includes('baskerville')) {
+        return `'Libre Baskerville', 'Baskerville', 'Georgia', 'Times New Roman', serif`;
+      }
+      if (fn.includes('merriweather')) {
+        return `'Merriweather', 'Georgia', 'Times New Roman', serif`;
+      }
+      return `'Cambria', 'Caladea', 'Times New Roman', 'Tinos', 'Georgia', serif`;
+    }
+
+    // Sans-serif and specific standard typefaces
+    if (fn.includes('calibri')) {
+      return `'Calibri', 'Carlito', 'Candara', 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
+    }
+    if (fn.includes('arial') || fn.includes('helvetica')) {
+      return `'Arial', 'Arimo', 'Helvetica Neue', Helvetica, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+    }
+    if (fn.includes('verdana')) {
+      return `'Verdana', 'Geneva', 'Segoe UI', sans-serif`;
+    }
+    if (fn.includes('tahoma')) {
+      return `'Tahoma', 'Verdana', 'Segoe UI', sans-serif`;
+    }
+    if (fn.includes('trebuchet')) {
+      return `'Trebuchet MS', 'Lucida Sans', 'Segoe UI', sans-serif`;
+    }
+    if (fn.includes('segoe')) {
+      return `'Segoe UI', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif`;
+    }
+    if (fn.includes('roboto')) {
+      return `'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+    }
+    if (fn.includes('open sans')) {
+      return `'Open Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+    }
+    if (fn.includes('lato')) {
+      return `'Lato', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+    }
+    if (fn.includes('montserrat')) {
+      return `'Montserrat', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+    }
+    if (fn.includes('poppins')) {
+      return `'Poppins', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+    }
+    if (fn.includes('nunito')) {
+      return `'Nunito', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+    }
+    if (fn.includes('source sans')) {
+      return `'Source Sans 3', 'Source Sans Pro', 'Segoe UI', sans-serif`;
+    }
+    if (fn.includes('inter')) {
+      return `'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+    }
+
+    if (detectedFont && !/sans-serif|serif|monospace/i.test(detectedFont)) {
+      return `'${detectedFont}', 'Calibri', 'Carlito', 'Segoe UI', Arial, sans-serif`;
+    }
+
+    return `'Calibri', 'Carlito', 'Segoe UI', Arial, sans-serif`;
+  }
+
   _handleDirectContentEdit(editData) {
     const span = editData.span;
     if (!span) return;
     const pageNum = editData.pageNum;
     const pageWrapper = editData.pageWrapper || document.getElementById(`page-wrapper-${pageNum}`);
+
+    span._pageNum = pageNum;
+    span._pageWrapper = pageWrapper;
 
     // Snapshot the pristine page before any pixel of it is shifted for reflow.
     if (pageWrapper) this._capturePageSnapshot(pageNum, pageWrapper);
@@ -629,10 +807,9 @@ class PersonalPDFApp {
       const initialFontPx = parseFloat(initialStyle.fontSize) || 16;
       const initialLinePx = parseFloat(initialStyle.lineHeight) || initialFontPx * 1.2;
       span._lineHeightRatio = Math.max(0.9, Math.min(2.5, initialLinePx / initialFontPx));
-      const initialColor = initialStyle.color || '';
-      span._originalColor = (!initialColor || initialColor === 'transparent' || initialColor === 'rgba(0, 0, 0, 0)')
-        ? '#111827'
-        : initialColor;
+      
+      // Sample true text color directly from pristine PDF canvas under this span's glyphs
+      span._originalColor = this._extractSpanColor(span, pageWrapper);
 
       if (typeof healPdfTextLigatures === 'function') {
         span.textContent = healPdfTextLigatures(span.textContent);
@@ -659,45 +836,23 @@ class PersonalPDFApp {
 
     // Resolve native PDF font family and size with cross-platform fallback stack
     const compStyle = window.getComputedStyle(span);
-    const existingFont = (span.style.fontFamily || compStyle.fontFamily || '').toLowerCase();
-    
-    // Check tagged PDF font directly from textLayer span if available
     const directFont = span._pdfFontName || '';
-    const isDirectCalibri = /calibri/i.test(directFont);
-    const isDirectArial = /arial|helvetica/i.test(directFont);
-    const isDirectTimes = /times|cambria|serif/i.test(directFont) && !/sans/i.test(directFont);
-    const isDirectMono = /mono|consolas|courier/i.test(directFont);
-
-    // 1. Precise font classification: Avoid false positive where "sans-serif" matched /serif/
-    const isSansSerif = isDirectCalibri || isDirectArial || /sans-serif|calibri|arial|helvetica|segoe|roboto|tahoma|verdana|carlito/i.test(existingFont) ||
-                        (!/times|georgia|cambria|garamond|serif/i.test(existingFont) && !/mono|courier|consolas/i.test(existingFont));
-    const isMonospace = !isSansSerif && (isDirectMono || /mono|courier|consolas|code/i.test(existingFont));
-    const isSerif = !isSansSerif && !isMonospace && (isDirectTimes || /(?<!sans-)serif|times|georgia|cambria|garamond/i.test(existingFont));
+    const isDirectMono = /mono|consolas|courier|code|inconsolata/i.test(directFont);
+    const isDirectTimes = /times|cambria|georgia|garamond|serif/i.test(directFont) && !/sans/i.test(directFont);
+    const isMonospace = isDirectMono || /mono|courier|consolas|code/i.test(compStyle.fontFamily || '');
+    const isSerif = isDirectTimes || (/(?<!sans-)serif|times|georgia|cambria|garamond/i.test(compStyle.fontFamily || '') && !/sans/i.test(compStyle.fontFamily || ''));
 
     const docFonts = Array.from(this.viewer.documentFonts || []);
-    const specificDirect = (directFont && !/sans-serif|serif|monospace/i.test(directFont)) ? directFont : null;
-    const matchingDocFont = specificDirect || docFonts.find(f => {
-      const fl = f.toLowerCase();
-      if (isMonospace || isDirectMono) return fl.includes('consolas') || fl.includes('courier') || fl.includes('mono');
-      if (isSerif || isDirectTimes) return fl.includes('times') || fl.includes('cambria') || (fl.includes('serif') && !fl.includes('sans'));
-      return fl.includes('calibri') || fl.includes('arial') || fl.includes('helvetica') || fl.includes('sans');
-    }) || directFont || docFonts[0];
+    const matchingDocFont = (directFont && !/sans-serif|serif|monospace/i.test(directFont))
+      ? directFont
+      : (docFonts.find(f => {
+          const fl = f.toLowerCase();
+          if (isMonospace) return fl.includes('consolas') || fl.includes('courier') || fl.includes('mono');
+          if (isSerif) return fl.includes('times') || fl.includes('cambria') || (fl.includes('serif') && !fl.includes('sans'));
+          return fl.includes('calibri') || fl.includes('arial') || fl.includes('helvetica') || fl.includes('sans');
+        }) || directFont || docFonts[0]);
 
-    let fontStack = '';
-    if (isMonospace || isDirectMono) {
-      fontStack = `'Consolas', 'Cousine', 'Roboto Mono', 'Courier New', 'Liberation Mono', monospace`;
-    } else if (isSerif || isDirectTimes) {
-      fontStack = `'Cambria', 'Times New Roman', 'Noto Serif', 'Tinos', 'Liberation Serif', Georgia, serif`;
-    } else if (isDirectCalibri || (matchingDocFont && /calibri/i.test(matchingDocFont))) {
-      fontStack = `'Calibri', 'Carlito', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`;
-    } else if (isDirectArial || (matchingDocFont && /arial|helvetica/i.test(matchingDocFont))) {
-      fontStack = `Arial, 'Arimo', 'Roboto', 'Helvetica Neue', Helvetica, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
-    } else if (matchingDocFont && !/sans-serif|serif|monospace/i.test(matchingDocFont)) {
-      fontStack = `'${matchingDocFont}', 'Calibri', 'Carlito', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`;
-    } else {
-      fontStack = `'Calibri', 'Carlito', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`;
-    }
-
+    const fontStack = this._resolveFontStack(matchingDocFont, isMonospace, isSerif);
     span.style.fontFamily = fontStack;
     span._customFontStack = fontStack;
 
@@ -903,7 +1058,10 @@ class PersonalPDFApp {
           span.classList.add('in-place-modified');
           if (tLayer) tLayer.classList.add('has-modifications');
 
-          // Keep the same font size; the edited line may wrap into a paragraph.
+          // Keep the same typography and font metrics
+          span.style.fontFamily = span._customFontStack || fontStack;
+          span.style.fontWeight = span._customFontWeight || (span._pdfIsBold ? '700' : 'normal');
+          span.style.fontStyle = span._customFontStyle || (span._pdfIsItalic ? 'italic' : 'normal');
           span.style.transform = 'none';
           span.style.letterSpacing = 'normal';
           span.style.maxWidth = `${Math.floor(maxW)}px`;

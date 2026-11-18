@@ -9,10 +9,11 @@
   <title>Personal PDF Suite - Professional Edition</title>
   <link rel="icon" type="image/png" href="assets/icons/app-icon.png">
   
-  <!-- Metric-Compatible Standard Fonts (Carlito for Calibri, Arimo for Arial, Tinos for Times, Cousine for Courier) + Inter/Roboto -->
+  <!-- Comprehensive Metric-Compatible & Universal Document Typography -->
+  <!-- Carlito (Calibri), Caladea (Cambria), Arimo (Arial), Tinos (Times), Cousine (Courier), EB Garamond, etc. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Arimo:ital,wght@0,400;0,700;1,400;1,700&family=Carlito:ital,wght@0,400;0,700;1,400;1,700&family=Cousine:ital,wght@0,400;0,700&family=Dancing+Script:wght@600&family=Inter:wght@300;400;500;600;700&family=Roboto:wght@400;500;700&family=Tinos:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Arimo:ital,wght@0,400;0,700;1,400;1,700&family=Caladea:ital,wght@0,400;0,700;1,400;1,700&family=Carlito:ital,wght@0,400;0,700;1,400;1,700&family=Cousine:ital,wght@0,400;0,700;1,400;1,700&family=Dancing+Script:wght@600&family=EB+Garamond:ital,wght@0,400;0,700;1,400;1,700&family=Inconsolata:wght@400;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Lato:ital,wght@0,400;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&family=Montserrat:wght@400;600;700&family=Nunito:wght@400;600;700&family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Poppins:wght@400;600;700&family=Roboto:ital,wght@0,400;0,500;0,700;1,400&family=Roboto+Mono:wght@400;700&family=Source+Code+Pro:wght@400;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Tinos:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
   
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="css/main.css">
@@ -860,16 +861,28 @@
         <div style="font-size:12px; font-weight:600; color:var(--m3-sys-on-surface-variant); margin-top:4px;">Font & Styling</div>
         <div style="display:flex; flex-direction:column; gap:8px;">
           <select id="m3-edit-font-family" class="tool-select" style="width:100%;">
-            <option value="Inter, sans-serif" selected>Inter / Arial (Clean Sans)</option>
-            <option value="'Roboto', sans-serif">Roboto (Modern Sans)</option>
-            <option value="'Times New Roman', serif">Times New Roman (Serif)</option>
-            <option value="'Georgia', serif">Georgia (Editorial Serif)</option>
-            <option value="'Garamond', serif">Garamond (Classic Serif)</option>
-            <option value="'Courier New', monospace">Courier New (Monospace)</option>
-            <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-            <option value="'Verdana', sans-serif">Verdana</option>
-            <option value="'Dancing Script', cursive">Dancing Script (Handwriting)</option>
-            <option value="'Impact', sans-serif">Impact (Headline)</option>
+            <option value="'Calibri', 'Carlito', 'Candara', 'Segoe UI', Arial, sans-serif" selected>Calibri / Carlito</option>
+            <option value="'Arial', 'Arimo', 'Helvetica Neue', Helvetica, 'Segoe UI', sans-serif">Arial / Arimo</option>
+            <option value="'Times New Roman', 'Tinos', 'Times', serif">Times New Roman</option>
+            <option value="'Cambria', 'Caladea', 'Georgia', 'Times New Roman', serif">Cambria / Caladea</option>
+            <option value="'Consolas', 'Cousine', 'JetBrains Mono', 'Roboto Mono', monospace">Consolas / Code</option>
+            <option value="'Courier New', 'Cousine', 'Courier', monospace">Courier New</option>
+            <option value="'Georgia', 'Tinos', 'Times New Roman', serif">Georgia</option>
+            <option value="'Garamond', 'EB Garamond', 'Cormorant Garamond', Georgia, serif">Garamond</option>
+            <option value="'Libre Baskerville', 'Baskerville', Georgia, serif">Baskerville</option>
+            <option value="'Segoe UI', 'Inter', -apple-system, sans-serif">Segoe UI</option>
+            <option value="'Roboto', 'Segoe UI', sans-serif">Roboto</option>
+            <option value="'Open Sans', 'Segoe UI', sans-serif">Open Sans</option>
+            <option value="'Lato', 'Segoe UI', sans-serif">Lato</option>
+            <option value="'Montserrat', 'Segoe UI', sans-serif">Montserrat</option>
+            <option value="'Poppins', 'Segoe UI', sans-serif">Poppins</option>
+            <option value="'Nunito', 'Segoe UI', sans-serif">Nunito</option>
+            <option value="'Verdana', 'Geneva', sans-serif">Verdana</option>
+            <option value="'Tahoma', 'Verdana', 'Segoe UI', sans-serif">Tahoma</option>
+            <option value="'Trebuchet MS', 'Lucida Sans', 'Segoe UI', sans-serif">Trebuchet MS</option>
+            <option value="'Comic Sans MS', cursive">Comic Sans</option>
+            <option value="'Dancing Script', cursive">Dancing Script</option>
+            <option value="'Impact', 'Arial Black', sans-serif">Impact</option>
           </select>
           <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
             <select id="m3-edit-font-size" class="tool-select" style="width:72px;">

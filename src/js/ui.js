@@ -988,17 +988,29 @@ export class UIController {
         const opt = document.createElement('option');
         const fl = (font || '').toLowerCase();
         let stack = `'${font}', sans-serif`;
-        if (fl.includes('consolas') || fl.includes('courier') || fl.includes('mono')) {
-          stack = `'${font}', 'Consolas', 'Courier New', 'Liberation Mono', monospace`;
-        } else if (fl.includes('times') || fl.includes('cambria') || fl.includes('serif')) {
-          stack = `'${font}', 'Cambria', 'Times New Roman', 'Liberation Serif', serif`;
+        if (fl.includes('consolas') || fl.includes('courier') || fl.includes('mono') || fl.includes('code') || fl.includes('jetbrains')) {
+          stack = `'${font}', 'Consolas', 'Cousine', 'JetBrains Mono', 'Roboto Mono', 'Courier New', monospace`;
+        } else if (fl.includes('cambria')) {
+          stack = `'${font}', 'Cambria', 'Caladea', 'Georgia', 'Times New Roman', 'Tinos', serif`;
+        } else if (fl.includes('times')) {
+          stack = `'${font}', 'Times New Roman', 'Tinos', 'Times', 'Cambria', 'Caladea', Georgia, serif`;
+        } else if (fl.includes('georgia')) {
+          stack = `'${font}', 'Georgia', 'Tinos', 'Times New Roman', serif`;
+        } else if (fl.includes('garamond')) {
+          stack = `'${font}', 'Garamond', 'EB Garamond', 'Cormorant Garamond', Georgia, serif`;
+        } else if (fl.includes('baskerville')) {
+          stack = `'${font}', 'Libre Baskerville', 'Baskerville', Georgia, serif`;
         } else if (fl.includes('calibri')) {
-          stack = `'${font}', 'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+          stack = `'${font}', 'Calibri', 'Carlito', 'Candara', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif`;
+        } else if (fl.includes('arial') || fl.includes('helvetica')) {
+          stack = `'${font}', 'Arial', 'Arimo', 'Helvetica Neue', Helvetica, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+        } else if (fl.includes('serif')) {
+          stack = `'${font}', 'Cambria', 'Caladea', 'Times New Roman', 'Tinos', Georgia, serif`;
         } else {
-          stack = `'${font}', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+          stack = `'${font}', 'Calibri', 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif`;
         }
         opt.value = stack;
-        opt.textContent = `${font} (Document)`;
+        opt.textContent = `${font} (PDF Document)`;
         if (idx === 0) opt.selected = true;
         group.appendChild(opt);
       });
@@ -1310,17 +1322,28 @@ export class UIController {
       <!-- Textbox Formatting -->
       <div class="tool-group">
         <select id="annot-font-family" class="tool-select" style="max-width:115px;" title="Text Font Family">
-          <option value="Inter, sans-serif" selected>Inter / Arial (Sans)</option>
-          <option value="'Roboto', sans-serif">Roboto</option>
-          <option value="'Segoe UI', sans-serif">Segoe UI</option>
-          <option value="'Open Sans', sans-serif">Open Sans</option>
-          <option value="'Lato', sans-serif">Lato</option>
-          <option value="'Times New Roman', serif">Times New Roman</option>
-          <option value="'Georgia', serif">Georgia</option>
-          <option value="'Garamond', serif">Garamond</option>
-          <option value="'Courier New', monospace">Courier New</option>
-          <option value="'Consolas', monospace">Consolas</option>
-          <option value="'Impact', sans-serif">Impact</option>
+          <option value="'Calibri', 'Carlito', 'Candara', 'Segoe UI', Arial, sans-serif" selected>Calibri / Carlito</option>
+          <option value="'Arial', 'Arimo', 'Helvetica Neue', Helvetica, 'Segoe UI', sans-serif">Arial / Arimo</option>
+          <option value="'Times New Roman', 'Tinos', 'Times', serif">Times New Roman</option>
+          <option value="'Cambria', 'Caladea', 'Georgia', 'Times New Roman', serif">Cambria / Caladea</option>
+          <option value="'Consolas', 'Cousine', 'JetBrains Mono', 'Roboto Mono', monospace">Consolas / Code</option>
+          <option value="'Courier New', 'Cousine', 'Courier', monospace">Courier New</option>
+          <option value="'Georgia', 'Tinos', 'Times New Roman', serif">Georgia</option>
+          <option value="'Garamond', 'EB Garamond', 'Cormorant Garamond', Georgia, serif">Garamond</option>
+          <option value="'Libre Baskerville', 'Baskerville', Georgia, serif">Baskerville</option>
+          <option value="'Segoe UI', 'Inter', -apple-system, sans-serif">Segoe UI</option>
+          <option value="'Roboto', 'Segoe UI', sans-serif">Roboto</option>
+          <option value="'Open Sans', 'Segoe UI', sans-serif">Open Sans</option>
+          <option value="'Lato', 'Segoe UI', sans-serif">Lato</option>
+          <option value="'Montserrat', 'Segoe UI', sans-serif">Montserrat</option>
+          <option value="'Poppins', 'Segoe UI', sans-serif">Poppins</option>
+          <option value="'Nunito', 'Segoe UI', sans-serif">Nunito</option>
+          <option value="'Verdana', 'Geneva', sans-serif">Verdana</option>
+          <option value="'Tahoma', 'Verdana', 'Segoe UI', sans-serif">Tahoma</option>
+          <option value="'Trebuchet MS', 'Lucida Sans', 'Segoe UI', sans-serif">Trebuchet MS</option>
+          <option value="'Comic Sans MS', cursive">Comic Sans</option>
+          <option value="'Dancing Script', cursive">Dancing Script</option>
+          <option value="'Impact', 'Arial Black', sans-serif">Impact</option>
         </select>
         <input type="number" id="annot-font-size" value="16" min="6" max="144" class="tool-select" style="width:42px;" title="Font Size (pt)">
         <button id="btn-text-bold" class="tool-btn" title="Bold Text"><b>B</b></button>
@@ -1655,22 +1678,28 @@ export class UIController {
       <div class="divider"></div>
       <div class="tool-group">
         <select id="edit-font-family" class="tool-select" style="max-width:130px;" title="Font Family">
-          <option value="Inter, sans-serif" selected>Inter / Arial (Sans)</option>
-          <option value="'Roboto', sans-serif">Roboto</option>
-          <option value="'Segoe UI', sans-serif">Segoe UI</option>
-          <option value="'Open Sans', sans-serif">Open Sans</option>
-          <option value="'Lato', sans-serif">Lato</option>
-          <option value="'Times New Roman', serif">Times New Roman</option>
-          <option value="'Georgia', serif">Georgia</option>
-          <option value="'Garamond', serif">Garamond</option>
-          <option value="'Courier New', monospace">Courier New</option>
-          <option value="'Consolas', monospace">Consolas</option>
-          <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-          <option value="'Verdana', sans-serif">Verdana</option>
-          <option value="'Tahoma', sans-serif">Tahoma</option>
+          <option value="'Calibri', 'Carlito', 'Candara', 'Segoe UI', Arial, sans-serif" selected>Calibri / Carlito</option>
+          <option value="'Arial', 'Arimo', 'Helvetica Neue', Helvetica, 'Segoe UI', sans-serif">Arial / Arimo</option>
+          <option value="'Times New Roman', 'Tinos', 'Times', serif">Times New Roman</option>
+          <option value="'Cambria', 'Caladea', 'Georgia', 'Times New Roman', serif">Cambria / Caladea</option>
+          <option value="'Consolas', 'Cousine', 'JetBrains Mono', 'Roboto Mono', monospace">Consolas / Code</option>
+          <option value="'Courier New', 'Cousine', 'Courier', monospace">Courier New</option>
+          <option value="'Georgia', 'Tinos', 'Times New Roman', serif">Georgia</option>
+          <option value="'Garamond', 'EB Garamond', 'Cormorant Garamond', Georgia, serif">Garamond</option>
+          <option value="'Libre Baskerville', 'Baskerville', Georgia, serif">Baskerville</option>
+          <option value="'Segoe UI', 'Inter', -apple-system, sans-serif">Segoe UI</option>
+          <option value="'Roboto', 'Segoe UI', sans-serif">Roboto</option>
+          <option value="'Open Sans', 'Segoe UI', sans-serif">Open Sans</option>
+          <option value="'Lato', 'Segoe UI', sans-serif">Lato</option>
+          <option value="'Montserrat', 'Segoe UI', sans-serif">Montserrat</option>
+          <option value="'Poppins', 'Segoe UI', sans-serif">Poppins</option>
+          <option value="'Nunito', 'Segoe UI', sans-serif">Nunito</option>
+          <option value="'Verdana', 'Geneva', sans-serif">Verdana</option>
+          <option value="'Tahoma', 'Verdana', 'Segoe UI', sans-serif">Tahoma</option>
+          <option value="'Trebuchet MS', 'Lucida Sans', 'Segoe UI', sans-serif">Trebuchet MS</option>
           <option value="'Comic Sans MS', cursive">Comic Sans</option>
           <option value="'Dancing Script', cursive">Dancing Script</option>
-          <option value="'Impact', sans-serif">Impact</option>
+          <option value="'Impact', 'Arial Black', sans-serif">Impact</option>
         </select>
         <input type="number" id="edit-font-size" value="16" min="6" max="144" class="tool-select" style="width:48px;" title="Font Size (pt)">
         <button id="btn-edit-bold" class="tool-btn" title="Bold"><b>B</b></button>
