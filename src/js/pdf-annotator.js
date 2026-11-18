@@ -1055,7 +1055,7 @@ export class PDFAnnotatorEngine {
     }
     const pageMap = this.inPlaceEdits.get(pageNum);
     const prevText = pageMap.has(span) ? pageMap.get(span).newText : (span._originalText !== undefined ? span._originalText : '');
-    const newText = span.innerText !== undefined ? span.innerText : span.textContent;
+    const newText = span._fullReflowText || (span.innerText !== undefined ? span.innerText : span.textContent);
     const edit = {
       span,
       originalText: span._originalText,
@@ -1853,7 +1853,7 @@ export class PDFAnnotatorEngine {
       // 2b. Draw In-Place Text Edits (Mask original canvas text with white and render new text using PDF's exact font)
       if (hasInPlaceEdits) {
         for (const [span, edit] of pageInPlaceEdits.entries()) {
-          const textToDraw = span.innerText !== undefined ? span.innerText : span.textContent;
+          const textToDraw = span._fittingReflowText || (span.innerText !== undefined ? span.innerText : span.textContent);
           if (textToDraw === undefined || textToDraw === null) continue;
 
           const cs = window.getComputedStyle(span);
@@ -1918,6 +1918,49 @@ export class PDFAnnotatorEngine {
           });
           compCtx.restore();
         }
+      }
+
+      // 2c. Draw In-Place Continuation Spans (overflow cascading from previous page)
+      const continuationSpans = wrapper.querySelectorAll('.reflow-overflow-span.in-place-continuation');
+      for (const span of continuationSpans) {
+        const textToDraw = span.textContent || '';
+        if (!textToDraw.trim()) continue;
+
+        const cs = window.getComputedStyle(span);
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const spanRect = span.getBoundingClientRect();
+
+        const sx = (spanRect.left - wrapperRect.left) * scaleX;
+        const sy = (spanRect.top - wrapperRect.top) * scaleY;
+        const maskW = (parseFloat(span.style.maxWidth) || spanRect.width || (wrapper.clientWidth - 40)) * scaleX;
+
+        const fSize = parseFloat(cs.fontSize) * scaleY;
+        const fontFamily = span.style.fontFamily || cs.fontFamily || 'sans-serif';
+        const fontWeight = span.style.fontWeight || cs.fontWeight || 'normal';
+        const fontStyle = span.style.fontStyle || cs.fontStyle || 'normal';
+        const color = span.style.color || cs.color || '#111827';
+        const csFontPx = parseFloat(cs.fontSize) || 1;
+        const csLinePx = parseFloat(cs.lineHeight);
+        const lineRatio = (csLinePx && !isNaN(csLinePx)) ? (csLinePx / csFontPx) : 1.2;
+        const lineHeight = fSize * lineRatio;
+
+        compCtx.save();
+        compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
+        compCtx.fillStyle = color;
+        compCtx.textBaseline = 'top';
+
+        const textToRender = String(textToDraw).replace(/\r\n?/g, '\n');
+        const lines = this._wrapCanvasText(compCtx, textToRender, Math.max(1, maskW));
+        const blockH = lines.length * lineHeight;
+
+        compCtx.fillStyle = '#ffffff';
+        compCtx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(maskW) + 4, Math.ceil(blockH) + 4);
+
+        compCtx.fillStyle = color;
+        lines.forEach((line, idx) => {
+          if (line) compCtx.fillText(line, sx, sy + idx * lineHeight);
+        });
+        compCtx.restore();
       }
 
       // 3. Draw placed stamps, signatures, and images

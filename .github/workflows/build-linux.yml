@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Linux system dependencies
         run: |
@@ -27,7 +27,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -39,7 +39,7 @@ jobs:
           npx @tauri-apps/cli build --bundles appimage,deb || npx @tauri-apps/cli build --bundles deb
 
       - name: Upload Linux Artifacts (.AppImage & .deb)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: personal-pdf-suite-linux-tauri
           path: |

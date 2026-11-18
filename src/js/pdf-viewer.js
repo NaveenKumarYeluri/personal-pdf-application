@@ -31,6 +31,16 @@ export function healPdfTextLigatures(text) {
   cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}oned\b/gi, 'partitioned');
   cleaned = cleaned.replace(/par[\ufffd\u0000\u001f\u007f\?]{1,2}oning\b/gi, 'partitioning');
 
+  // 1b. Common words with ft ligatures: after, often, softer, faster, etc.
+  cleaned = cleaned.replace(/([a-zA-Z]*a)[\ufffd\u0000\u001f\u007f\?]{1,2}(er(?:ward|wards)?\b)/gi, '$1ft$2');
+  cleaned = cleaned.replace(/([a-zA-Z]*o)[\ufffd\u0000\u001f\u007f\?]{1,2}(en\b)/gi, '$1ft$2');
+  cleaned = cleaned.replace(/so[\ufffd\u0000\u001f\u007f\?]{1,2}er\b/gi, 'softer');
+  cleaned = cleaned.replace(/fa[\ufffd\u0000\u001f\u007f\?]{1,2}er\b/gi, 'faster');
+  cleaned = cleaned.replace(/le[\ufffd\u0000\u001f\u007f\?]{1,2}\b/gi, 'left');
+  cleaned = cleaned.replace(/so[\ufffd\u0000\u001f\u007f\?]{1,2}\b/gi, 'soft');
+  cleaned = cleaned.replace(/cra[\ufffd\u0000\u001f\u007f\?]{1,2}ed\b/gi, 'crafted');
+  cleaned = cleaned.replace(/([a-zA-Z]*)[\ufffd\u0000\u001f\u007f\?]{1,2}rst\b/gi, '$1first');
+
   // 2. Words ending in -tion: allocation, implementation, connection, operation, etc.
   cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}on\b/g, '$1tion');
   cleaned = cleaned.replace(/([a-zA-Z])[\ufffd\u0000\u001f\u007f\?]{1,2}ons\b/g, '$1tions');
