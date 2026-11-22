@@ -231,6 +231,16 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
   color: #111827 !important;
 }
 
+.page-wrapper.editing-content .textLayer span.reflow-overflow-span,
+.page-wrapper .textLayer span.reflow-overflow-span,
+.textLayer span.reflow-overflow-span {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  cursor: text !important;
+}
+
 /* Modified text spans persist seamlessly across View & Edit modes */
 .page-wrapper.editing-content .textLayer span.in-place-modified,
 .page-wrapper .textLayer span.in-place-modified,

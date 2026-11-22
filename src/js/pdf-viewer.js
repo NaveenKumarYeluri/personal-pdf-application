@@ -866,8 +866,16 @@ export class PDFViewerEngine {
 
   _setupContentEditingHandlers(textLayer, pageNum, pageWrapper) {
     textLayer.addEventListener('click', (e) => {
-      const span = e.target.closest('span');
-      if (!span || !this.isContentEditingActive) return;
+      if (!this.isContentEditingActive) return;
+      if (e.target.closest('[contenteditable="true"]')) {
+        return; // Allow caret placement and text selection inside active editor
+      }
+
+      let span = e.target.closest('.textLayer > span') || e.target.closest('span');
+      if (!span) return;
+      if (span._mergedInto && span._mergedInto.isConnected) {
+        span = span._mergedInto;
+      }
 
       e.stopPropagation();
 
@@ -896,8 +904,14 @@ export class PDFViewerEngine {
         const dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
         const dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
         if (dx < 10 && dy < 10) {
-          const span = e.target.closest('span');
+          if (e.target.closest('[contenteditable="true"]')) {
+            return;
+          }
+          let span = e.target.closest('.textLayer > span') || e.target.closest('span');
           if (span) {
+            if (span._mergedInto && span._mergedInto.isConnected) {
+              span = span._mergedInto;
+            }
             e.stopPropagation();
             this.onContentEdited({
               span,

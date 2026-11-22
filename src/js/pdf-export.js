@@ -113,7 +113,7 @@ export class PDFExportEngine {
       ctx.fillStyle = color;
       ctx.textBaseline = 'top';
 
-      const textContentVal = String(span.innerText !== undefined ? span.innerText : span.textContent || '');
+      const textContentVal = String(span._fullReflowText || (span.innerText !== undefined ? span.innerText : span.textContent || ''));
       const lines = this._wrapCanvasText(ctx, textContentVal, Math.max(1, maskW));
       const blockH = Math.max(origH, lines.length * lineHeight);
 

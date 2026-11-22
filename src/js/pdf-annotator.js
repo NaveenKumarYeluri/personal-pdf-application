@@ -904,7 +904,11 @@ export class PDFAnnotatorEngine {
       this.activeTextBox = null;
     }
     if (this.activeInPlaceSpan && this.activeInPlaceSpan !== span) {
-      this.activeInPlaceSpan.classList.remove('inline-editing');
+      const prev = this.activeInPlaceSpan;
+      if (typeof prev.blur === 'function') {
+        try { prev.blur(); } catch (_) {}
+      }
+      prev.classList.remove('inline-editing');
     }
     this.activeInPlaceSpan = span;
     if (span) {
@@ -927,7 +931,11 @@ export class PDFAnnotatorEngine {
       this.activeTextBox = null;
     }
     if (this.activeInPlaceSpan) {
-      this.activeInPlaceSpan.classList.remove('inline-editing');
+      const prev = this.activeInPlaceSpan;
+      if (typeof prev.blur === 'function') {
+        try { prev.blur(); } catch (_) {}
+      }
+      prev.classList.remove('inline-editing');
       this.activeInPlaceSpan = null;
     }
     if (this.activeStamp) {
@@ -1874,7 +1882,7 @@ export class PDFAnnotatorEngine {
       // 2b. Draw In-Place Text Edits (Mask original canvas text with white and render new text using PDF's exact font)
       if (hasInPlaceEdits) {
         for (const [span, edit] of pageInPlaceEdits.entries()) {
-          const textToDraw = span._fittingReflowText || (span.innerText !== undefined ? span.innerText : span.textContent);
+          const textToDraw = span._fittingReflowText || span._fullReflowText || (span.innerText !== undefined ? span.innerText : span.textContent);
           if (textToDraw === undefined || textToDraw === null) continue;
 
           const cs = window.getComputedStyle(span);

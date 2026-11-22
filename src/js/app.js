@@ -758,19 +758,19 @@ class PersonalPDFApp {
 
     // Sans-serif and specific standard typefaces
     if (fn.includes('calibri')) {
-      return `'Calibri', 'Carlito', 'Candara', 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
+      return `'Calibri', 'Carlito', 'Candara', 'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif`;
     }
     if (fn.includes('arial') || fn.includes('helvetica')) {
-      return `'Arial', 'Arimo', 'Helvetica Neue', Helvetica, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+      return `'Arial', 'Arimo', 'Helvetica Neue', Helvetica, 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
     }
     if (fn.includes('verdana')) {
-      return `'Verdana', 'Geneva', 'Segoe UI', sans-serif`;
+      return `'Verdana', 'Geneva', 'Roboto', 'Segoe UI', sans-serif`;
     }
     if (fn.includes('tahoma')) {
-      return `'Tahoma', 'Verdana', 'Segoe UI', sans-serif`;
+      return `'Tahoma', 'Verdana', 'Roboto', 'Segoe UI', sans-serif`;
     }
     if (fn.includes('trebuchet')) {
-      return `'Trebuchet MS', 'Lucida Sans', 'Segoe UI', sans-serif`;
+      return `'Trebuchet MS', 'Lucida Sans', 'Roboto', 'Segoe UI', sans-serif`;
     }
     if (fn.includes('segoe')) {
       return `'Segoe UI', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif`;
@@ -779,32 +779,43 @@ class PersonalPDFApp {
       return `'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
     }
     if (fn.includes('open sans')) {
-      return `'Open Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+      return `'Open Sans', 'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
     }
     if (fn.includes('lato')) {
-      return `'Lato', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+      return `'Lato', 'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
     }
     if (fn.includes('montserrat')) {
-      return `'Montserrat', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+      return `'Montserrat', 'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
     }
     if (fn.includes('poppins')) {
-      return `'Poppins', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+      return `'Poppins', 'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
     }
     if (fn.includes('nunito')) {
-      return `'Nunito', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+      return `'Nunito', 'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
     }
     if (fn.includes('source sans')) {
-      return `'Source Sans 3', 'Source Sans Pro', 'Segoe UI', sans-serif`;
+      return `'Source Sans 3', 'Source Sans Pro', 'Roboto', 'Segoe UI', sans-serif`;
     }
     if (fn.includes('inter')) {
-      return `'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
+      return `'Inter', 'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif`;
     }
 
     if (detectedFont && !/sans-serif|serif|monospace/i.test(detectedFont)) {
-      return `'${detectedFont}', 'Calibri', 'Carlito', 'Segoe UI', Arial, sans-serif`;
+      return `'${detectedFont}', 'Calibri', 'Carlito', 'Roboto', 'Segoe UI', Arial, sans-serif`;
     }
 
-    return `'Calibri', 'Carlito', 'Segoe UI', Arial, sans-serif`;
+    return `'Calibri', 'Carlito', 'Roboto', 'Segoe UI', Arial, sans-serif`;
+  }
+
+  _getEditorText(el) {
+    if (!el) return '';
+    if (el.innerText !== undefined) {
+      return el.innerText;
+    }
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+    clone.querySelectorAll('div, p').forEach(block => block.append('\n'));
+    return clone.textContent || '';
   }
 
   _handleDirectContentEdit(editData) {
@@ -812,6 +823,13 @@ class PersonalPDFApp {
     if (!span) return;
     const pageNum = editData.pageNum;
     const pageWrapper = editData.pageWrapper || document.getElementById(`page-wrapper-${pageNum}`);
+
+    // If another span is currently active in-place, commit it cleanly first
+    if (this.annotator?.activeInPlaceSpan && this.annotator.activeInPlaceSpan !== span) {
+      try {
+        this.annotator.activeInPlaceSpan.blur();
+      } catch (_) {}
+    }
 
     span._pageNum = pageNum;
     span._pageWrapper = pageWrapper;
@@ -825,14 +843,41 @@ class PersonalPDFApp {
       return;
     }
 
+    // Bake any existing reflow shift into style.top and clear transform so span stays visually stationary
+    if (span.dataset.reflowShift) {
+      const shiftPx = parseFloat(span.dataset.reflowShift) || 0;
+      if (shiftPx) {
+        const curTop = parseFloat(span.style.top) || span.offsetTop;
+        span.style.top = `${curTop + shiftPx}px`;
+      }
+      span.style.transform = 'none';
+      delete span.dataset.reflowShift;
+    }
+
     if (span._fullReflowHtml) {
       span.innerHTML = span._fullReflowHtml;
     } else if (span._fullReflowText) {
       span.textContent = span._fullReflowText;
     }
 
-    // Save initial text once
-    if (span._originalText === undefined) {
+    // If this span is a dynamic reflow overflow span from a previous page
+    if (span.classList.contains('reflow-overflow-span')) {
+      if (span._originalText === undefined) {
+        span._originalText = this._getEditorText(span) || span.textContent;
+        span._originalWidth = span.offsetWidth || (parseFloat(span.style.maxWidth) || 200);
+        span._originalHeight = span.offsetHeight || 20;
+        const wW = pageWrapper.clientWidth || 1;
+        const wH = pageWrapper.clientHeight || 1;
+        span._normRect = {
+          x: Math.max(0, span.offsetLeft / wW),
+          y: Math.max(0, span.offsetTop / wH),
+          w: Math.min(1, Math.max(0.005, span._originalWidth / wW)),
+          h: Math.min(1, Math.max(0.005, span._originalHeight / wH))
+        };
+      }
+    } else if (span._paragraphMerge || span.classList.contains('in-place-modified')) {
+      // Already prepared or modified paragraph: keep existing paragraph merge and bounds
+    } else if (span._originalText === undefined) {
       span._originalInlineStyle = span.getAttribute('style') || '';
       const initialStyle = window.getComputedStyle(span);
       const initialFontPx = parseFloat(initialStyle.fontSize) || 16;
@@ -977,9 +1022,9 @@ class PersonalPDFApp {
     // grows downward; the font size is never shrunk to squeeze text into one line.
     const cleanSpanContent = () => {
       if (span._isComposing) return;
-      span.style.fontFamily = fontStack;
-      span.style.fontWeight = span._customFontWeight || 'normal';
-      span.style.fontStyle = span._customFontStyle || 'normal';
+      span.style.fontFamily = span._customFontStack || fontStack;
+      span.style.fontWeight = span._customFontWeight || fontWeight;
+      span.style.fontStyle = span._customFontStyle || fontStyle;
       span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
       span.style.lineHeight = String(span._lineHeightRatio || 1.2);
       span.style.letterSpacing = 'normal';
@@ -994,7 +1039,7 @@ class PersonalPDFApp {
       span.style.wordBreak = 'normal';
       span.style.overflow = 'visible';
       span.style.height = 'auto';
-      span.style.color = span._originalColor || '#000000';
+      span.style.color = span._customColor || fontColor;
       span.style.backgroundColor = '#ffffff';
       if (span._paragraphMerge) {
         const pm = span._paragraphMerge;
@@ -1058,6 +1103,8 @@ class PersonalPDFApp {
       });
       span.addEventListener('compositionend', () => {
         span._isComposing = false;
+        span._fullReflowText = this._getEditorText(span);
+        span._fullReflowHtml = span.innerHTML;
         cleanSpanContent();
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
         this._reflowEditedPage(pageNum, pageWrapper);
@@ -1067,8 +1114,8 @@ class PersonalPDFApp {
         if (span._isComposing || (e && e.isComposing)) {
           return; // Allow soft keyboard composition without resetting DOM
         }
-        span._fullReflowText = null;
-        span._fullReflowHtml = null;
+        span._fullReflowText = this._getEditorText(span);
+        span._fullReflowHtml = span.innerHTML;
         span._fittingReflowText = null;
         span._overflowReflowText = null;
         cleanSpanContent();
@@ -1082,10 +1129,6 @@ class PersonalPDFApp {
         if (text === undefined || text === null) return;
         e.preventDefault();
         text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        span._fullReflowText = null;
-        span._fullReflowHtml = null;
-        span._fittingReflowText = null;
-        span._overflowReflowText = null;
         const sel = window.getSelection();
         if (sel && sel.rangeCount > 0) {
           const range = sel.getRangeAt(0);
@@ -1099,6 +1142,10 @@ class PersonalPDFApp {
         } else {
           span.textContent += text;
         }
+        span._fullReflowText = this._getEditorText(span);
+        span._fullReflowHtml = span.innerHTML;
+        span._fittingReflowText = null;
+        span._overflowReflowText = null;
         cleanSpanContent();
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
         this._reflowEditedPage(pageNum, pageWrapper);
@@ -1118,6 +1165,8 @@ class PersonalPDFApp {
 
       span.addEventListener('blur', () => {
         span._isComposing = false;
+        span._fullReflowText = this._getEditorText(span);
+        span._fullReflowHtml = span.innerHTML;
         cleanSpanContent();
         span.contentEditable = 'false';
         span.classList.remove('inline-editing');
@@ -1229,7 +1278,7 @@ class PersonalPDFApp {
   _collectTextLines(pageWrapper) {
     const spans = Array.from(pageWrapper.querySelectorAll('.textLayer span')).filter(span => {
       if (!span.textContent || !span.textContent.trim()) return false;
-      if (span._mergeHidden || span._paragraphMerge) return false;
+      if (span._mergeHidden) return false;
       return true;
     });
     spans.sort((a, b) => (a.offsetTop - b.offsetTop) || (a.offsetLeft - b.offsetLeft));
@@ -1391,13 +1440,13 @@ class PersonalPDFApp {
 
       // 1. Strict vertical spacing (leading)
       const gap = next.top - prev.bottom;
-      const maxLeading = Math.max(8, actualLineHeight * 0.45);
-      if (gap < -2 || gap > maxLeading) {
+      const maxLeading = Math.max(12, actualLineHeight * 0.75);
+      if (gap < -4 || gap > maxLeading) {
         return false;
       }
 
       // 2. Colon endings: headings / labels (e.g. "Heap Table:", "Physical Implementation:")
-      if (prevText.endsWith(':') || nextText.endsWith(':')) {
+      if ((prevText.length < 50 && prevText.endsWith(':')) || nextText.endsWith(':')) {
         return false;
       }
 
@@ -1414,10 +1463,7 @@ class PersonalPDFApp {
       const prevLineWidth = prev.right - prev.left;
       const isTerminalPunct = /[.!?]["']?$/.test(prevText);
       if (isTerminalPunct) {
-        if (maxLineWidth > 100 && prevLineWidth < maxLineWidth * 0.88) {
-          return false;
-        }
-        if (gap > 2.5) {
+        if (maxLineWidth > 100 && prevLineWidth < maxLineWidth * 0.78 && gap > 4) {
           return false;
         }
       }
@@ -1463,7 +1509,7 @@ class PersonalPDFApp {
       }
 
       // 8. Horizontal left alignment
-      if (Math.abs(next.left - prev.left) > 6 || Math.abs(next.left - clicked.left) > 8) {
+      if (Math.abs(next.left - prev.left) > 28 || Math.abs(next.left - clicked.left) > 28) {
         return false;
       }
 
@@ -1584,6 +1630,7 @@ class PersonalPDFApp {
           prevPointerEvents: el.style.pointerEvents
         };
         el._mergeHidden = true;
+        el._mergedInto = span;
         el.style.setProperty('visibility', 'hidden', 'important');
         el.style.setProperty('pointer-events', 'none', 'important');
         hidden.push(entry);
@@ -1844,22 +1891,38 @@ class PersonalPDFApp {
     snapshotCanvas.getContext('2d').drawImage(canvas, 0, 0);
 
     // Freeze pristine native text spans before ANY mutation
-    const nativeSpans = Array.from(wrapper.querySelectorAll('.textLayer span:not(.reflow-overflow-span)')).map(s => ({
-      span: s,
-      topNorm: s.offsetTop / wrapH,
-      bottomNorm: (s.offsetTop + s.offsetHeight) / wrapH,
-      leftNorm: s.offsetLeft / wrapW,
-      rightNorm: (s.offsetLeft + s.offsetWidth) / wrapW,
-      origOffsetTop: s.offsetTop,
-      origOffsetHeight: s.offsetHeight,
-      origOffsetLeft: s.offsetLeft,
-      origOffsetWidth: s.offsetWidth,
-      textContent: s.textContent,
-      styleText: s.getAttribute('style') || '',
-      className: s.className,
-      fontFamily: s.style.fontFamily,
-      fontSize: s.style.fontSize
-    }));
+    const nativeSpans = Array.from(wrapper.querySelectorAll('.textLayer span:not(.reflow-overflow-span)')).map(s => {
+      let top = s.offsetTop;
+      let left = s.offsetLeft;
+      let height = s.offsetHeight;
+      let width = s.offsetWidth;
+      if (top === 0 && s.style.top) {
+        top = parseFloat(s.style.top) || 0;
+      }
+      if (left === 0 && s.style.left) {
+        left = parseFloat(s.style.left) || 0;
+      }
+      if (s.dataset.reflowShift) {
+        const shift = parseFloat(s.dataset.reflowShift) || 0;
+        top -= shift;
+      }
+      return {
+        span: s,
+        topNorm: top / wrapH,
+        bottomNorm: (top + (height || 16)) / wrapH,
+        leftNorm: left / wrapW,
+        rightNorm: (left + (width || 40)) / wrapW,
+        origOffsetTop: top,
+        origOffsetHeight: height || 16,
+        origOffsetLeft: left,
+        origOffsetWidth: width || 40,
+        textContent: s.textContent,
+        styleText: s.getAttribute('style') || '',
+        className: s.className,
+        fontFamily: s.style.fontFamily,
+        fontSize: s.style.fontSize
+      };
+    });
 
     // Find pristine content boundaries
     let maxCssBottom = 0;
@@ -2005,6 +2068,12 @@ class PersonalPDFApp {
     }
 
     if (this.viewer) {
+      if (typeof this.viewer._setupContentEditingHandlers === 'function') {
+        this.viewer._setupContentEditingHandlers(textLayer, pageNum, pageWrapper);
+      }
+      if (typeof this.viewer._setupTextLayerSelection === 'function') {
+        this.viewer._setupTextLayerSelection(textLayer, pageWrapper);
+      }
       if (this.viewer.observer) {
         this.viewer.observer.observe(pageWrapper);
       }
@@ -2383,16 +2452,20 @@ class PersonalPDFApp {
       pageWrapper.dataset.hasReflow = 'true';
 
       const totalDirectDeltaPx = ops.reduce((acc, op) => acc + Math.round(op.extraNorm * H), 0);
-      let newBottomPx = pristineBottomPx > 0
+      let actualContentBottomPx = pristineBottomPx > 0
         ? (pristineBottomPx + incomingTotalShiftPx + totalDirectDeltaPx)
         : (topPaddingPx + incomingTotalShiftPx + totalDirectDeltaPx);
 
-      if (ops.some(op => op.hasSplit)) {
-        newBottomPx = Math.max(newBottomPx, maxContentY + 100);
+      if (hasIncoming) {
+        actualContentBottomPx = Math.max(actualContentBottomPx, topPaddingPx + incomingH);
+      }
+      for (const op of ops) {
+        const opBotPx = Math.round((op.topNorm * H) + incomingTotalShiftPx + (op.fittingHeightCss * scaleY));
+        actualContentBottomPx = Math.max(actualContentBottomPx, opBotPx);
       }
 
       // Virtual canvas holds full continuous content of this page + overflow
-      const virtualH = Math.max(H, newBottomPx + bottomPaddingPx);
+      const virtualH = Math.max(H, actualContentBottomPx);
       const virtualCanvas = document.createElement('canvas');
       virtualCanvas.width = W;
       virtualCanvas.height = virtualH;
@@ -2456,17 +2529,26 @@ class PersonalPDFApp {
         const opTopPx = Math.round(splitOp.topNorm * H) + incomingTotalShiftPx;
         const opCutPx = Math.round(opTopPx + (splitOp.fittingHeightCss * scaleY)) + 4;
         splitY = Math.min(maxContentY, opCutPx);
-      } else if (newBottomPx > maxContentY) {
+      } else if (actualContentBottomPx > maxContentY) {
         hasOverflow = true;
         const lineBottoms = [];
         if (hasIncoming && incomingSlice.spans) {
           for (const s of incomingSlice.spans) {
             const botPx = Math.round((topPaddingCss + s.topPx + (s.heightPx || 16)) * scaleY);
-            lineBottoms.push(botPx);
+            if (s.isContinuation && botPx > maxContentY) {
+              lineBottoms.push(maxContentY);
+            } else {
+              lineBottoms.push(botPx);
+            }
           }
+        }
+        for (const op of ops) {
+          const opBotPx = Math.round((op.topNorm * H) + incomingTotalShiftPx + (op.fittingHeightCss * scaleY));
+          lineBottoms.push(opBotPx);
         }
         if (pristine && pristine.nativeSpans) {
           for (const s of pristine.nativeSpans) {
+            if (ops.some(op => op.span === s.span)) continue;
             let directShiftNorm = 0;
             for (const op of ops) {
               if (op.bottomNorm <= s.topNorm + 0.0001) directShiftNorm += op.extraNorm;
@@ -2495,9 +2577,6 @@ class PersonalPDFApp {
 
       // F. TextLayer spans
       const textLayer = pageWrapper.querySelector('.textLayer');
-      if (textLayer) {
-        textLayer.querySelectorAll('span.reflow-overflow-span').forEach(s => s.remove());
-      }
       const outgoingSpans = [];
       const splitYCss = splitY / scaleY;
 
@@ -2506,10 +2585,12 @@ class PersonalPDFApp {
       if (splitOp && splitOp.overflowText) {
         const cs = window.getComputedStyle(splitOp.span);
         outgoingSpans.push({
+          sourceSpan: splitOp.span,
           isContinuation: true,
           textContent: splitOp.overflowText,
           className: splitOp.span.className,
           leftPx: Math.round(splitOp.norm.x * wrapW),
+          absoluteTopCss: splitYCss,
           topPx: 0,
           widthPx: splitOp.maxWidth,
           heightPx: splitOp.overflowHeightCss,
@@ -2544,21 +2625,102 @@ class PersonalPDFApp {
         splitOp.span.style.overflow = 'visible';
       }
 
-      // Add incoming spans to text layer
+      // Add or update incoming spans in text layer without destroying active editor
       if (hasIncoming && incomingSlice.spans && textLayer) {
-        for (const sData of incomingSlice.spans) {
+        const existingOverflowSpans = Array.from(textLayer.querySelectorAll('span.reflow-overflow-span'));
+        const matchedExisting = new Set();
+
+        incomingSlice.spans.forEach((sData, idx) => {
           const placedTopCss = topPaddingCss + sData.topPx;
           const placedBottomCss = placedTopCss + (sData.heightPx || 16);
           if (hasOverflow && placedBottomCss > splitYCss) {
+            if (sData.isContinuation && placedTopCss < splitYCss - 20) {
+              const availH = Math.max(0, splitYCss - placedTopCss);
+              const split = this._splitTextByAvailableHeight(
+                sData.textContent,
+                {
+                  fontFamily: sData.fontFamily,
+                  fontSize: sData.fontSize,
+                  lineHeight: sData.lineHeight,
+                  fontWeight: sData.fontWeight,
+                  fontStyle: sData.fontStyle
+                },
+                sData.widthPx,
+                availH
+              );
+
+              if (split.fittingText && !split.fits) {
+                let overflowSpan = existingOverflowSpans.find(el =>
+                  !matchedExisting.has(el) &&
+                  ((sData.sourceSpan && el._sourceSpan === sData.sourceSpan) ||
+                   (el === this.annotator?.activeInPlaceSpan && el._sourceIndex === idx))
+                );
+                const isNew = !overflowSpan;
+                if (isNew) overflowSpan = document.createElement('span');
+                matchedExisting.add(overflowSpan);
+                overflowSpan._sourceSpan = sData.sourceSpan || sData;
+                overflowSpan._sourceIndex = idx;
+                overflowSpan.textContent = split.fittingText;
+                overflowSpan.className = 'reflow-overflow-span in-place-continuation in-place-modified';
+                overflowSpan.style.setProperty('position', 'absolute', 'important');
+                overflowSpan.style.setProperty('left', `${sData.leftPx}px`, 'important');
+                overflowSpan.style.setProperty('top', `${placedTopCss}px`, 'important');
+                overflowSpan.style.setProperty('max-width', `${sData.widthPx}px`, 'important');
+                overflowSpan.style.setProperty('font-family', sData.fontFamily, 'important');
+                overflowSpan.style.setProperty('font-size', sData.fontSize, 'important');
+                overflowSpan.style.setProperty('line-height', sData.lineHeight, 'important');
+                overflowSpan.style.setProperty('font-weight', sData.fontWeight || 'normal', 'important');
+                overflowSpan.style.setProperty('font-style', sData.fontStyle || 'normal', 'important');
+                overflowSpan.style.setProperty('color', sData.color || '#000000', 'important');
+                overflowSpan.style.setProperty('background-color', '#ffffff', 'important');
+                overflowSpan.style.setProperty('white-space', 'pre-wrap', 'important');
+                overflowSpan.style.setProperty('word-break', 'normal', 'important');
+                overflowSpan.style.setProperty('overflow-wrap', 'break-word', 'important');
+                overflowSpan.style.setProperty('opacity', '1', 'important');
+                overflowSpan.style.setProperty('visibility', 'visible', 'important');
+                overflowSpan.style.setProperty('display', 'inline-block', 'important');
+                overflowSpan.style.setProperty('cursor', 'text', 'important');
+                overflowSpan.style.setProperty('z-index', '50', 'important');
+                if (isNew) textLayer.appendChild(overflowSpan);
+
+                outgoingSpans.push({
+                  ...sData,
+                  textContent: split.overflowText,
+                  heightPx: split.overflowHeight,
+                  sourceSpan: sData.sourceSpan || sData,
+                  absoluteTopCss: splitYCss
+                });
+                return;
+              }
+            }
+
             outgoingSpans.push({
               ...sData,
-              topPx: placedTopCss - splitYCss
+              sourceSpan: sData.sourceSpan || sData,
+              absoluteTopCss: placedTopCss
             });
           } else {
-            const overflowSpan = document.createElement('span');
-            overflowSpan.textContent = sData.textContent;
+            let overflowSpan = existingOverflowSpans.find(el =>
+              !matchedExisting.has(el) &&
+              ((sData.sourceSpan && el._sourceSpan === sData.sourceSpan) ||
+               (el === this.annotator?.activeInPlaceSpan && el._sourceIndex === idx))
+            );
+
+            const isNew = !overflowSpan;
+            if (isNew) {
+              overflowSpan = document.createElement('span');
+            }
+            matchedExisting.add(overflowSpan);
+            overflowSpan._sourceSpan = sData.sourceSpan || sData;
+            overflowSpan._sourceIndex = idx;
+
+            const isActive = (overflowSpan === this.annotator?.activeInPlaceSpan);
+
             if (sData.isContinuation) {
-              overflowSpan.className = 'reflow-overflow-span in-place-continuation in-place-modified';
+              if (!isActive) {
+                overflowSpan.textContent = sData.textContent;
+              }
+              overflowSpan.className = 'reflow-overflow-span in-place-continuation in-place-modified' + (isActive ? ' inline-editing' : '');
               overflowSpan.style.setProperty('position', 'absolute', 'important');
               overflowSpan.style.setProperty('left', `${sData.leftPx}px`, 'important');
               overflowSpan.style.setProperty('top', `${placedTopCss}px`, 'important');
@@ -2579,7 +2741,7 @@ class PersonalPDFApp {
               overflowSpan.style.setProperty('cursor', 'text', 'important');
               overflowSpan.style.setProperty('z-index', '50', 'important');
             } else {
-              overflowSpan.className = (sData.className || '') + ' reflow-overflow-span';
+              overflowSpan.className = (sData.className || '') + ' reflow-overflow-span' + (isActive ? ' inline-editing' : '');
               if (sData.styleText) overflowSpan.style.cssText = sData.styleText;
               overflowSpan.style.position = 'absolute';
               overflowSpan.style.left = `${sData.leftPx}px`;
@@ -2593,10 +2755,29 @@ class PersonalPDFApp {
               if (sData.fontWeight) overflowSpan.style.fontWeight = sData.fontWeight;
               if (sData.fontStyle) overflowSpan.style.fontStyle = sData.fontStyle;
               if (sData.color) overflowSpan.style.color = sData.color;
+              if (!isActive) {
+                overflowSpan.textContent = sData.textContent;
+              }
             }
-            textLayer.appendChild(overflowSpan);
+
+            if (isNew) {
+              textLayer.appendChild(overflowSpan);
+            }
+          }
+        });
+
+        // Clean up any unmatched old overflow spans
+        for (const el of existingOverflowSpans) {
+          if (!matchedExisting.has(el) && el !== this.annotator?.activeInPlaceSpan) {
+            el.remove();
           }
         }
+      } else if (textLayer) {
+        textLayer.querySelectorAll('span.reflow-overflow-span').forEach(s => {
+          if (s !== this.annotator?.activeInPlaceSpan) {
+            s.remove();
+          }
+        });
       }
 
       // Shift native spans on this page using pristine records
@@ -2640,11 +2821,12 @@ class PersonalPDFApp {
           const cs = window.getComputedStyle(span);
           span.style.display = 'none';
           outgoingSpans.push({
+            sourceSpan: span,
             className: span.className,
             textContent: span.textContent,
             styleText: span.getAttribute('style') || '',
             leftPx: sRec.origOffsetLeft,
-            topPx: continuationGapCss + Math.max(0, newTopCss - splitYCss),
+            absoluteTopCss: newTopCss,
             heightPx: sRec.origOffsetHeight || 16,
             visibility: span.style.visibility,
             fontFamily: span.style.fontFamily || cs.fontFamily,
@@ -2679,11 +2861,24 @@ class PersonalPDFApp {
       }
 
       // H. Check overflow to next page
-      if (hasOverflow) {
-        const overflowH = Math.max(0, virtualH - splitY);
+      if (hasOverflow && outgoingSpans.length > 0) {
+        const nativeOutgoing = outgoingSpans.filter(s => !s.isContinuation);
+        const firstOverflowTopCss = nativeOutgoing.length > 0
+          ? Math.min(...nativeOutgoing.map(s => s.absoluteTopCss))
+          : splitYCss;
+
+        for (const s of outgoingSpans) {
+          if (s.isContinuation) {
+            s.topPx = 0;
+          } else {
+            s.topPx = continuationGapCss + Math.max(0, s.absoluteTopCss - firstOverflowTopCss);
+          }
+        }
+
+        const outgoingTotalH = Math.max(0, actualContentBottomPx - splitY);
         const contCanvasH = splitOp ? Math.round(splitOp.overflowHeightCss * scaleY) : 0;
-        const contGapH = (splitOp && overflowH > 0) ? Math.round(14 * scaleY) : 0;
-        const nextTotalH = contCanvasH + contGapH + overflowH;
+        const contGapH = (splitOp && outgoingTotalH > 0) ? Math.round(14 * scaleY) : 0;
+        const nextTotalH = contCanvasH + contGapH + outgoingTotalH;
 
         if (nextTotalH > 0) {
           const nextOverflowCanvas = document.createElement('canvas');
@@ -2693,8 +2888,13 @@ class PersonalPDFApp {
           oCtx.fillStyle = '#ffffff';
           oCtx.fillRect(0, 0, W, nextTotalH);
 
-          if (overflowH > 0) {
-            oCtx.drawImage(virtualCanvas, 0, splitY, W, overflowH, 0, contCanvasH + contGapH, W, overflowH);
+          if (outgoingTotalH > 0) {
+            const firstOverflowTopPx = Math.round(firstOverflowTopCss * scaleY);
+            oCtx.drawImage(
+              virtualCanvas,
+              0, firstOverflowTopPx, W, outgoingTotalH,
+              0, contCanvasH + contGapH, W, outgoingTotalH
+            );
           }
 
           incomingSlice = {
