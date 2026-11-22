@@ -818,6 +818,46 @@ class PersonalPDFApp {
     return clone.textContent || '';
   }
 
+  _extractSpanBaseFontSize(span) {
+    if (!span) return 12;
+    if (span._baseFontSize && span._baseFontSize > 0) return span._baseFontSize;
+    if (span._pdfPtFontSize && span._pdfPtFontSize > 0) return span._pdfPtFontSize;
+
+    const fsStyle = span.style.fontSize || '';
+    const calcMatch = fsStyle.match(/calc\([^)]*\*?\s*([\d.]+)\s*px/i);
+    if (calcMatch) {
+      const val = parseFloat(calcMatch[1]);
+      if (val > 0 && val < 60) return val;
+    }
+
+    const textLayer = span.closest('.textLayer');
+    let scale = 1;
+    if (textLayer) {
+      const scaleProp = textLayer.style.getPropertyValue('--scale-factor');
+      if (scaleProp) {
+        scale = parseFloat(scaleProp) || 1;
+      }
+    }
+    if (scale <= 0 && this.viewer?.scale) {
+      scale = this.viewer.scale;
+    }
+
+    const pxMatch = fsStyle.match(/([\d.]+)\s*px/);
+    if (pxMatch) {
+      const val = parseFloat(pxMatch[1]);
+      if (val > 0) {
+        if (scale > 1.05 && val > 16) {
+          return val / scale;
+        }
+        return val;
+      }
+    }
+
+    const cs = window.getComputedStyle(span);
+    const compFs = parseFloat(cs.fontSize) || 16;
+    return Math.max(6, compFs / (scale > 0 ? scale : 1));
+  }
+
   _handleDirectContentEdit(editData) {
     const span = editData.span;
     if (!span) return;
@@ -948,17 +988,7 @@ class PersonalPDFApp {
     span._originalColor = fontColor;
 
     // Extract exact unscaled CSS pixel base size from PDF stream or style
-    let baseFontSize = span._paragraphMerge?.dominantBaseFontSize || span._pdfPtFontSize || 0;
-    if (!baseFontSize) {
-      const fsMatch = (span.style.fontSize || '').match(/([\d\.]+)\s*px/);
-      if (fsMatch) {
-        baseFontSize = parseFloat(fsMatch[1]);
-      } else {
-        const compFs = parseFloat(compStyle.fontSize) || 16;
-        const scaleFactor = (this.viewer && this.viewer.scale) || 1;
-        baseFontSize = compFs / scaleFactor;
-      }
-    }
+    const baseFontSize = span._baseFontSize || span._paragraphMerge?.dominantBaseFontSize || span._pdfPtFontSize || this._extractSpanBaseFontSize(span) || 12;
     span._baseFontSize = baseFontSize;
     span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
     span.style.lineHeight = String(span._paragraphMerge?.dominantLineHeightRatio || span._lineHeightRatio || 1.2);
@@ -1180,6 +1210,7 @@ class PersonalPDFApp {
           span.style.fontFamily = span._customFontStack || fontStack;
           span.style.fontWeight = span._customFontWeight || (span._pdfIsBold ? '700' : 'normal');
           span.style.fontStyle = span._customFontStyle || (span._pdfIsItalic ? 'italic' : 'normal');
+          span.style.fontSize = `calc(var(--scale-factor, 1) * ${baseFontSize.toFixed(2)}px)`;
           span.style.transform = 'none';
           span.style.letterSpacing = 'normal';
           span.style.maxWidth = `${Math.floor(maxW)}px`;
@@ -1305,7 +1336,7 @@ class PersonalPDFApp {
       line.left = Math.min(line.left, span.offsetLeft);
       line.right = Math.max(line.right, visualRight(span));
       line.height = Math.max(line.height, span.offsetHeight);
-      line.fontSize = Math.max(line.fontSize, parseFloat(window.getComputedStyle(span).fontSize) || 0);
+      line.fontSize = Math.max(line.fontSize, this._extractSpanBaseFontSize(span));
     }
     lines.sort((a, b) => a.top - b.top);
     return lines;
@@ -1418,8 +1449,9 @@ class PersonalPDFApp {
     if (clickedIndex < 0) return;
 
     const clicked = lines[clickedIndex];
-    const baseFont = clicked.fontSize || 0;
-    const actualLineHeight = clicked.height || (baseFont ? baseFont * 1.2 : 16);
+    const baseFont = this._extractSpanBaseFontSize(span) || clicked.fontSize || 12;
+    const scaleFactor = (this.viewer && this.viewer.scale) || 1;
+    const actualLineHeight = clicked.height || (baseFont ? baseFont * scaleFactor * 1.2 : 16);
 
     // Calculate maximum visual line length on this page for detecting terminal paragraph lines
     const maxLineWidth = lines.reduce((max, l) => Math.max(max, l.right - l.left), 0);
@@ -1544,7 +1576,8 @@ class PersonalPDFApp {
     if (steps.length && baseFont > 0) {
       steps.sort((a, b) => a - b);
       const medStep = steps[Math.floor(steps.length / 2)];
-      dominantLineHeightRatio = Math.max(0.9, Math.min(2.5, medStep / baseFont));
+      const scaledBaseFont = baseFont * (scaleFactor > 0 ? scaleFactor : 1);
+      dominantLineHeightRatio = Math.max(0.9, Math.min(2.5, medStep / scaledBaseFont));
     }
     span._lineHeightRatio = dominantLineHeightRatio;
 
@@ -1641,6 +1674,8 @@ class PersonalPDFApp {
     span._normRect = rect;
     span._originalWidth = widthPx;
     span._originalHeight = bottom - top;
+    span._originalFragmentText = span.textContent;
+    span._originalFragmentHtml = span.innerHTML;
     span._paragraphMerge = {
       rect,
       widthPx,
@@ -2584,6 +2619,7 @@ class PersonalPDFApp {
       let continuationGapCss = 0;
       if (splitOp && splitOp.overflowText) {
         const cs = window.getComputedStyle(splitOp.span);
+        const sourceBaseFs = splitOp.span._baseFontSize || this._extractSpanBaseFontSize(splitOp.span) || 12;
         outgoingSpans.push({
           sourceSpan: splitOp.span,
           isContinuation: true,
@@ -2595,8 +2631,9 @@ class PersonalPDFApp {
           widthPx: splitOp.maxWidth,
           heightPx: splitOp.overflowHeightCss,
           fontFamily: splitOp.span.style.fontFamily || cs.fontFamily,
-          fontSize: cs.fontSize,
-          lineHeight: cs.lineHeight,
+          baseFontSize: sourceBaseFs,
+          fontSize: `calc(var(--scale-factor, 1) * ${sourceBaseFs.toFixed(2)}px)`,
+          lineHeight: splitOp.span.style.lineHeight || cs.lineHeight,
           fontWeight: splitOp.span.style.fontWeight || cs.fontWeight,
           fontStyle: splitOp.span.style.fontStyle || cs.fontStyle,
           color: splitOp.span.style.color || cs.color || '#000000',
@@ -2667,7 +2704,9 @@ class PersonalPDFApp {
                 overflowSpan.style.setProperty('top', `${placedTopCss}px`, 'important');
                 overflowSpan.style.setProperty('max-width', `${sData.widthPx}px`, 'important');
                 overflowSpan.style.setProperty('font-family', sData.fontFamily, 'important');
-                overflowSpan.style.setProperty('font-size', sData.fontSize, 'important');
+                overflowSpan._baseFontSize = sData.baseFontSize || 12;
+                overflowSpan._baseFontSize = sData.baseFontSize || 12;
+              overflowSpan.style.setProperty('font-size', sData.fontSize, 'important');
                 overflowSpan.style.setProperty('line-height', sData.lineHeight, 'important');
                 overflowSpan.style.setProperty('font-weight', sData.fontWeight || 'normal', 'important');
                 overflowSpan.style.setProperty('font-style', sData.fontStyle || 'normal', 'important');
@@ -2726,6 +2765,7 @@ class PersonalPDFApp {
               overflowSpan.style.setProperty('top', `${placedTopCss}px`, 'important');
               overflowSpan.style.setProperty('max-width', `${sData.widthPx}px`, 'important');
               overflowSpan.style.setProperty('font-family', sData.fontFamily, 'important');
+              overflowSpan._baseFontSize = sData.baseFontSize || 12;
               overflowSpan.style.setProperty('font-size', sData.fontSize, 'important');
               overflowSpan.style.setProperty('line-height', sData.lineHeight, 'important');
               overflowSpan.style.setProperty('font-weight', sData.fontWeight || 'normal', 'important');
@@ -2819,6 +2859,7 @@ class PersonalPDFApp {
 
         if (hasOverflow && newBottomCss > splitYCss) {
           const cs = window.getComputedStyle(span);
+          const sBaseFs = span._baseFontSize || this._extractSpanBaseFontSize(span) || 12;
           span.style.display = 'none';
           outgoingSpans.push({
             sourceSpan: span,
@@ -2830,7 +2871,8 @@ class PersonalPDFApp {
             heightPx: sRec.origOffsetHeight || 16,
             visibility: span.style.visibility,
             fontFamily: span.style.fontFamily || cs.fontFamily,
-            fontSize: span.style.fontSize || cs.fontSize,
+            baseFontSize: sBaseFs,
+            fontSize: `calc(var(--scale-factor, 1) * ${sBaseFs.toFixed(2)}px)`,
             lineHeight: span.style.lineHeight || cs.lineHeight,
             color: span.style.color || cs.color
           });

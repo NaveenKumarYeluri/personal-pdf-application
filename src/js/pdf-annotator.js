@@ -1062,16 +1062,22 @@ export class PDFAnnotatorEngine {
       this.inPlaceEdits.set(pageNum, new Map());
     }
     const pageMap = this.inPlaceEdits.get(pageNum);
-    const prevText = pageMap.has(span) ? pageMap.get(span).newText : (span._originalText !== undefined ? span._originalText : '');
+    const prevText = pageMap.has(span)
+      ? pageMap.get(span).newText
+      : (span._originalText !== undefined ? span._originalText : (span._originalFragmentText !== undefined ? span._originalFragmentText : ''));
+    const prevHtml = pageMap.has(span)
+      ? pageMap.get(span).htmlContent
+      : (span._originalHtml !== undefined ? span._originalHtml : (span._paragraphMerge?.paragraphHtml || span._originalFragmentHtml || span.innerHTML));
     const newText = span._fullReflowText || (span.innerText !== undefined ? span.innerText : span.textContent);
+    const newHtml = span._fullReflowHtml || span.innerHTML;
     const edit = {
       span,
       originalText: span._originalText,
+      originalFragmentText: span._originalFragmentText,
+      originalFragmentHtml: span._originalFragmentHtml,
       newText,
-      htmlContent: span.innerHTML,
-      // normRect is the editable block (whole paragraph when merged);
-      // matchRect is the originally clicked fragment, used to find this span
-      // again after the text layer is rebuilt on zoom/rotate/restore.
+      htmlContent: newHtml,
+      prevHtml,
       normRect: span._normRect,
       matchRect: span._matchRect || span._normRect,
       paragraphRect: span._paragraphMerge?.rect || null,
@@ -1086,15 +1092,28 @@ export class PDFAnnotatorEngine {
       pageNum
     };
     pageMap.set(span, edit);
-    this.undoStack.push({
-      type: 'in-place-edit',
-      pageNum,
-      span,
-      prevText,
-      newText,
-      edit
-    });
-    this.redoStack = [];
+
+    const top = this.undoStack.length > 0 ? this.undoStack[this.undoStack.length - 1] : null;
+    if (top && top.type === 'in-place-edit' && top.span === span && this.activeInPlaceSpan === span) {
+      top.newText = newText;
+      top.newHtml = newHtml;
+      top.edit = edit;
+      if (top.newText === top.prevText) {
+        this.undoStack.pop();
+      }
+    } else if (prevText !== newText) {
+      this.undoStack.push({
+        type: 'in-place-edit',
+        pageNum,
+        span,
+        prevText,
+        prevHtml,
+        newText,
+        newHtml,
+        edit
+      });
+      this.redoStack = [];
+    }
     this._notifyAnnotationsChanged();
   }
 
@@ -1103,9 +1122,9 @@ export class PDFAnnotatorEngine {
    * visible again. Safe to call on a span that was never merged.
    */
   _unmergeParagraph(span) {
-    if (!span || !span._paragraphMerge) return;
+    if (!span) return;
     const merge = span._paragraphMerge;
-    if (Array.isArray(merge.hidden)) {
+    if (merge && Array.isArray(merge.hidden)) {
       for (const entry of merge.hidden) {
         const el = entry.el;
         if (!el) continue;
@@ -1121,6 +1140,9 @@ export class PDFAnnotatorEngine {
     delete span._paragraphMerge;
     delete span._matchRect;
     delete span._fullReflowHtml;
+    delete span._fullReflowText;
+    delete span._fittingReflowText;
+    delete span._overflowReflowText;
   }
 
   revertInPlaceEdit(span, pageNum) {
@@ -1128,13 +1150,23 @@ export class PDFAnnotatorEngine {
       this.inPlaceEdits.get(pageNum).delete(span);
     }
     this._unmergeParagraph(span);
-    span.textContent = span._originalText !== undefined ? span._originalText : span.textContent;
+    span.textContent = span._originalFragmentText !== undefined
+      ? span._originalFragmentText
+      : (span._originalText !== undefined ? span._originalText : span.textContent);
     span.classList.remove('inline-editing', 'in-place-modified');
     if (span._originalInlineStyle !== undefined) {
       span.setAttribute('style', span._originalInlineStyle);
     }
     delete span.dataset.reflowShift;
     delete span._reflowBaseTransform;
+    delete span._originalText;
+    delete span._originalFragmentText;
+    delete span._originalFragmentHtml;
+    delete span._originalHtml;
+    delete span._baseFontSize;
+    delete span._customFontWeight;
+    delete span._customFontStyle;
+    delete span._customFontStack;
     if (typeof window !== 'undefined' && window.app?._scheduleReflow) {
       window.app._scheduleReflow(pageNum);
     }
@@ -1607,26 +1639,72 @@ export class PDFAnnotatorEngine {
       this._redrawPageAnnotations(action.pageNum);
     } else if (action.type === 'in-place-edit') {
       if (action.span) {
-        action.span.textContent = action.prevText;
-        if (action.prevText === action.span._originalText) {
+        if (this.activeInPlaceSpan === action.span) {
+          try { action.span.blur(); } catch (_) {}
+          this.activeInPlaceSpan = null;
+        }
+        action.span.contentEditable = 'false';
+        action.span.classList.remove('inline-editing');
+
+        const isBackToOriginal = (
+          action.prevText === action.span._originalText ||
+          action.prevText === (action.span._originalFragmentText || '') ||
+          !action.prevText
+        );
+
+        if (isBackToOriginal) {
           this._unmergeParagraph(action.span);
-          action.span.classList.remove('inline-editing', 'in-place-modified');
+          action.span.classList.remove('in-place-modified');
           if (this.inPlaceEdits.has(action.pageNum)) {
             this.inPlaceEdits.get(action.pageNum).delete(action.span);
           }
           if (action.span._originalInlineStyle !== undefined) {
             action.span.setAttribute('style', action.span._originalInlineStyle);
           }
+          action.span.textContent = action.span._originalFragmentText !== undefined
+            ? action.span._originalFragmentText
+            : (action.span._originalText || action.prevText);
+
+          delete action.span._fullReflowText;
+          delete action.span._fullReflowHtml;
+          delete action.span._fittingReflowText;
+          delete action.span._overflowReflowText;
+          delete action.span._originalText;
+          delete action.span._originalFragmentText;
+          delete action.span._originalFragmentHtml;
+          delete action.span._originalHtml;
+          delete action.span._paragraphMerge;
+          delete action.span._baseFontSize;
+          delete action.span._customFontWeight;
+          delete action.span._customFontStyle;
+          delete action.span._customFontStack;
           delete action.span.dataset.reflowShift;
           delete action.span._reflowBaseTransform;
+
+          const tLayer = action.span.closest('.textLayer');
+          if (tLayer && !tLayer.querySelector('.in-place-modified, .inline-editing')) {
+            tLayer.classList.remove('has-modifications');
+          }
         } else {
           action.span.classList.add('in-place-modified');
+          if (action.prevHtml) {
+            action.span.innerHTML = action.prevHtml;
+            action.span._fullReflowHtml = action.prevHtml;
+          } else {
+            action.span.textContent = action.prevText;
+            delete action.span._fullReflowHtml;
+          }
+          action.span._fullReflowText = action.prevText;
+          delete action.span._fittingReflowText;
+          delete action.span._overflowReflowText;
+
           if (this.inPlaceEdits.has(action.pageNum)) {
             this.inPlaceEdits.get(action.pageNum).set(action.span, {
               ...(action.edit || {}),
               span: action.span,
               originalText: action.span._originalText,
               newText: action.prevText,
+              htmlContent: action.prevHtml || action.prevText,
               pageNum: action.pageNum
             });
           }
@@ -1693,7 +1771,16 @@ export class PDFAnnotatorEngine {
       }
     } else if (action.type === 'in-place-edit') {
       if (action.span) {
-        action.span.textContent = action.newText;
+        if (action.newHtml) {
+          action.span.innerHTML = action.newHtml;
+          action.span._fullReflowHtml = action.newHtml;
+        } else {
+          action.span.textContent = action.newText;
+          delete action.span._fullReflowHtml;
+        }
+        action.span._fullReflowText = action.newText;
+        delete action.span._fittingReflowText;
+        delete action.span._overflowReflowText;
         action.span.classList.add('in-place-modified');
         // Re-create the whole-paragraph editor block that undo removed.
         if (action.edit?.paragraphRect && !action.span._paragraphMerge && typeof window !== 'undefined' && window.app?._applyParagraphLayout) {
@@ -1707,6 +1794,7 @@ export class PDFAnnotatorEngine {
           span: action.span,
           originalText: action.span._originalText,
           newText: action.newText,
+          htmlContent: action.newHtml || action.newText,
           pageNum: action.pageNum
         });
         if (typeof window !== 'undefined' && window.app?._scheduleReflow) {
