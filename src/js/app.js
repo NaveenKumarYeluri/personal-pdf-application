@@ -1331,7 +1331,7 @@ class PersonalPDFApp {
 
     const lines = [];
     for (const span of spans) {
-      let line = lines.find(item => Math.abs(item.top - span.offsetTop) <= 4);
+      let line = lines.find(item => Math.abs(item.top - span.offsetTop) <= 6);
       if (!line) {
         line = { top: span.offsetTop, bottom: 0, left: Infinity, right: 0, height: 0, fontSize: 0, spans: [] };
         lines.push(line);
@@ -1478,8 +1478,8 @@ class PersonalPDFApp {
 
       // 1. Strict vertical spacing (leading)
       const gap = next.top - prev.bottom;
-      const maxLeading = Math.max(12, actualLineHeight * 0.75);
-      if (gap < -4 || gap > maxLeading) {
+      const maxLeading = Math.max(18, actualLineHeight * 1.35);
+      if (gap < -6 || gap > maxLeading) {
         return false;
       }
 
@@ -2548,8 +2548,11 @@ class PersonalPDFApp {
       let maskShift = 0;
       for (const op of ops) {
         const topPx = (op.topNorm + maskShift) * H + incomingTotalShiftPx;
-        const maskW = Math.max(op.norm.w * W, op.maxWidth * W / wrapW);
-        const maskH = op.fittingHeightCss * scaleY;
+        const origNormH = (op.origHeightPx || (op.span._originalHeight || 0)) / wrapH;
+        const currentNormH = (op.fittingHeightCss || 0) / wrapH;
+        const maskNormH = Math.max(origNormH, currentNormH, op.norm.h || 0);
+        const maskH = maskNormH * H;
+        const maskW = Math.max(op.norm.w * W, op.maxWidth * W / wrapW, ((op.span._originalWidth || 0) / wrapW) * W);
         vCtx.fillStyle = '#ffffff';
         vCtx.fillRect(
           Math.max(0, Math.floor(op.norm.x * W) - 2),
