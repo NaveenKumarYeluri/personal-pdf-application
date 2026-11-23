@@ -627,6 +627,10 @@ export class UIController {
     });
     document.getElementById('m3-tool-split')?.addEventListener('click', () => {
       closeAllSheets();
+      const hint = document.getElementById('split-hint-pages');
+      if (hint && this.app.viewer?.totalPages) {
+        hint.textContent = `Document has ${this.app.viewer.totalPages} page${this.app.viewer.totalPages > 1 ? 's' : ''}. Each range will be saved as an independent PDF file.`;
+      }
       document.getElementById('modal-split')?.classList.add('open');
     });
     document.getElementById('m3-tool-flatten')?.addEventListener('click', async () => {
@@ -1650,6 +1654,10 @@ export class UIController {
     };
 
     document.getElementById('btn-open-split').onclick = () => {
+      const hint = document.getElementById('split-hint-pages');
+      if (hint && this.app.viewer?.totalPages) {
+        hint.textContent = `Document has ${this.app.viewer.totalPages} page${this.app.viewer.totalPages > 1 ? 's' : ''}. Each range will be saved as an independent PDF file.`;
+      }
       document.getElementById('modal-split').classList.add('open');
     };
   }

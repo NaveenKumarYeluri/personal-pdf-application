@@ -112,22 +112,61 @@ export class PDFOrganizerEngine {
    */
   async splitByRanges(pdfBytes, rangeString, baseName = 'document') {
     this._checkLib();
+    if (!rangeString || !rangeString.trim()) {
+      throw new Error('Please enter page ranges (e.g. 1-2, 3-5).');
+    }
+
     const rawBytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
     const mainDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
     const totalPages = mainDoc.getPageCount();
+    if (totalPages === 0) {
+      throw new Error('The PDF document contains no pages.');
+    }
+
+    const rawSegments = rangeString.split(',').map(r => r.trim()).filter(Boolean);
+    if (rawSegments.length === 0) {
+      throw new Error('Please enter valid page ranges (e.g. 1-2, 3-5).');
+    }
+
+    const parsedRanges = [];
+    for (const r of rawSegments) {
+      const singleMatch = r.match(/^(\d+)$/);
+      const rangeMatch = r.match(/^(\d+)\s*-\s*(\d+)$/);
+
+      if (!singleMatch && !rangeMatch) {
+        throw new Error(`Invalid page range "${r}". Please use numbers and hyphens (e.g. 1-3, 5).`);
+      }
+
+      let start, end;
+      if (singleMatch) {
+        start = parseInt(singleMatch[1], 10);
+        end = start;
+      } else {
+        start = parseInt(rangeMatch[1], 10);
+        end = parseInt(rangeMatch[2], 10);
+      }
+
+      if (start < 1) {
+        throw new Error(`Invalid page number ${start}. Page numbers must be 1 or greater.`);
+      }
+      if (end < 1) {
+        throw new Error(`Invalid page number ${end}. Page numbers must be 1 or greater.`);
+      }
+      if (start > totalPages) {
+        throw new Error(`Page ${start} exceeds document total pages (${totalPages}).`);
+      }
+      if (end > totalPages) {
+        throw new Error(`Page ${end} exceeds document total pages (${totalPages}).`);
+      }
+      if (start > end) {
+        throw new Error(`Invalid range "${r}": start page (${start}) cannot be greater than end page (${end}).`);
+      }
+
+      parsedRanges.push({ start, end });
+    }
+
     const results = [];
-
-    const ranges = rangeString.split(',').map(r => r.trim()).filter(Boolean);
-
-    for (const r of ranges) {
-      const parts = r.split('-').map(p => parseInt(p.trim(), 10));
-      let start = parts[0];
-      let end = parts.length > 1 ? parts[1] : start;
-
-      if (isNaN(start) || start < 1) start = 1;
-      if (isNaN(end) || end > totalPages) end = totalPages;
-      if (start > end) [start, end] = [end, start];
-
+    for (const { start, end } of parsedRanges) {
       // Clone original document and remove pages outside [start, end] from back to front.
       // This preserves 100% of all document fonts, XObjects, graphics, and page resources!
       const subDoc = await this.PDFDocument.load(rawBytes.slice(), { ignoreEncryption: true });
@@ -141,9 +180,10 @@ export class PDFOrganizerEngine {
       }
 
       const bytes = await subDoc.save({ useObjectStreams: false });
+      const rangeLabel = start === end ? `page_${start}` : `pages_${start}-${end}`;
 
       results.push({
-        name: `${baseName}_pages_${start}-${end}.pdf`,
+        name: `${baseName}_${rangeLabel}.pdf`,
         bytes: bytes
       });
     }
