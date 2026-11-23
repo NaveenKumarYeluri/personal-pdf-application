@@ -959,6 +959,10 @@ export class PDFAnnotatorEngine {
         try { prev.blur(); } catch (_) {}
       }
       prev.classList.remove('inline-editing');
+      if (!span && typeof document !== 'undefined') {
+        document.body.classList.remove('in-place-editing-active');
+        document.querySelectorAll('.textLayer.editing-active').forEach(tl => tl.classList.remove('editing-active'));
+      }
     }
     this.activeInPlaceSpan = span;
     if (span) {
@@ -987,6 +991,10 @@ export class PDFAnnotatorEngine {
       }
       prev.classList.remove('inline-editing');
       this.activeInPlaceSpan = null;
+      if (typeof document !== 'undefined') {
+        document.body.classList.remove('in-place-editing-active');
+        document.querySelectorAll('.textLayer.editing-active').forEach(tl => tl.classList.remove('editing-active'));
+      }
     }
     if (this.activeStamp) {
       this.activeStamp.classList.remove('selected');

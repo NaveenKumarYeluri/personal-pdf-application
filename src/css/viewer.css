@@ -232,6 +232,14 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
   color: #111827 !important;
 }
 
+/* While an in-place span is actively being edited, restrict text selection strictly to the active editor
+   so keyboard Select All (Ctrl+A / Cmd+A) and soft keyboard Select All cannot leak into other spans or jump the viewport */
+body.in-place-editing-active .textLayer span:not(.inline-editing),
+.textLayer.editing-active span:not(.inline-editing) {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 .page-wrapper.editing-content .textLayer span.reflow-overflow-span,
 .page-wrapper .textLayer span.reflow-overflow-span,
 .textLayer span.reflow-overflow-span {

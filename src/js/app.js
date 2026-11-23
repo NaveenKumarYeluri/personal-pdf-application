@@ -539,6 +539,37 @@ class PersonalPDFApp {
         e.target.isContentEditable ||
         e.target.closest('[contenteditable="true"], .annotation-textbox, .textbox-content')
       ) {
+        // Intercept Select All if inside an active in-place editor span so viewport does not jump
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A' || e.keyCode === 65)) {
+          const activeSpan = e.target.closest('.inline-editing') || document.querySelector('.inline-editing[contenteditable="true"]');
+          if (activeSpan) {
+            e.preventDefault();
+            e.stopPropagation();
+            const viewerContainer = document.getElementById('viewer-container');
+            const sTop = viewerContainer ? viewerContainer.scrollTop : 0;
+            const sLeft = viewerContainer ? viewerContainer.scrollLeft : 0;
+
+            const sel = window.getSelection();
+            if (sel) {
+              const range = document.createRange();
+              range.selectNodeContents(activeSpan);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+
+            if (viewerContainer) {
+              viewerContainer.scrollTop = sTop;
+              viewerContainer.scrollLeft = sLeft;
+            }
+            requestAnimationFrame(() => {
+              if (viewerContainer) {
+                viewerContainer.scrollTop = sTop;
+                viewerContainer.scrollLeft = sLeft;
+              }
+            });
+            return;
+          }
+        }
         // Allow text editing, arrow key navigation, Backspace, Delete to stay inside the text editor
         return;
       }
@@ -610,6 +641,37 @@ class PersonalPDFApp {
         this.viewer.goToPage(this.viewer.currentPage + 1);
       } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
         this.viewer.goToPage(this.viewer.currentPage - 1);
+      }
+    });
+
+    // Intercept document-level Select All (e.g. from soft keyboard or context bar) while in-place editing
+    document.addEventListener('selectall', (e) => {
+      const activeSpan = document.querySelector('.inline-editing[contenteditable="true"]');
+      if (activeSpan) {
+        e.preventDefault();
+        e.stopPropagation();
+        const viewerContainer = document.getElementById('viewer-container');
+        const sTop = viewerContainer ? viewerContainer.scrollTop : 0;
+        const sLeft = viewerContainer ? viewerContainer.scrollLeft : 0;
+
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(activeSpan);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+
+        if (viewerContainer) {
+          viewerContainer.scrollTop = sTop;
+          viewerContainer.scrollLeft = sLeft;
+        }
+        requestAnimationFrame(() => {
+          if (viewerContainer) {
+            viewerContainer.scrollTop = sTop;
+            viewerContainer.scrollLeft = sLeft;
+          }
+        });
       }
     });
   }
@@ -1059,8 +1121,12 @@ class PersonalPDFApp {
     span.classList.add('inline-editing');
     span.style.cursor = 'text';
 
+    document.body.classList.add('in-place-editing-active');
     const textLayer = span.closest('.textLayer');
-    if (textLayer) textLayer.classList.add('has-modifications');
+    if (textLayer) {
+      textLayer.classList.add('has-modifications');
+      textLayer.classList.add('editing-active');
+    }
 
     span._pageNum = pageNum;
     span._pageWrapper = pageWrapper;
@@ -1203,12 +1269,74 @@ class PersonalPDFApp {
         if (kEvt.key === 'Escape') {
           kEvt.preventDefault();
           this.annotator.revertInPlaceEdit(span, pageNum);
+          document.body.classList.remove('in-place-editing-active');
+          const tLayer = span.closest('.textLayer');
+          if (tLayer) tLayer.classList.remove('editing-active');
           span.blur();
           this._reflowEditedPage(pageNum, pageWrapper);
           this.ui.setStatus('Reverted in-place text edit');
+          return;
+        }
+
+        // Intercept Select All (Ctrl+A / Cmd+A) so selection stays strictly inside this span
+        // and does NOT leak into other textLayer spans or cause the PDF viewport to jump/scroll randomly.
+        if ((kEvt.ctrlKey || kEvt.metaKey) && (kEvt.key === 'a' || kEvt.key === 'A' || kEvt.keyCode === 65)) {
+          kEvt.preventDefault();
+          kEvt.stopPropagation();
+          const viewerContainer = document.getElementById('viewer-container');
+          const sTop = viewerContainer ? viewerContainer.scrollTop : 0;
+          const sLeft = viewerContainer ? viewerContainer.scrollLeft : 0;
+
+          const sel = window.getSelection();
+          if (sel) {
+            const range = document.createRange();
+            range.selectNodeContents(span);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+
+          if (viewerContainer) {
+            viewerContainer.scrollTop = sTop;
+            viewerContainer.scrollLeft = sLeft;
+          }
+          requestAnimationFrame(() => {
+            if (viewerContainer) {
+              viewerContainer.scrollTop = sTop;
+              viewerContainer.scrollLeft = sLeft;
+            }
+          });
+          return;
         }
         // Enter is intentionally left alone: it inserts a paragraph line break and
         // the text box grows instead of shrinking the font or committing the edit.
+      });
+
+      span.addEventListener('selectall', (e) => {
+        if (!span.classList.contains('inline-editing')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const viewerContainer = document.getElementById('viewer-container');
+        const sTop = viewerContainer ? viewerContainer.scrollTop : 0;
+        const sLeft = viewerContainer ? viewerContainer.scrollLeft : 0;
+
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+
+        if (viewerContainer) {
+          viewerContainer.scrollTop = sTop;
+          viewerContainer.scrollLeft = sLeft;
+        }
+        requestAnimationFrame(() => {
+          if (viewerContainer) {
+            viewerContainer.scrollTop = sTop;
+            viewerContainer.scrollLeft = sLeft;
+          }
+        });
       });
 
       span.addEventListener('blur', () => {
@@ -1218,7 +1346,9 @@ class PersonalPDFApp {
         cleanSpanContent();
         span.contentEditable = 'false';
         span.classList.remove('inline-editing');
+        document.body.classList.remove('in-place-editing-active');
         const tLayer = span.closest('.textLayer');
+        if (tLayer) tLayer.classList.remove('editing-active');
         const curText = span._fullReflowText || span.innerText || span.textContent || '';
         if (curText !== span._originalText) {
           span.classList.add('in-place-modified');

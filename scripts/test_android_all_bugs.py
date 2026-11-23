@@ -45,22 +45,42 @@ def run_tests():
             assert input_mode == 'text', f"inputmode should be 'text', got {input_mode}"
             print("In-place editor activated with inputmode='text' successfully.")
 
-            # Test typing
-            page.keyboard.type(" Hello World")
+            # Test typing Unicode characters with accents & descenders
+            page.keyboard.type(" Sêrvér ğŷ çé")
             page.wait_for_timeout(300)
             typed_text = editor.inner_text()
-            assert "Hello World" in typed_text, f"Typed text not found in editor: {typed_text}"
-            print(f"Typing verified: {repr(typed_text)}")
+            assert "Sêrvér ğŷ çé" in typed_text, f"Typed text not found in editor: {typed_text}"
+            print(f"Unicode typing verified: {repr(typed_text)}")
 
-            # Test Select All and Delete
-            page.evaluate('''() => {
-                const ed = document.querySelector('.inline-editing');
-                const range = document.createRange();
-                range.selectNodeContents(ed);
-                const sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(range);
+            # Test Keyboard Select All (Control+a) does NOT move the PDF viewport
+            scroll_before = page.evaluate('''() => {
+                const c = document.getElementById('viewer-container');
+                return { top: c ? c.scrollTop : 0, left: c ? c.scrollLeft : 0 };
             }''')
+
+            # Press Control+A from keyboard inside the editor
+            page.keyboard.press("Control+a")
+            page.wait_for_timeout(300)
+
+            scroll_after = page.evaluate('''() => {
+                const c = document.getElementById('viewer-container');
+                const sel = window.getSelection();
+                const ed = document.querySelector('.inline-editing');
+                const isInside = sel && sel.rangeCount > 0 && ed.contains(sel.getRangeAt(0).commonAncestorContainer);
+                return { 
+                    top: c ? c.scrollTop : 0, 
+                    left: c ? c.scrollLeft : 0,
+                    isInside,
+                    bodyClassActive: document.body.classList.contains('in-place-editing-active')
+                };
+            }''')
+            assert scroll_after['top'] == scroll_before['top'], f"Scroll top moved on Select All! Before: {scroll_before['top']}, After: {scroll_after['top']}"
+            assert scroll_after['left'] == scroll_before['left'], f"Scroll left moved on Select All! Before: {scroll_before['left']}, After: {scroll_after['left']}"
+            assert scroll_after['isInside'] is True, "Selection leaked outside of the active editor span!"
+            assert scroll_after['bodyClassActive'] is True, "body.in-place-editing-active should be present while editing"
+            print(f"Keyboard Select All (Ctrl+A) verified: viewport locked at scroll ({scroll_after['top']}, {scroll_after['left']}), selection strictly confined to editor.")
+
+            # Backspace to clear selection
             page.keyboard.press("Backspace")
             page.wait_for_timeout(300)
             after_delete = editor.evaluate('el => el.textContent')
@@ -69,7 +89,7 @@ def run_tests():
             # Blur to commit
             page.evaluate("() => document.activeElement.blur()")
             page.wait_for_timeout(600)
-            print("Select-all and delete verified: text cleared without ghost fragments.")
+            print("Select-all and delete verified: text cleared without ghost fragments or edge traces.")
 
             print("=== TEST 3: Split PDF Range Validation ===")
             split_tests = [
@@ -131,6 +151,35 @@ def run_tests():
             }''')
             assert save_check['modalOpen'] is False, "modal-export-result should NOT be open when save is cancelled!"
             print("Split PDF cancellation verified: export result modal is not displayed.")
+
+            # Test direct exporter.downloadFiles handling when native Share is dismissed/cancelled
+            share_cancel_check = page.evaluate('''async () => {
+                const origCapacitor = window.Capacitor;
+                window.Capacitor = {
+                    isNativePlatform: () => true,
+                    platform: 'android',
+                    Plugins: {
+                        Filesystem: {
+                            writeFile: async () => ({ uri: 'file:///mock/path.pdf' })
+                        },
+                        Share: {
+                            share: async () => {
+                                const err = new Error('User cancelled share');
+                                err.name = 'AbortError';
+                                throw err;
+                            }
+                        }
+                    }
+                };
+                const res = await window.app.exporter.downloadFiles([
+                    { fileName: 'part1.pdf', data: new Uint8Array([1, 2, 3]) }
+                ]);
+                window.Capacitor = origCapacitor;
+                return res;
+            }''')
+            assert share_cancel_check['success'] is False, f"Expected success: false on share cancel, got {share_cancel_check['success']}"
+            assert share_cancel_check['cancelled'] is True, f"Expected cancelled: true on share cancel, got {share_cancel_check['cancelled']}"
+            print("Android Capacitor Share.share cancellation verified: success: false, cancelled: true.")
 
             print("=== TEST 5: Highlighter Custom Opacity ===")
             # Set opacity to 0.65 and verify stroke takes 0.65
