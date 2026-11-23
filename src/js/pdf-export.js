@@ -377,11 +377,16 @@ export class PDFExportEngine {
           uri: fileUri
         };
       } catch (capErr) {
-        if (capErr.name === 'AbortError' || capErr.message?.toLowerCase().includes('cancel') || capErr.message?.toLowerCase().includes('closed')) {
-          // File was still written to Documents directory
-          return { success: true, destination: 'Documents folder', fileName };
-        }
+        const isCancel = capErr.name === 'AbortError' || 
+          /cancel|dismiss|closed|user did not share|no app/i.test(capErr.message || String(capErr));
         console.warn('Capacitor native download error:', capErr);
+        return {
+          success: false,
+          cancelled: isCancel,
+          destination: isCancel ? 'Cancelled' : 'None',
+          fileName,
+          error: isCancel ? 'Save was cancelled by user' : (capErr.message || 'Save failed')
+        };
       }
     }
 
@@ -398,10 +403,15 @@ export class PDFExportEngine {
           return { success: true, destination: 'Saved via Share dialog', fileName };
         }
       } catch (shareErr) {
-        if (shareErr.name === 'AbortError') {
-          return { success: false, cancelled: true, destination: 'Cancelled', fileName };
-        }
-        console.warn('Web Share API error:', shareErr);
+        const isCancel = shareErr.name === 'AbortError' || 
+          /cancel|dismiss|closed|user did not share|no app/i.test(shareErr.message || String(shareErr));
+        return {
+          success: false,
+          cancelled: isCancel,
+          destination: isCancel ? 'Cancelled' : 'None',
+          fileName,
+          error: isCancel ? 'Save was cancelled by user' : (shareErr.message || 'Share failed')
+        };
       }
     }
 
@@ -503,7 +513,6 @@ export class PDFExportEngine {
         };
       }
 
-      let shareDismissed = false;
       // Pop native Android Share / Save Sheet for the files
       if (Share && savedUris.length > 0) {
         try {
@@ -523,16 +532,22 @@ export class PDFExportEngine {
             });
           }
         } catch (shareErr) {
-          if (shareErr.name === 'AbortError' || shareErr.message?.toLowerCase().includes('cancel') || shareErr.message?.toLowerCase().includes('dismiss')) {
-            shareDismissed = true;
-          }
+          const isCancel = shareErr.name === 'AbortError' || 
+            /cancel|dismiss|closed|user did not share|no app/i.test(shareErr.message || String(shareErr));
           console.warn('Native share sheet dismissed or error:', shareErr);
+          return {
+            success: false,
+            cancelled: isCancel,
+            error: isCancel ? 'Save was cancelled by user' : (shareErr.message || 'Share failed'),
+            destination: isCancel ? 'Cancelled' : 'None',
+            files: results
+          };
         }
       }
 
       return {
         success: true,
-        destination: shareDismissed ? 'Documents folder' : 'Documents folder & Android Save Sheet',
+        destination: 'Documents folder & Android Save Sheet',
         files: results
       };
     }
@@ -553,12 +568,12 @@ export class PDFExportEngine {
       });
     }
 
-    if (!anySuccess) {
+    if (anyCancelled || !anySuccess) {
       return {
         success: false,
         cancelled: anyCancelled,
         error: anyCancelled ? 'Save was cancelled by user' : 'Failed to save files',
-        destination: 'None',
+        destination: anyCancelled ? 'Cancelled' : 'None',
         files: results
       };
     }

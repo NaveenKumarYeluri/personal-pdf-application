@@ -761,6 +761,14 @@ export class UIController {
             mimeType: 'image/png'
           }));
           const dlRes = await this.app.exporter.downloadFiles(files);
+          if (dlRes?.cancelled) {
+            this.setStatus('Export cancelled');
+            return;
+          }
+          if (!dlRes || !dlRes.success) {
+            this.showToast(`Export failed: ${dlRes?.error || 'Files could not be saved'}`, 'error');
+            return;
+          }
           this.showExportResultModal({
             title: 'All Pages Exported',
             message: `Successfully exported ${images.length} pages as PNG images.`,
