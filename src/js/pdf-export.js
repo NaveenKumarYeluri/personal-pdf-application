@@ -494,6 +494,16 @@ export class PDFExportEngine {
         });
       }
 
+      if (savedUris.length === 0) {
+        return {
+          success: false,
+          error: 'Failed to write files to device storage',
+          destination: 'None',
+          files: results
+        };
+      }
+
+      let shareDismissed = false;
       // Pop native Android Share / Save Sheet for the files
       if (Share && savedUris.length > 0) {
         try {
@@ -513,30 +523,49 @@ export class PDFExportEngine {
             });
           }
         } catch (shareErr) {
+          if (shareErr.name === 'AbortError' || shareErr.message?.toLowerCase().includes('cancel') || shareErr.message?.toLowerCase().includes('dismiss')) {
+            shareDismissed = true;
+          }
           console.warn('Native share sheet dismissed or error:', shareErr);
         }
       }
 
       return {
         success: true,
-        destination: 'Documents folder & Android Save Sheet',
+        destination: shareDismissed ? 'Documents folder' : 'Documents folder & Android Save Sheet',
         files: results
       };
     }
 
-    // Desktop fallback: download sequentially
+    // Desktop / Web fallback: download sequentially
     const results = [];
+    let anyCancelled = false;
+    let anySuccess = false;
     for (const item of files) {
       const res = await this.downloadFile(item.data, item.fileName, item.mimeType || 'application/pdf');
+      if (res?.cancelled) anyCancelled = true;
+      if (res?.success) anySuccess = true;
       results.push({
         name: item.fileName,
         size: item.data?.length || item.data?.size || 0,
-        destination: res?.destination || 'Downloads folder'
+        destination: res?.destination || 'Downloads folder',
+        success: res?.success || false
       });
     }
+
+    if (!anySuccess) {
+      return {
+        success: false,
+        cancelled: anyCancelled,
+        error: anyCancelled ? 'Save was cancelled by user' : 'Failed to save files',
+        destination: 'None',
+        files: results
+      };
+    }
+
     return {
       success: true,
-      destination: 'Downloads folder',
+      destination: results.find(r => r.success)?.destination || 'Downloads folder',
       files: results
     };
   }

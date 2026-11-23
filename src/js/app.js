@@ -382,6 +382,17 @@ class PersonalPDFApp {
           }));
 
           const res = await this.exporter.downloadFiles(filesToDownload);
+          if (!res || !res.success) {
+            if (res?.cancelled) {
+              this.ui.showToast('Split PDF save cancelled', 'info');
+              this.ui.setStatus('Split PDF cancelled');
+            } else {
+              this.ui.showToast(`Split PDF save failed: ${res?.error || 'Files could not be saved'}`, 'error');
+              this.ui.setStatus('Split PDF save failed');
+            }
+            return;
+          }
+
           const dest = res?.destination || 'Documents folder & Android Save Sheet';
 
           this.ui.showExportResultModal({
