@@ -7,6 +7,17 @@ export class PDFAnnotatorEngine {
   constructor(options = {}) {
     this.container = options.container;
     this.currentTool = 'none'; // 'pen', 'highlighter', 'eraser', 'rectangle', 'circle', 'line', 'arrow', 'note', 'text', 'stamp'
+    this.lastAnnotTool = 'pen';
+    this.penSettings = {
+      color: '#ef4444',
+      strokeWidth: 4,
+      opacity: 1.0
+    };
+    this.highlighterSettings = {
+      color: '#eab308',
+      strokeWidth: 20,
+      opacity: 0.35
+    };
     this.color = '#ef4444';
     this.strokeWidth = 4;
     this.opacity = 1.0;
@@ -43,9 +54,45 @@ export class PDFAnnotatorEngine {
 
   setTool(tool, props = {}) {
     this.currentTool = tool;
-    if (props.color) this.color = props.color;
-    if (props.strokeWidth) this.strokeWidth = props.strokeWidth;
-    if (props.opacity !== undefined) this.opacity = props.opacity;
+    if (tool === 'pen') {
+      this.lastAnnotTool = 'pen';
+      if (props.color) this.penSettings.color = props.color;
+      if (props.strokeWidth !== undefined) {
+        const sw = parseInt(props.strokeWidth, 10);
+        if (!isNaN(sw) && sw > 0) this.penSettings.strokeWidth = sw;
+      }
+      if (props.opacity !== undefined) {
+        const op = parseFloat(props.opacity);
+        if (!isNaN(op) && op >= 0 && op <= 1) this.penSettings.opacity = op;
+      }
+      this.color = this.penSettings.color;
+      this.strokeWidth = this.penSettings.strokeWidth;
+      this.opacity = this.penSettings.opacity;
+    } else if (tool === 'highlighter') {
+      this.lastAnnotTool = 'highlighter';
+      if (props.color) this.highlighterSettings.color = props.color;
+      if (props.strokeWidth !== undefined) {
+        const sw = parseInt(props.strokeWidth, 10);
+        if (!isNaN(sw) && sw > 0) this.highlighterSettings.strokeWidth = sw;
+      }
+      if (props.opacity !== undefined) {
+        const op = parseFloat(props.opacity);
+        if (!isNaN(op) && op >= 0 && op <= 1) this.highlighterSettings.opacity = op;
+      }
+      this.color = this.highlighterSettings.color;
+      this.strokeWidth = this.highlighterSettings.strokeWidth;
+      this.opacity = this.highlighterSettings.opacity;
+    } else {
+      if (props.color) this.color = props.color;
+      if (props.strokeWidth !== undefined) {
+        const sw = parseInt(props.strokeWidth, 10);
+        if (!isNaN(sw) && sw > 0) this.strokeWidth = sw;
+      }
+      if (props.opacity !== undefined) {
+        const op = parseFloat(props.opacity);
+        if (!isNaN(op) && op >= 0 && op <= 1) this.opacity = op;
+      }
+    }
     if (props.fontSize) this.fontSize = props.fontSize;
     if (props.fontFamily) this.fontFamily = props.fontFamily;
 
@@ -242,7 +289,7 @@ export class PDFAnnotatorEngine {
     if (this.currentPath.length > 1 && this.activePageNum) {
       const isHighlighter = this.currentTool === 'highlighter';
       const isShape = this.currentTool === 'rectangle' || this.currentTool === 'circle' || this.currentTool === 'line';
-      const strokeW = isHighlighter ? 24 : (isShape ? this.strokeWidth * 2 : this.strokeWidth * 2);
+      const strokeW = isHighlighter ? (this.highlighterSettings?.strokeWidth || this.strokeWidth || 20) : (isShape ? this.strokeWidth * 2 : this.strokeWidth * 2);
       const strokeOpacity = isHighlighter ? (this.highlighterSettings?.opacity !== undefined ? this.highlighterSettings.opacity : this.opacity) : this.opacity;
       const annot = {
         type: this.currentTool,
@@ -403,10 +450,11 @@ export class PDFAnnotatorEngine {
   _renderCurrentStroke() {
     const ctx = this.activeCanvas.getContext('2d');
     const isHighlighter = this.currentTool === 'highlighter';
-    
+    const strokeW = isHighlighter ? (this.highlighterSettings?.strokeWidth || this.strokeWidth || 20) : this.strokeWidth * 2;
     const strokeOpacity = isHighlighter ? (this.highlighterSettings?.opacity !== undefined ? this.highlighterSettings.opacity : this.opacity) : this.opacity;
+    
     ctx.strokeStyle = this.color;
-    ctx.lineWidth = isHighlighter ? 24 : this.strokeWidth * 2;
+    ctx.lineWidth = strokeW;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.globalAlpha = strokeOpacity;
@@ -1223,6 +1271,11 @@ export class PDFAnnotatorEngine {
 
   setColor(color) {
     this.color = color;
+    if (this.currentTool === 'highlighter' || ((!this.currentTool || this.currentTool === 'none') && this.lastAnnotTool === 'highlighter')) {
+      this.highlighterSettings.color = color;
+    } else {
+      this.penSettings.color = color;
+    }
     const el = this._getTargetElement();
     if (el) {
       const sel = typeof window !== 'undefined' ? window.getSelection() : null;
@@ -1230,6 +1283,18 @@ export class PDFAnnotatorEngine {
         document.execCommand('foreColor', false, color);
       } else {
         el.style.color = color;
+      }
+    }
+  }
+
+  setStrokeWidth(width) {
+    const w = parseInt(width, 10);
+    if (!isNaN(w) && w > 0) {
+      this.strokeWidth = w;
+      if (this.currentTool === 'highlighter' || ((!this.currentTool || this.currentTool === 'none') && this.lastAnnotTool === 'highlighter')) {
+        this.highlighterSettings.strokeWidth = w;
+      } else {
+        this.penSettings.strokeWidth = w;
       }
     }
   }

@@ -154,6 +154,7 @@ export class UIController {
           this.setMode('annotate');
           sheetMarkup?.classList.add('open');
           scrim?.classList.add('open');
+          this.syncMobileMarkupSheet?.();
         } else if (tab === 'pages') {
           closeAllSheets();
           this.app.openOrganizerModal();
@@ -172,6 +173,9 @@ export class UIController {
         if (this.currentMode === 'annotate') {
           sheetMarkup?.classList.toggle('open');
           scrim?.classList.toggle('open');
+          if (sheetMarkup?.classList.contains('open')) {
+            this.syncMobileMarkupSheet?.();
+          }
         } else if (this.currentMode === 'edit') {
           sheetEdit?.classList.toggle('open');
           scrim?.classList.toggle('open');
@@ -463,6 +467,7 @@ export class UIController {
       const scrim = document.getElementById('m3-scrim');
       sheetMarkup?.classList.add('open');
       scrim?.classList.add('open');
+      this.syncMobileMarkupSheet?.();
       document.querySelectorAll('.m3-nav-item').forEach(i => i.classList.remove('active'));
       document.querySelector('.m3-nav-item[data-m3-tab="annotate"]')?.classList.add('active');
     });
@@ -505,14 +510,49 @@ export class UIController {
       });
     });
 
-    // 8. Mobile Annotation Chips
+    // 8. Mobile Annotation Chips & Markup Synchronization
     const chips = document.querySelectorAll('.m3-chip[data-m3-tool]');
+    const colorDots = document.querySelectorAll('#m3-color-palette .color-dot');
+
+    const syncMobileMarkupSheet = () => {
+      const curTool = (this.app.annotator.currentTool && this.app.annotator.currentTool !== 'none')
+        ? this.app.annotator.currentTool
+        : (this.app.annotator.lastAnnotTool || 'pen');
+      
+      chips.forEach(c => c.classList.toggle('active', c.dataset.m3Tool === curTool));
+      const isHighl = curTool === 'highlighter';
+      const s = isHighl ? this.app.annotator.highlighterSettings : this.app.annotator.penSettings;
+      
+      const strokeSlider = document.getElementById('m3-stroke-slider');
+      const strokeDisp = document.getElementById('m3-stroke-val');
+      if (strokeSlider && s.strokeWidth) {
+        strokeSlider.value = s.strokeWidth;
+        if (strokeDisp) strokeDisp.textContent = `${s.strokeWidth}px`;
+      }
+
+      const opacitySlider = document.getElementById('m3-opacity-slider');
+      const opacityDisp = document.getElementById('m3-opacity-val');
+      if (opacitySlider && s.opacity !== undefined) {
+        const opPercent = Math.round(s.opacity * 100);
+        opacitySlider.value = opPercent;
+        if (opacityDisp) opacityDisp.textContent = `${opPercent}%`;
+      }
+
+      const customColor = document.getElementById('m3-custom-color');
+      if (customColor && s.color) {
+        customColor.value = s.color;
+      }
+      colorDots.forEach(dot => {
+        dot.classList.toggle('active', dot.dataset.m3Color === s.color);
+      });
+    };
+    this.syncMobileMarkupSheet = syncMobileMarkupSheet;
+
     chips.forEach(chip => {
       chip.onclick = () => {
         chips.forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         const tool = chip.dataset.m3Tool;
-        const strokeW = parseInt(document.getElementById('m3-stroke-slider')?.value || 4, 10);
 
         if (tool === 'select') {
           this.app.annotator.setTool('none');
@@ -530,13 +570,40 @@ export class UIController {
           const ok = this.app.annotator.toggleStrikethrough();
           this.setStatus(ok ? 'Applied strikethrough markup to selected text' : 'Select text on the PDF to strikethrough');
           return;
+        } else if (tool === 'pen' || tool === 'highlighter') {
+          const s = tool === 'highlighter' ? this.app.annotator.highlighterSettings : this.app.annotator.penSettings;
+          const strokeSlider = document.getElementById('m3-stroke-slider');
+          const strokeDisp = document.getElementById('m3-stroke-val');
+          if (strokeSlider) {
+            strokeSlider.value = s.strokeWidth;
+            if (strokeDisp) strokeDisp.textContent = `${s.strokeWidth}px`;
+          }
+          const opacitySlider = document.getElementById('m3-opacity-slider');
+          const opacityDisp = document.getElementById('m3-opacity-val');
+          if (opacitySlider) {
+            const opPercent = Math.round((s.opacity ?? (tool === 'highlighter' ? 0.35 : 1.0)) * 100);
+            opacitySlider.value = opPercent;
+            if (opacityDisp) opacityDisp.textContent = `${opPercent}%`;
+          }
+          const customColor = document.getElementById('m3-custom-color');
+          if (customColor) customColor.value = s.color;
+          colorDots.forEach(dot => dot.classList.toggle('active', dot.dataset.m3Color === s.color));
+
+          this.app.annotator.setTool(tool, {
+            color: s.color,
+            strokeWidth: s.strokeWidth,
+            opacity: s.opacity
+          });
+          this.setStatus(tool === 'highlighter' ? 'Highlighter active' : 'Freehand pen active');
         } else if (tool === 'line') {
+          const strokeW = parseInt(document.getElementById('m3-stroke-slider')?.value || 4, 10);
           this.app.annotator.setTool('line', {
             color: this.app.annotator.color,
             strokeWidth: strokeW
           });
           this.setStatus('Line tool: drag across the page to draw a line');
         } else {
+          const strokeW = parseInt(document.getElementById('m3-stroke-slider')?.value || 4, 10);
           this.app.annotator.setTool(tool, {
             color: this.app.annotator.color,
             strokeWidth: strokeW
@@ -568,16 +635,10 @@ export class UIController {
     });
 
     document.getElementById('m3-stroke-slider')?.addEventListener('input', (e) => {
-      const val = e.target.value;
+      const val = parseInt(e.target.value, 10);
       const disp = document.getElementById('m3-stroke-val');
       if (disp) disp.textContent = `${val}px`;
-      this.app.annotator.strokeWidth = parseInt(val, 10);
-      if (this.app.annotator.currentTool) {
-        this.app.annotator.setTool(this.app.annotator.currentTool, {
-          color: this.app.annotator.color,
-          strokeWidth: parseInt(val, 10)
-        });
-      }
+      this.app.annotator.setStrokeWidth(val);
     });
 
     document.getElementById('m3-opacity-slider')?.addEventListener('input', (e) => {
@@ -587,18 +648,21 @@ export class UIController {
       this.app.annotator.setOpacity(val / 100);
     });
 
-    const colorDots = document.querySelectorAll('#m3-color-palette .color-dot');
     colorDots.forEach(dot => {
       dot.onclick = () => {
         colorDots.forEach(d => d.classList.remove('active'));
         dot.classList.add('active');
-        this.app.annotator.color = dot.dataset.m3Color;
+        this.app.annotator.setColor(dot.dataset.m3Color);
+        const customColor = document.getElementById('m3-custom-color');
+        if (customColor) customColor.value = dot.dataset.m3Color;
       };
     });
 
     document.getElementById('m3-custom-color')?.addEventListener('input', (e) => {
-      this.app.annotator.color = e.target.value;
-      document.querySelectorAll('#m3-color-palette .color-dot').forEach(d => d.classList.remove('active'));
+      this.app.annotator.setColor(e.target.value);
+      colorDots.forEach(d => {
+        d.classList.toggle('active', d.dataset.m3Color === e.target.value);
+      });
     });
 
     document.getElementById('m3-sheet-clear')?.addEventListener('click', () => {
@@ -1297,14 +1361,21 @@ export class UIController {
 
   _renderAnnotateTools() {
     this._disablePanning();
+    const activeTool = this.app.annotator.lastAnnotTool || 'pen';
+    const isHighlighter = activeTool === 'highlighter';
+    const settings = isHighlighter ? this.app.annotator.highlighterSettings : this.app.annotator.penSettings;
+    const curColor = settings.color || (isHighlighter ? '#eab308' : '#ef4444');
+    const curSize = settings.strokeWidth || (isHighlighter ? 20 : 4);
+    const curOpacity = Math.round((settings.opacity !== undefined ? settings.opacity : (isHighlighter ? 0.35 : 1.0)) * 100);
+
     this.dynamicToolsContainer.innerHTML = `
       <div class="tool-group">
         <button id="tool-select" class="tool-btn" title="Text Selection Tool (Select & copy text)">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
           <span>Select</span>
         </button>
-        <button id="tool-pen" class="tool-btn active" title="Freehand Pen">✏️ Pen</button>
-        <button id="tool-highlighter" class="tool-btn" title="Highlighter Brush">🖍️ Highl.</button>
+        <button id="tool-pen" class="tool-btn ${!isHighlighter ? 'active' : ''}" title="Freehand Pen">✏️ Pen</button>
+        <button id="tool-highlighter" class="tool-btn ${isHighlighter ? 'active' : ''}" title="Highlighter Brush">🖍️ Highl.</button>
         <button id="tool-eraser" class="tool-btn" title="Eraser Tool (Click/drag to erase ink, shapes, textboxes, stamps)">🧼 Eraser</button>
         <button id="tool-note" class="tool-btn" title="Sticky Note">💬 Note</button>
         <button id="tool-text" class="tool-btn" title="Typewriter Text Block">T Text</button>
@@ -1317,16 +1388,16 @@ export class UIController {
 
       <!-- Quick Color Palette Swatches & Custom Color Picker -->
       <div class="tool-group annot-palette-group" title="Annotation Colors">
-        <span class="annot-swatch active" data-color="#ef4444" style="background:#ef4444;" title="Red"></span>
-        <span class="annot-swatch" data-color="#2563eb" style="background:#2563eb;" title="Blue"></span>
-        <span class="annot-swatch" data-color="#16a34a" style="background:#16a34a;" title="Green"></span>
-        <span class="annot-swatch" data-color="#eab308" style="background:#eab308;" title="Yellow"></span>
-        <span class="annot-swatch" data-color="#f97316" style="background:#f97316;" title="Orange"></span>
-        <span class="annot-swatch" data-color="#9333ea" style="background:#9333ea;" title="Purple"></span>
-        <span class="annot-swatch" data-color="#000000" style="background:#000000;" title="Black"></span>
-        <input type="color" id="annot-color" value="#ef4444" class="tool-select" style="padding:1px; width:22px; height:22px; cursor:pointer;" title="Custom Color Picker">
-        <input type="number" id="annot-size" value="4" min="1" max="50" class="tool-select" style="width:40px;" title="Stroke Thickness (px)">
-        <input type="number" id="annot-opacity" value="100" min="5" max="100" class="tool-select" style="width:46px;" title="Opacity (%)">
+        <span class="annot-swatch ${curColor === '#ef4444' ? 'active' : ''}" data-color="#ef4444" style="background:#ef4444;" title="Red"></span>
+        <span class="annot-swatch ${curColor === '#2563eb' ? 'active' : ''}" data-color="#2563eb" style="background:#2563eb;" title="Blue"></span>
+        <span class="annot-swatch ${curColor === '#16a34a' ? 'active' : ''}" data-color="#16a34a" style="background:#16a34a;" title="Green"></span>
+        <span class="annot-swatch ${curColor === '#eab308' ? 'active' : ''}" data-color="#eab308" style="background:#eab308;" title="Yellow"></span>
+        <span class="annot-swatch ${curColor === '#f97316' ? 'active' : ''}" data-color="#f97316" style="background:#f97316;" title="Orange"></span>
+        <span class="annot-swatch ${curColor === '#9333ea' ? 'active' : ''}" data-color="#9333ea" style="background:#9333ea;" title="Purple"></span>
+        <span class="annot-swatch ${curColor === '#000000' ? 'active' : ''}" data-color="#000000" style="background:#000000;" title="Black"></span>
+        <input type="color" id="annot-color" value="${curColor}" class="tool-select" style="padding:1px; width:22px; height:22px; cursor:pointer;" title="Custom Color Picker">
+        <input type="number" id="annot-size" value="${curSize}" min="1" max="50" class="tool-select" style="width:40px;" title="Stroke Thickness (px)">
+        <input type="number" id="annot-opacity" value="${curOpacity}" min="5" max="100" class="tool-select" style="width:46px;" title="Opacity (%)">
       </div>
 
       <div class="divider"></div>
@@ -1451,24 +1522,33 @@ export class UIController {
           return;
         }
 
-        if (t === 'highlighter') {
-          // If current color is dark, default to bright yellow highlighter
-          const curColor = document.getElementById('annot-color').value;
-          if (curColor === '#000000' || curColor === '#ef4444') {
-            const yellow = '#eab308';
-            document.getElementById('annot-color').value = yellow;
-            this.app.annotator.setColor(yellow);
-            swatches.forEach(s => s.classList.toggle('active', s.dataset.color === yellow));
-          }
-          document.getElementById('annot-size').value = '20';
-          this.app.annotator.strokeWidth = 20;
+        if (t === 'pen') {
+          const pSettings = this.app.annotator.penSettings;
+          const cInput = document.getElementById('annot-color');
+          if (cInput) cInput.value = pSettings.color;
+          const sInput = document.getElementById('annot-size');
+          if (sInput) sInput.value = pSettings.strokeWidth;
+          const oInput = document.getElementById('annot-opacity');
+          if (oInput) oInput.value = Math.round((pSettings.opacity ?? 1.0) * 100);
+          swatches.forEach(s => s.classList.toggle('active', s.dataset.color === pSettings.color));
+        } else if (t === 'highlighter') {
+          const hSettings = this.app.annotator.highlighterSettings;
+          const cInput = document.getElementById('annot-color');
+          if (cInput) cInput.value = hSettings.color;
+          const sInput = document.getElementById('annot-size');
+          if (sInput) sInput.value = hSettings.strokeWidth;
+          const oInput = document.getElementById('annot-opacity');
+          if (oInput) oInput.value = Math.round((hSettings.opacity ?? 0.35) * 100);
+          swatches.forEach(s => s.classList.toggle('active', s.dataset.color === hSettings.color));
         }
 
         let toolName = t;
         if (t === 'rect') toolName = 'rectangle';
+        const curOpVal = parseInt(document.getElementById('annot-opacity')?.value || '100', 10);
         this.app.annotator.setTool(toolName, {
           color: document.getElementById('annot-color').value,
           strokeWidth: parseInt(document.getElementById('annot-size').value, 10),
+          opacity: curOpVal / 100,
           fontSize: parseInt(document.getElementById('annot-font-size').value, 10),
           fontFamily: document.getElementById('annot-font-family').value
         });
@@ -1490,10 +1570,11 @@ export class UIController {
       };
     });
 
-    // Default to pen
-    this.app.annotator.setTool('pen', {
-      color: document.getElementById('annot-color').value,
-      strokeWidth: parseInt(document.getElementById('annot-size').value, 10) || 4
+    // Restore active tool (pen or highlighter)
+    this.app.annotator.setTool(activeTool, {
+      color: curColor,
+      strokeWidth: curSize,
+      opacity: curOpacity / 100
     });
 
     const colorInput = document.getElementById('annot-color');
@@ -1509,10 +1590,10 @@ export class UIController {
 
     document.getElementById('annot-size').oninput = (e) => {
       const val = parseInt(e.target.value, 10);
-      if (!isNaN(val) && val > 0) this.app.annotator.strokeWidth = val;
+      if (!isNaN(val) && val > 0) this.app.annotator.setStrokeWidth(val);
     };
 
-        const opacityInput = document.getElementById('annot-opacity');
+    const opacityInput = document.getElementById('annot-opacity');
     if (opacityInput) {
       opacityInput.oninput = (e) => {
         const val = parseInt(e.target.value, 10);
