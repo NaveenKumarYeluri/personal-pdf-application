@@ -865,8 +865,11 @@ export class PDFViewerEngine {
   }
 
   _setupContentEditingHandlers(textLayer, pageNum, pageWrapper) {
+    let lastTouchEditTime = 0;
+
     textLayer.addEventListener('click', (e) => {
       if (!this.isContentEditingActive) return;
+      if (Date.now() - lastTouchEditTime < 600) return; // Prevent synthetic click after touchend
       if (e.target.closest('[contenteditable="true"]')) {
         return; // Allow caret placement and text selection inside active editor
       }
@@ -903,7 +906,7 @@ export class PDFViewerEngine {
       if (e.changedTouches && e.changedTouches.length === 1) {
         const dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
         const dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
-        if (dx < 10 && dy < 10) {
+        if (dx < 12 && dy < 12) {
           if (e.target.closest('[contenteditable="true"]')) {
             return;
           }
@@ -912,6 +915,8 @@ export class PDFViewerEngine {
             if (span._mergedInto && span._mergedInto.isConnected) {
               span = span._mergedInto;
             }
+            lastTouchEditTime = Date.now();
+            e.preventDefault();
             e.stopPropagation();
             this.onContentEdited({
               span,

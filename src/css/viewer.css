@@ -201,6 +201,7 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
 
 .page-wrapper.editing-content .textLayer span.inline-editing,
 .textLayer span.inline-editing {
+  display: inline-block !important;
   border: none !important;
   outline: 2px solid #2563eb !important;
   outline-offset: 1px !important;

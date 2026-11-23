@@ -1039,6 +1039,9 @@ class PersonalPDFApp {
     // Make native PDF span directly editable in-place
     span.contentEditable = 'true';
     span.spellcheck = false;
+    span.setAttribute('inputmode', 'text');
+    span.setAttribute('tabindex', '0');
+    span.style.display = 'inline-block';
     span.classList.add('inline-editing');
     span.style.cursor = 'text';
 
@@ -1101,9 +1104,12 @@ class PersonalPDFApp {
         }
       }
       if (range) {
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+        const isInside = range.startContainer && (span === range.startContainer || span.contains(range.startContainer));
+        if (isInside) {
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
       }
     }
 
@@ -1135,9 +1141,8 @@ class PersonalPDFApp {
         span._isComposing = false;
         span._fullReflowText = this._getEditorText(span);
         span._fullReflowHtml = span.innerHTML;
-        cleanSpanContent();
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
-        this._reflowEditedPage(pageNum, pageWrapper);
+        this._scheduleReflow(pageNum);
       });
 
       span.addEventListener('input', (e) => {
@@ -1148,9 +1153,8 @@ class PersonalPDFApp {
         span._fullReflowHtml = span.innerHTML;
         span._fittingReflowText = null;
         span._overflowReflowText = null;
-        cleanSpanContent();
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
-        this._reflowEditedPage(pageNum, pageWrapper);
+        this._scheduleReflow(pageNum);
       });
 
       span.addEventListener('paste', (e) => {
@@ -1272,22 +1276,24 @@ class PersonalPDFApp {
       let positioned = false;
 
       if (editData.clientX !== undefined && editData.clientY !== undefined) {
+        let range = null;
         if (document.caretPositionFromPoint) {
           const pos = document.caretPositionFromPoint(editData.clientX, editData.clientY);
-          if (pos && pos.offsetNode) {
-            const range = document.createRange();
+          if (pos && pos.offsetNode && (span === pos.offsetNode || span.contains(pos.offsetNode))) {
+            range = document.createRange();
             range.setStart(pos.offsetNode, pos.offset);
             range.collapse(true);
-            sel.addRange(range);
-            positioned = true;
           }
         } else if (document.caretRangeFromPoint) {
-          const range = document.caretRangeFromPoint(editData.clientX, editData.clientY);
-          if (range) {
+          const r = document.caretRangeFromPoint(editData.clientX, editData.clientY);
+          if (r && r.startContainer && (span === r.startContainer || span.contains(r.startContainer))) {
+            range = r;
             range.collapse(true);
-            sel.addRange(range);
-            positioned = true;
           }
+        }
+        if (range) {
+          sel.addRange(range);
+          positioned = true;
         }
       }
 
