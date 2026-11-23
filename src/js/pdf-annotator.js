@@ -243,12 +243,13 @@ export class PDFAnnotatorEngine {
       const isHighlighter = this.currentTool === 'highlighter';
       const isShape = this.currentTool === 'rectangle' || this.currentTool === 'circle' || this.currentTool === 'line';
       const strokeW = isHighlighter ? 24 : (isShape ? this.strokeWidth * 2 : this.strokeWidth * 2);
+      const strokeOpacity = isHighlighter ? (this.highlighterSettings?.opacity !== undefined ? this.highlighterSettings.opacity : this.opacity) : this.opacity;
       const annot = {
         type: this.currentTool,
         points: [...this.currentPath],
         color: this.color,
         strokeWidth: strokeW,
-        opacity: isHighlighter ? 0.35 : this.opacity,
+        opacity: strokeOpacity,
         // Reference canvas geometry so the stroke can be rescaled and rotated
         // when the page is re-rendered at a different zoom level.
         baseWidth: this.activeCanvas.width || 1,
@@ -403,11 +404,12 @@ export class PDFAnnotatorEngine {
     const ctx = this.activeCanvas.getContext('2d');
     const isHighlighter = this.currentTool === 'highlighter';
     
+    const strokeOpacity = isHighlighter ? (this.highlighterSettings?.opacity !== undefined ? this.highlighterSettings.opacity : this.opacity) : this.opacity;
     ctx.strokeStyle = this.color;
     ctx.lineWidth = isHighlighter ? 24 : this.strokeWidth * 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.globalAlpha = isHighlighter ? 0.35 : this.opacity;
+    ctx.globalAlpha = strokeOpacity;
 
     if (this.currentTool === 'pen' || isHighlighter) {
       const len = this.currentPath.length;
@@ -1228,6 +1230,18 @@ export class PDFAnnotatorEngine {
         document.execCommand('foreColor', false, color);
       } else {
         el.style.color = color;
+      }
+    }
+  }
+
+  setOpacity(opacity) {
+    const o = parseFloat(opacity);
+    if (!isNaN(o) && o >= 0 && o <= 1) {
+      this.opacity = o;
+      if (this.currentTool === 'highlighter' || ((!this.currentTool || this.currentTool === 'none') && this.lastAnnotTool === 'highlighter')) {
+        this.highlighterSettings.opacity = o;
+      } else {
+        this.penSettings.opacity = o;
       }
     }
   }

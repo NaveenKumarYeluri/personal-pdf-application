@@ -580,6 +580,13 @@ export class UIController {
       }
     });
 
+    document.getElementById('m3-opacity-slider')?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      const disp = document.getElementById('m3-opacity-val');
+      if (disp) disp.textContent = `${val}%`;
+      this.app.annotator.setOpacity(val / 100);
+    });
+
     const colorDots = document.querySelectorAll('#m3-color-palette .color-dot');
     colorDots.forEach(dot => {
       dot.onclick = () => {
@@ -1319,6 +1326,7 @@ export class UIController {
         <span class="annot-swatch" data-color="#000000" style="background:#000000;" title="Black"></span>
         <input type="color" id="annot-color" value="#ef4444" class="tool-select" style="padding:1px; width:22px; height:22px; cursor:pointer;" title="Custom Color Picker">
         <input type="number" id="annot-size" value="4" min="1" max="50" class="tool-select" style="width:40px;" title="Stroke Thickness (px)">
+        <input type="number" id="annot-opacity" value="100" min="5" max="100" class="tool-select" style="width:46px;" title="Opacity (%)">
       </div>
 
       <div class="divider"></div>
@@ -1503,6 +1511,16 @@ export class UIController {
       const val = parseInt(e.target.value, 10);
       if (!isNaN(val) && val > 0) this.app.annotator.strokeWidth = val;
     };
+
+        const opacityInput = document.getElementById('annot-opacity');
+    if (opacityInput) {
+      opacityInput.oninput = (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val) && val >= 5 && val <= 100) {
+          this.app.annotator.setOpacity(val / 100);
+        }
+      };
+    }
 
     document.getElementById('annot-font-family').onchange = (e) => {
       this.app.annotator.setFontFamily(e.target.value);
