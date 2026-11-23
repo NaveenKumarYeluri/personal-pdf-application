@@ -117,8 +117,16 @@ export class PDFExportEngine {
       const lines = this._wrapCanvasText(ctx, textContentVal, Math.max(1, maskW));
       const blockH = Math.max(origH, lines.length * lineHeight);
 
+      const bX = Math.max(8, Math.round(6 * scaleX));
+      const bTop = Math.max(6, Math.round(5 * scaleY));
+      const bBottom = Math.max(8, Math.round(6 * scaleY));
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(maskW) + 4, Math.ceil(blockH) + 4);
+      ctx.fillRect(
+        Math.max(0, Math.floor(sx) - bX),
+        Math.max(0, Math.floor(sy) - bTop),
+        Math.ceil(maskW) + bX * 2,
+        Math.ceil(blockH) + bTop + bBottom
+      );
 
       ctx.fillStyle = color;
       lines.forEach((line, idx) => {

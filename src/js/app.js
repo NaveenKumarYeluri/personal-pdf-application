@@ -946,7 +946,10 @@ class PersonalPDFApp {
         h: Math.min(1, Math.max(0.005, span.offsetHeight / wH))
       };
       span._originalWidth = span.offsetWidth;
-      span._originalHeight = span.offsetHeight;
+      const baseFs = initialFontPx;
+      const descenderPad = Math.max(4, Math.round(baseFs * 0.32));
+      span._originalHeight = span.offsetHeight + descenderPad;
+      span._normRect.h = Math.min(1, Math.max(0.005, span._originalHeight / wH));
 
       // Edit the whole paragraph (all runs/lines of the same text block), not
       // just the clicked fragment. Otherwise the rest of the line stays put
@@ -1255,12 +1258,17 @@ class PersonalPDFApp {
             const normY = span._normRect.y;
             const normW = Math.max(span._originalWidth || 0, maxW) / (pageWrapper.clientWidth || 1);
             const normH = Math.max(span._originalHeight || 0, span.offsetHeight || 0) / (pageWrapper.clientHeight || 1);
+            const cScaleX = pageCanvas.width / (pageWrapper.clientWidth || 1);
+            const cScaleY = pageCanvas.height / (pageWrapper.clientHeight || 1);
+            const bX = Math.max(8, Math.round(6 * cScaleX));
+            const bTop = Math.max(6, Math.round(5 * cScaleY));
+            const bBottom = Math.max(8, Math.round(6 * cScaleY));
             canvasCtx.fillStyle = '#ffffff';
             canvasCtx.fillRect(
-              Math.floor(normX * pageCanvas.width) - 2,
-              Math.floor(normY * pageCanvas.height) - 2,
-              Math.ceil(normW * pageCanvas.width) + 4,
-              Math.ceil(normH * pageCanvas.height) + 4
+              Math.max(0, Math.floor(normX * pageCanvas.width) - bX),
+              Math.max(0, Math.floor(normY * pageCanvas.height) - bTop),
+              Math.min(pageCanvas.width, Math.ceil(normW * pageCanvas.width) + bX * 2),
+              Math.ceil(normH * pageCanvas.height) + bTop + bBottom
             );
             canvasCtx.restore();
           }
@@ -1578,10 +1586,13 @@ class PersonalPDFApp {
     const left = Math.min(...groups.map(line => line.left));
     const right = Math.max(...groups.map(line => line.right));
     const top = Math.min(...groups.map(line => line.top));
-    const bottom = Math.max(...groups.map(line => line.bottom));
+    const rawBottom = Math.max(...groups.map(line => line.bottom));
+    const maxLineFs = Math.max(...groups.map(line => line.fontSize || baseFont || 12));
+    const descenderExt = Math.max(5, Math.round(maxLineFs * 0.35));
+    const bottom = rawBottom + descenderExt;
     const wrapW = pageWrapper.clientWidth || 1;
     const wrapH = pageWrapper.clientHeight || 1;
-    const widthPx = Math.max(40, Math.min(right - left + 8, wrapW - left - 6));
+    const widthPx = Math.max(40, Math.min(right - left + 14, wrapW - left - 6));
 
     // Keep the document's real leading
     const steps = [];
@@ -1900,12 +1911,17 @@ class PersonalPDFApp {
           const normY = normRect.y;
           const normW = Math.max(normRect.w, restoredMaxW / (pageWrapper.clientWidth || 1));
           const normH = Math.max(normRect.h, (matchedSpan.offsetHeight || 0) / (pageWrapper.clientHeight || 1));
+          const cScaleX = pageCanvas.width / (pageWrapper.clientWidth || 1);
+          const cScaleY = pageCanvas.height / (pageWrapper.clientHeight || 1);
+          const bX = Math.max(8, Math.round(6 * cScaleX));
+          const bTop = Math.max(6, Math.round(5 * cScaleY));
+          const bBottom = Math.max(8, Math.round(6 * cScaleY));
           canvasCtx.fillStyle = '#ffffff';
           canvasCtx.fillRect(
-            Math.floor(normX * pageCanvas.width) - 2,
-            Math.floor(normY * pageCanvas.height) - 2,
-            Math.ceil(normW * pageCanvas.width) + 4,
-            Math.ceil(normH * pageCanvas.height) + 4
+            Math.max(0, Math.floor(normX * pageCanvas.width) - bX),
+            Math.max(0, Math.floor(normY * pageCanvas.height) - bTop),
+            Math.min(pageCanvas.width, Math.ceil(normW * pageCanvas.width) + bX * 2),
+            Math.ceil(normH * pageCanvas.height) + bTop + bBottom
           );
           canvasCtx.restore();
         }
@@ -2369,6 +2385,7 @@ class PersonalPDFApp {
       const wrapW = pageWrapper.clientWidth || 1;
       const W = pageCanvas.width;
       const H = pageCanvas.height;
+      const scaleX = W / wrapW;
       const scaleY = H / wrapH;
 
       const hasIncoming = Boolean(incomingSlice && incomingSlice.height > 0);
@@ -2564,12 +2581,15 @@ class PersonalPDFApp {
         const maskNormH = Math.max(origNormH, currentNormH, op.norm.h || 0);
         const maskH = maskNormH * H;
         const maskW = Math.max(op.norm.w * W, op.maxWidth * W / wrapW, ((op.span._originalWidth || 0) / wrapW) * W);
+        const bleedX = Math.max(8, Math.round(6 * scaleX));
+        const bleedTop = Math.max(6, Math.round(5 * scaleY));
+        const bleedBottom = Math.max(8, Math.round(6 * scaleY));
         vCtx.fillStyle = '#ffffff';
         vCtx.fillRect(
-          Math.max(0, Math.floor(op.norm.x * W) - 2),
-          Math.max(0, Math.floor(topPx) - 2),
-          Math.ceil(maskW) + 4,
-          Math.ceil(maskH) + 4
+          Math.max(0, Math.floor(op.norm.x * W) - bleedX),
+          Math.max(0, Math.floor(topPx) - bleedTop),
+          Math.min(W, Math.ceil(maskW) + bleedX * 2),
+          Math.ceil(maskH) + bleedTop + bleedBottom
         );
         maskShift += op.extraNorm;
       }

@@ -2085,9 +2085,17 @@ export class PDFAnnotatorEngine {
           const lines = this._wrapCanvasText(compCtx, textToRender, Math.max(1, maskW));
           const blockH = Math.max(origH * scaleY, lines.length * lineHeight);
 
+          const bX = Math.max(8, Math.round(6 * scaleX));
+          const bTop = Math.max(6, Math.round(5 * scaleY));
+          const bBottom = Math.max(8, Math.round(6 * scaleY));
           // Mask original PDF text underneath with crisp white rectangle
           compCtx.fillStyle = '#ffffff';
-          compCtx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(maskW) + 4, Math.ceil(blockH) + 4);
+          compCtx.fillRect(
+            Math.max(0, Math.floor(sx) - bX),
+            Math.max(0, Math.floor(sy) - bTop),
+            Math.ceil(maskW) + bX * 2,
+            Math.ceil(blockH) + bTop + bBottom
+          );
 
           // Vector mask on PDF page stream directly
           if (typeof page.drawRectangle === 'function' && typeof rgb === 'function') {
@@ -2099,11 +2107,14 @@ export class PDFAnnotatorEngine {
             const blockCssH = blockH / scaleY;
             const pdfH = blockCssH * pdfScaleY;
             const pdfY = height - ((spanRect.top - wrapperRect.top + blockCssH) * pdfScaleY);
+            const pdfBX = Math.max(4, 3 * pdfScaleX);
+            const pdfBTop = Math.max(4, 3 * pdfScaleY);
+            const pdfBBottom = Math.max(5, 4 * pdfScaleY);
             page.drawRectangle({
-              x: Math.max(0, pdfX - 2),
-              y: Math.max(0, pdfY - 2),
-              width: pdfW + 4,
-              height: pdfH + 4,
+              x: Math.max(0, pdfX - pdfBX),
+              y: Math.max(0, pdfY - pdfBBottom),
+              width: pdfW + pdfBX * 2,
+              height: pdfH + pdfBTop + pdfBBottom,
               color: rgb(1, 1, 1)
             });
           }
@@ -2149,8 +2160,16 @@ export class PDFAnnotatorEngine {
         const lines = this._wrapCanvasText(compCtx, textToRender, Math.max(1, maskW));
         const blockH = lines.length * lineHeight;
 
+        const bX = Math.max(8, Math.round(6 * scaleX));
+        const bTop = Math.max(6, Math.round(5 * scaleY));
+        const bBottom = Math.max(8, Math.round(6 * scaleY));
         compCtx.fillStyle = '#ffffff';
-        compCtx.fillRect(Math.floor(sx) - 2, Math.floor(sy) - 2, Math.ceil(maskW) + 4, Math.ceil(blockH) + 4);
+        compCtx.fillRect(
+          Math.max(0, Math.floor(sx) - bX),
+          Math.max(0, Math.floor(sy) - bTop),
+          Math.ceil(maskW) + bX * 2,
+          Math.ceil(blockH) + bTop + bBottom
+        );
 
         compCtx.fillStyle = color;
         lines.forEach((line, idx) => {
