@@ -289,12 +289,22 @@ export class PDFAnnotatorEngine {
     if (this.currentPath.length > 1 && this.activePageNum) {
       const isHighlighter = this.currentTool === 'highlighter';
       const isShape = this.currentTool === 'rectangle' || this.currentTool === 'circle' || this.currentTool === 'line';
-      const strokeW = isHighlighter ? (this.highlighterSettings?.strokeWidth || this.strokeWidth || 20) : (isShape ? this.strokeWidth * 2 : this.strokeWidth * 2);
-      const strokeOpacity = isHighlighter ? (this.highlighterSettings?.opacity !== undefined ? this.highlighterSettings.opacity : this.opacity) : this.opacity;
+      const isUnderlineOrStrike = this.currentTool === 'underline' || this.currentTool === 'strikethrough';
+      const strokeW = isHighlighter ? (this.highlighterSettings?.strokeWidth || this.strokeWidth || 20) : (isShape ? this.strokeWidth * 2 : (isUnderlineOrStrike ? Math.max(2, this.strokeWidth || 2) : this.strokeWidth * 2));
+      const strokeOpacity = isHighlighter ? (this.highlighterSettings?.opacity !== undefined ? this.highlighterSettings.opacity : this.opacity) : (isUnderlineOrStrike ? 1 : this.opacity);
+      const strokeColor = isUnderlineOrStrike ? (this.color || (this.currentTool === 'underline' ? '#2563eb' : '#ef4444')) : this.color;
+      let annotPoints = [...this.currentPath];
+      if (isUnderlineOrStrike) {
+        const start = this.currentPath[0];
+        const end = this.currentPath[this.currentPath.length - 1];
+        const dy = Math.abs(end.y - start.y);
+        const finalEndY = dy < 12 ? start.y : end.y;
+        annotPoints = [start, { x: end.x, y: finalEndY }];
+      }
       const annot = {
         type: this.currentTool,
-        points: [...this.currentPath],
-        color: this.color,
+        points: annotPoints,
+        color: strokeColor,
         strokeWidth: strokeW,
         opacity: strokeOpacity,
         // Reference canvas geometry so the stroke can be rescaled and rotated
@@ -328,7 +338,10 @@ export class PDFAnnotatorEngine {
   }
 
   _onTouchStart(e) {
-    if (this.currentTool !== 'none') {
+    if (e.target.closest('.element-floating-bar, .tool-btn, button, input, select, textarea, .textbox-drag-bar')) {
+      return;
+    }
+    if (this.currentTool !== 'none' && this.currentTool !== 'select') {
       e.preventDefault();
       this._onMouseDown(e);
     }
@@ -406,6 +419,21 @@ export class PDFAnnotatorEngine {
 
     if (annot.type === 'line') {
       return this._distanceToSegment(x, y, first.x, first.y, last.x, last.y) <= limit;
+    }
+
+    if (annot.type === 'underline' || annot.type === 'strikethrough') {
+      if (annot.points && annot.points.length >= 2) {
+        return this._distanceToSegment(x, y, first.x, first.y, last.x, last.y) <= limit;
+      }
+      if (annot.rects && canvas) {
+        return annot.rects.some(r => {
+          const yPos = (annot.type === 'underline') ? (r.y + r.h - 1) : (r.y + r.h / 2);
+          const p1 = this._mapAnnotationPoint(annot, { x: r.x, y: yPos }, canvas, delta);
+          const p2 = this._mapAnnotationPoint(annot, { x: r.x + r.w, y: yPos }, canvas, delta);
+          return this._distanceToSegment(x, y, p1.x, p1.y, p2.x, p2.y) <= limit;
+        });
+      }
+      return false;
     }
 
     // Pen / highlighter: test every segment so the full stroke is erasable.
@@ -514,6 +542,23 @@ export class PDFAnnotatorEngine {
       ctx.moveTo(start.x, start.y);
       ctx.lineTo(curr.x, curr.y);
       ctx.stroke();
+    } else if (this.currentTool === 'underline' || this.currentTool === 'strikethrough') {
+      this._redrawPageAnnotations(this.activePageNum);
+
+      ctx.strokeStyle = this.currentTool === 'underline' ? (this.color || '#2563eb') : (this.color || '#ef4444');
+      ctx.lineWidth = Math.max(2, this.strokeWidth || 2);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = 1;
+
+      const start = this.currentPath[0];
+      const curr = this.currentPath[this.currentPath.length - 1];
+      const dy = Math.abs(curr.y - start.y);
+      const endY = dy < 12 ? start.y : curr.y;
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(curr.x, endY);
+      ctx.stroke();
     }
   }
 
@@ -593,19 +638,28 @@ export class PDFAnnotatorEngine {
         ctx.lineTo(end.x, end.y);
         ctx.stroke();
       } else if (a.type === 'underline' || a.type === 'strikethrough') {
-        if (!a.rects) return;
-        ctx.strokeStyle = a.color || '#2563eb';
+        ctx.strokeStyle = a.color || (a.type === 'underline' ? '#2563eb' : '#ef4444');
         ctx.lineWidth = (a.strokeWidth || 2) * scale;
-        ctx.lineCap = 'butt';
-        a.rects.forEach(r => {
-          const y = (a.type === 'underline') ? (r.y + r.h - 1) : (r.y + r.h / 2);
-          const p1 = this._mapAnnotationPoint(a, { x: r.x, y }, canvas, delta);
-          const p2 = this._mapAnnotationPoint(a, { x: r.x + r.w, y }, canvas, delta);
+        if (a.points && a.points.length >= 2) {
+          ctx.lineCap = 'round';
+          const start = this._mapAnnotationPoint(a, a.points[0], canvas, delta);
+          const end = this._mapAnnotationPoint(a, a.points[a.points.length - 1], canvas, delta);
           ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(end.x, end.y);
           ctx.stroke();
-        });
+        } else if (a.rects) {
+          ctx.lineCap = 'butt';
+          a.rects.forEach(r => {
+            const y = (a.type === 'underline') ? (r.y + r.h - 1) : (r.y + r.h / 2);
+            const p1 = this._mapAnnotationPoint(a, { x: r.x, y }, canvas, delta);
+            const p2 = this._mapAnnotationPoint(a, { x: r.x + r.w, y }, canvas, delta);
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          });
+        }
       }
     });
   }
@@ -1424,21 +1478,32 @@ export class PDFAnnotatorEngine {
           this._notifyAnnotationsChanged();
 
           sel.removeAllRanges();
-          return false;
+          return true;
         }
       }
     }
 
-    const currentDec = (el ? el.style.textDecoration : this.textDecoration) || '';
-    const hasUnder = currentDec.includes('underline');
-    const newDec = hasUnder
-      ? currentDec.replace(/underline/g, '').replace(/\s+/g, ' ').trim()
-      : `${currentDec} underline`.trim();
-    this.textDecoration = newDec || 'none';
     if (el) {
+      const currentDec = (el.style.textDecoration || this.textDecoration) || '';
+      const hasUnder = currentDec.includes('underline');
+      const newDec = hasUnder
+        ? currentDec.replace(/underline/g, '').replace(/\s+/g, ' ').trim()
+        : `${currentDec} underline`.trim();
+      this.textDecoration = newDec || 'none';
       el.style.textDecoration = newDec || 'none';
+      return !hasUnder;
     }
-    return !hasUnder;
+
+    // 3. If neither active element nor text selection, toggle Underline draw mode!
+    if (this.currentTool === 'underline') {
+      this.setTool('none');
+      if (this.ui) this.ui.setAnnotationTool('select');
+      return false;
+    } else {
+      this.setTool('underline');
+      if (this.ui) this.ui.setAnnotationTool('underline');
+      return true;
+    }
   }
 
   toggleStrikethrough() {
@@ -1496,21 +1561,32 @@ export class PDFAnnotatorEngine {
           this._notifyAnnotationsChanged();
 
           sel.removeAllRanges();
-          return false;
+          return true;
         }
       }
     }
 
-    const currentDec = (el ? el.style.textDecoration : this.textDecoration) || '';
-    const hasStrike = currentDec.includes('line-through');
-    const newDec = hasStrike
-      ? currentDec.replace(/line-through/g, '').replace(/\s+/g, ' ').trim()
-      : `${currentDec} line-through`.trim();
-    this.textDecoration = newDec || 'none';
     if (el) {
+      const currentDec = (el.style.textDecoration || this.textDecoration) || '';
+      const hasStrike = currentDec.includes('line-through');
+      const newDec = hasStrike
+        ? currentDec.replace(/line-through/g, '').replace(/\s+/g, ' ').trim()
+        : `${currentDec} line-through`.trim();
+      this.textDecoration = newDec || 'none';
       el.style.textDecoration = newDec || 'none';
+      return !hasStrike;
     }
-    return !hasStrike;
+
+    // 3. If neither active element nor text selection, toggle Strikethrough draw mode!
+    if (this.currentTool === 'strikethrough') {
+      this.setTool('none');
+      if (this.ui) this.ui.setAnnotationTool('select');
+      return false;
+    } else {
+      this.setTool('strikethrough');
+      if (this.ui) this.ui.setAnnotationTool('strikethrough');
+      return true;
+    }
   }
 
   setTextAlign(align) {
@@ -2057,30 +2133,47 @@ export class PDFAnnotatorEngine {
       // 2b. Draw In-Place Text Edits (Mask original canvas text with white and render new text using PDF's exact font)
       if (hasInPlaceEdits) {
         for (const [span, edit] of pageInPlaceEdits.entries()) {
-          const textToDraw = span._fittingReflowText || span._fullReflowText || (span.innerText !== undefined ? span.innerText : span.textContent);
+          const textToDraw = span._fittingReflowText !== undefined ? span._fittingReflowText :
+            (span._fullReflowText !== undefined ? span._fullReflowText :
+              (span.innerText !== undefined ? span.innerText :
+                (span.textContent !== undefined ? span.textContent : (edit.newText !== undefined ? edit.newText : ''))));
           if (textToDraw === undefined || textToDraw === null) continue;
 
-          const cs = window.getComputedStyle(span);
-          const wrapperRect = wrapper.getBoundingClientRect();
-          const spanRect = span.getBoundingClientRect();
+          const norm = span._normRect || edit.normRect || { x: 0, y: 0, w: 0.2, h: 0.03 };
+          const wrapW = Math.max(1, wrapper.clientWidth || 800);
+          const wrapH = Math.max(1, wrapper.clientHeight || 1100);
+          const sX = (isFinite(scaleX) && scaleX > 0) ? scaleX : 1;
+          const sY = (isFinite(scaleY) && scaleY > 0) ? scaleY : 1;
 
-          const sx = (spanRect.left - wrapperRect.left) * scaleX;
-          const sy = (spanRect.top - wrapperRect.top) * scaleY;
+          const cs = (typeof window !== 'undefined' && span.isConnected && window.getComputedStyle) ? window.getComputedStyle(span) : {};
+          const wrapperRect = wrapper.getBoundingClientRect ? wrapper.getBoundingClientRect() : null;
+          const spanRect = (span.isConnected && span.getBoundingClientRect) ? span.getBoundingClientRect() : null;
 
-          const maxAllowedW = (parseFloat(span.style.maxWidth) || spanRect.width || span._originalWidth || 100) * scaleX;
-          const maskW = Math.min(maxAllowedW, Math.max(span._originalWidth || 0, spanRect.width) * scaleX);
-          const origH = span._originalHeight || spanRect.height || 18;
+          let sx = (spanRect && wrapperRect && spanRect.width > 0)
+            ? (spanRect.left - wrapperRect.left) * sX
+            : (norm.x * wrapW) * sX;
+          let sy = (spanRect && wrapperRect && spanRect.height > 0)
+            ? (spanRect.top - wrapperRect.top) * sY
+            : (norm.y * wrapH) * sY;
+          if (!isFinite(sx)) sx = (norm.x || 0) * wrapW * sX;
+          if (!isFinite(sy)) sy = (norm.y || 0) * wrapH * sY;
 
-          const fSize = parseFloat(cs.fontSize) * scaleY;
+          const maxAllowedW = (parseFloat(span.style?.maxWidth) || spanRect?.width || span._originalWidth || (norm.w * wrapW) || 100) * sX;
+          const maskW = Math.max(20, Math.min(maxAllowedW, Math.max(span._originalWidth || 0, spanRect?.width || 0, (norm.w * wrapW) || 20) * sX));
+          const origH = Math.max(12, span._originalHeight || spanRect?.height || ((norm.h || 0.02) * wrapH) || 18);
+
+          const parsedFs = parseFloat(cs.fontSize);
+          const rawFs = (!isNaN(parsedFs) && isFinite(parsedFs) && parsedFs > 0) ? parsedFs : (edit.baseFontSize || 14);
+          const fSize = Math.max(6, (isFinite(rawFs) ? rawFs : 14) * sY);
           const fontFamily = edit.fontFamily || span._customFontStack || cs.fontFamily || 'sans-serif';
-          const fontWeight = span._customFontWeight || cs.fontWeight || 'normal';
-          const fontStyle = span._customFontStyle || cs.fontStyle || 'normal';
+          const fontWeight = span._customFontWeight || cs.fontWeight || edit.fontWeight || 'normal';
+          const fontStyle = span._customFontStyle || cs.fontStyle || edit.fontStyle || 'normal';
           const color = cs.color || edit.color || '#111827';
-          const csFontPx = parseFloat(cs.fontSize) || 1;
           const csLinePx = parseFloat(cs.lineHeight);
           const lineRatio = edit.lineHeightRatio || span._lineHeightRatio ||
-            (csLinePx && !isNaN(csLinePx) ? csLinePx / csFontPx : 1.2);
-          const lineHeight = fSize * lineRatio;
+            (!isNaN(csLinePx) && isFinite(csLinePx) && csLinePx > 0 ? csLinePx / (rawFs || 1) : 1.2);
+          const safeRatio = (isFinite(lineRatio) && lineRatio > 0) ? lineRatio : 1.2;
+          const lineHeight = Math.max(8, fSize * safeRatio);
 
           compCtx.save();
           compCtx.font = `${fontStyle} ${fontWeight} ${fSize}px ${fontFamily}`;
@@ -2089,13 +2182,13 @@ export class PDFAnnotatorEngine {
 
           // Wrap exactly like the on-screen editable block so the exported PDF
           // keeps the same paragraph layout instead of shrinking the text.
-          const textToRender = String(textToDraw).replace(/\r\n?/g, '\n');
-          const lines = this._wrapCanvasText(compCtx, textToRender, Math.max(1, maskW));
-          const blockH = Math.max(origH * scaleY, lines.length * lineHeight);
+          const textToRender = String(textToDraw || '').replace(/\r\n?/g, '\n');
+          const lines = textToRender.trim() ? this._wrapCanvasText(compCtx, textToRender, Math.max(1, maskW)) : [];
+          const blockH = Math.max(origH * sY, lines.length * lineHeight);
 
-          const bX = Math.max(8, Math.round(6 * scaleX));
-          const bTop = Math.max(6, Math.round(5 * scaleY));
-          const bBottom = Math.max(8, Math.round(6 * scaleY));
+          const bX = Math.max(8, Math.round(6 * sX));
+          const bTop = Math.max(6, Math.round(5 * sY));
+          const bBottom = Math.max(8, Math.round(6 * sY));
           // Mask original PDF text underneath with crisp white rectangle
           compCtx.fillStyle = '#ffffff';
           compCtx.fillRect(
@@ -2107,22 +2200,37 @@ export class PDFAnnotatorEngine {
 
           // Vector mask on PDF page stream directly
           if (typeof page.drawRectangle === 'function' && typeof rgb === 'function') {
-            const pdfScaleX = width / wrapper.clientWidth;
-            const pdfScaleY = height / wrapper.clientHeight;
-            const pdfX = (spanRect.left - wrapperRect.left) * pdfScaleX;
-            const maxAllowedPdfW = (parseFloat(span.style.maxWidth) || spanRect.width || span._originalWidth || 100) * pdfScaleX;
-            const pdfW = Math.min(maxAllowedPdfW, Math.max(span._originalWidth || 0, spanRect.width) * pdfScaleX);
-            const blockCssH = blockH / scaleY;
-            const pdfH = blockCssH * pdfScaleY;
-            const pdfY = height - ((spanRect.top - wrapperRect.top + blockCssH) * pdfScaleY);
+            const pdfScaleX = width / wrapW;
+            const pdfScaleY = height / wrapH;
+            const normX = (spanRect && wrapperRect && spanRect.width > 0)
+              ? (spanRect.left - wrapperRect.left) / wrapW
+              : norm.x;
+            const normY = (spanRect && wrapperRect && spanRect.height > 0)
+              ? (spanRect.top - wrapperRect.top) / wrapH
+              : norm.y;
+            const safeNormX = isFinite(normX) ? Math.max(0, Math.min(1, normX)) : (norm.x || 0);
+            const safeNormY = isFinite(normY) ? Math.max(0, Math.min(1, normY)) : (norm.y || 0);
+
+            const pdfX = safeNormX * width;
+            const pdfW = Math.max(20, (maskW / sX) * pdfScaleX);
+            const blockCssH = Math.max(origH, blockH / sY);
+            const pdfH = Math.max(12, blockCssH * pdfScaleY);
+            const pdfY = height - (safeNormY * height + pdfH);
+
             const pdfBX = Math.max(4, 3 * pdfScaleX);
             const pdfBTop = Math.max(4, 3 * pdfScaleY);
             const pdfBBottom = Math.max(5, 4 * pdfScaleY);
+
+            const safePdfX = isFinite(pdfX) ? Math.max(0, pdfX - pdfBX) : 0;
+            const safePdfY = isFinite(pdfY) ? Math.max(0, pdfY - pdfBBottom) : 0;
+            const safePdfW = isFinite(pdfW) ? (pdfW + pdfBX * 2) : 100;
+            const safePdfH = isFinite(pdfH) ? (pdfH + pdfBTop + pdfBBottom) : 20;
+
             page.drawRectangle({
-              x: Math.max(0, pdfX - pdfBX),
-              y: Math.max(0, pdfY - pdfBBottom),
-              width: pdfW + pdfBX * 2,
-              height: pdfH + pdfBTop + pdfBBottom,
+              x: safePdfX,
+              y: safePdfY,
+              width: safePdfW,
+              height: safePdfH,
               color: rgb(1, 1, 1)
             });
           }
@@ -2630,6 +2738,12 @@ export class PDFAnnotatorEngine {
         return;
       }
       bar.style.display = 'flex';
+      if (typeof syncLockBtnState === 'function') {
+        syncLockBtnState();
+      }
+      if (typeof element._syncTextBoxControls === 'function') {
+        element._syncTextBoxControls();
+      }
       const elRect = element.getBoundingClientRect();
       const parentRect = parent.getBoundingClientRect();
       const top = elRect.top - parentRect.top;
@@ -2641,10 +2755,24 @@ export class PDFAnnotatorEngine {
       } else {
         bar.style.top = `${Math.round(top - 38)}px`;
       }
-      bar.style.left = `${Math.round(left + width / 2)}px`;
+      const barW = bar.offsetWidth || 260;
+      const wrapW = parent.clientWidth || 800;
+      let barLeft = left + width / 2;
+      barLeft = Math.max(barW / 2 + 10, Math.min(wrapW - barW / 2 - 10, barLeft));
+      bar.style.left = `${Math.round(barLeft)}px`;
       bar.style.transform = 'translateX(-50%)';
     };
     element._updateBar = updateBar;
+
+    // Prevent focus loss when interacting with floating action bar
+    bar.addEventListener('mousedown', (e) => {
+      if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'INPUT') {
+        e.preventDefault();
+      }
+      e.stopPropagation();
+    });
+    bar.addEventListener('pointerdown', (e) => e.stopPropagation());
+    bar.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
 
     if (isWhiteout) {
       const label = document.createElement('span');
@@ -2652,10 +2780,147 @@ export class PDFAnnotatorEngine {
       label.textContent = '⬜ Whiteout Mask';
       bar.appendChild(label);
     } else if (isTextBox) {
-      const label = document.createElement('span');
-      label.className = 'element-bar-label';
-      label.textContent = '🔤 Text Box';
-      bar.appendChild(label);
+      const contentArea = element.querySelector('.textbox-content') || element;
+
+      // Font Family
+      const selFont = document.createElement('select');
+      selFont.className = 'element-bar-select tb-font';
+      selFont.title = 'Font Family';
+      selFont.innerHTML = `
+        <option value="Inter, sans-serif">Sans-Serif</option>
+        <option value="Arial, sans-serif">Arial</option>
+        <option value="'Times New Roman', serif">Times</option>
+        <option value="'Courier New', monospace">Courier</option>
+        <option value="'Georgia', serif">Georgia</option>
+        <option value="'Calibri', sans-serif">Calibri</option>
+      `;
+      selFont.onchange = (e) => {
+        contentArea.style.fontFamily = selFont.value;
+        contentArea.focus();
+      };
+      bar.appendChild(selFont);
+
+      // Font Size
+      const selSize = document.createElement('select');
+      selSize.className = 'element-bar-select tb-size';
+      selSize.title = 'Font Size';
+      selSize.innerHTML = `
+        <option value="10">10</option>
+        <option value="12">12</option>
+        <option value="14">14</option>
+        <option value="16" selected>16</option>
+        <option value="18">18</option>
+        <option value="20">20</option>
+        <option value="24">24</option>
+        <option value="28">28</option>
+        <option value="36">36</option>
+      `;
+      selSize.onchange = (e) => {
+        contentArea.style.fontSize = `${selSize.value}px`;
+        contentArea.focus();
+      };
+      bar.appendChild(selSize);
+
+      const sep1 = document.createElement('span');
+      sep1.className = 'element-bar-sep';
+      bar.appendChild(sep1);
+
+      // Bold
+      const btnBold = document.createElement('button');
+      btnBold.className = 'element-bar-btn tb-bold';
+      btnBold.title = 'Bold';
+      btnBold.innerHTML = '<b>B</b>';
+      btnBold.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
+      btnBold.onclick = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        document.execCommand('bold', false, null);
+        const curW = contentArea.style.fontWeight;
+        const willBold = !(curW === 'bold' || curW === '700' || parseInt(curW, 10) >= 600);
+        contentArea.style.fontWeight = willBold ? '700' : 'normal';
+        btnBold.classList.toggle('active', willBold);
+        contentArea.focus();
+      };
+      bar.appendChild(btnBold);
+
+      // Italic
+      const btnItalic = document.createElement('button');
+      btnItalic.className = 'element-bar-btn tb-italic';
+      btnItalic.title = 'Italic';
+      btnItalic.innerHTML = '<i>I</i>';
+      btnItalic.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
+      btnItalic.onclick = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        document.execCommand('italic', false, null);
+        const willItalic = contentArea.style.fontStyle !== 'italic';
+        contentArea.style.fontStyle = willItalic ? 'italic' : 'normal';
+        btnItalic.classList.toggle('active', willItalic);
+        contentArea.focus();
+      };
+      bar.appendChild(btnItalic);
+
+      // Underline
+      const btnUnder = document.createElement('button');
+      btnUnder.className = 'element-bar-btn tb-under';
+      btnUnder.title = 'Underline';
+      btnUnder.innerHTML = '<u>U</u>';
+      btnUnder.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
+      btnUnder.onclick = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        document.execCommand('underline', false, null);
+        const cur = contentArea.style.textDecoration || '';
+        const willUnder = !cur.includes('underline');
+        contentArea.style.textDecoration = willUnder ? `${cur} underline`.trim() : cur.replace(/underline/g, '').trim();
+        btnUnder.classList.toggle('active', willUnder);
+        contentArea.focus();
+      };
+      bar.appendChild(btnUnder);
+
+      // Strike
+      const btnStrike = document.createElement('button');
+      btnStrike.className = 'element-bar-btn tb-strike';
+      btnStrike.title = 'Strikethrough';
+      btnStrike.innerHTML = '<s>S</s>';
+      btnStrike.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
+      btnStrike.onclick = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        document.execCommand('strikeThrough', false, null);
+        const cur = contentArea.style.textDecoration || '';
+        const willStrike = !cur.includes('line-through');
+        contentArea.style.textDecoration = willStrike ? `${cur} line-through`.trim() : cur.replace(/line-through/g, '').trim();
+        btnStrike.classList.toggle('active', willStrike);
+        contentArea.focus();
+      };
+      bar.appendChild(btnStrike);
+
+      const sep2 = document.createElement('span');
+      sep2.className = 'element-bar-sep';
+      bar.appendChild(sep2);
+
+      // Color picker
+      const inputColor = document.createElement('input');
+      inputColor.type = 'color';
+      inputColor.className = 'element-bar-color tb-color';
+      inputColor.title = 'Text Color';
+      inputColor.value = '#000000';
+      inputColor.oninput = (e) => {
+        document.execCommand('foreColor', false, inputColor.value);
+        contentArea.style.color = inputColor.value;
+        contentArea.focus();
+      };
+      bar.appendChild(inputColor);
+
+      // Synchronize in updateBar
+      element._syncTextBoxControls = () => {
+        const cs = window.getComputedStyle(contentArea);
+        btnBold.classList.toggle('active', cs.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 600);
+        btnItalic.classList.toggle('active', cs.fontStyle === 'italic');
+        btnUnder.classList.toggle('active', (cs.textDecoration || '').includes('underline'));
+        btnStrike.classList.toggle('active', (cs.textDecoration || '').includes('line-through'));
+        if (cs.fontSize) {
+          const fs = Math.round(parseFloat(cs.fontSize));
+          if (selSize.querySelector(`option[value="${fs}"]`)) selSize.value = String(fs);
+        }
+      };
     } else {
       // Rotate 90° CCW
       const btnRotCCW = document.createElement('button');
@@ -2688,25 +2953,44 @@ export class PDFAnnotatorEngine {
       bar.appendChild(btnRotCW);
     }
 
-    // Lock toggle button
+    // Lock toggle button with crisp distinct vector SVG icons & label
+    const lockSvgLocked = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block; vertical-align:middle;"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>`;
+    const lockSvgUnlocked = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block; vertical-align:middle;"><path d="M12 13c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6-5h-1V6c0-2.76-2.24-5-5-5-2.28 0-4.27 1.54-4.84 3.75-.14.54.18 1.08.72 1.23.53.14 1.08-.18 1.22-.72C10.51 3.79 11.94 3 13.5 3c1.93 0 3.5 1.57 3.5 3.5V8H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z"/></svg>`;
+
     const btnLock = document.createElement('button');
     btnLock.className = 'element-bar-btn btn-lock';
-    const isLockedInit = element.dataset.locked === 'true';
-    btnLock.innerHTML = isLockedInit ? '🔒' : '🔓';
-    btnLock.title = isLockedInit ? 'Click to Unlock element' : 'Lock in place';
-    if (isLockedInit) btnLock.classList.add('is-locked');
+    element._btnLock = btnLock;
 
-    btnLock.onclick = (e) => {
-      e.stopPropagation();
+    const syncLockBtnState = () => {
       const isLocked = element.dataset.locked === 'true';
-      const willLock = !isLocked;
-      element.dataset.locked = willLock ? 'true' : 'false';
-      element.classList.toggle('element-locked', willLock);
-      btnLock.innerHTML = willLock ? '🔒' : '🔓';
-      btnLock.title = willLock ? 'Click to Unlock element' : 'Lock in place';
-      btnLock.classList.toggle('is-locked', willLock);
+      btnLock.innerHTML = isLocked
+        ? `${lockSvgLocked} <span class="lock-btn-text">Locked</span>`
+        : `${lockSvgUnlocked} <span class="lock-btn-text">Lock</span>`;
+      btnLock.title = isLocked ? 'Locked in place: Object cannot be moved or resized. Click to Unlock.' : 'Click to Lock object in place';
+      btnLock.classList.toggle('is-locked', isLocked);
+      btnLock.classList.toggle('is-unlocked', !isLocked);
+      element.classList.toggle('element-locked', isLocked);
+    };
+    syncLockBtnState();
+
+    const toggleLock = (e) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      const isCurrentlyLocked = element.dataset.locked === 'true';
+      element.dataset.locked = isCurrentlyLocked ? 'false' : 'true';
+      syncLockBtnState();
       updateBar();
     };
+
+    btnLock.onclick = toggleLock;
+    btnLock.addEventListener('pointerdown', (e) => e.stopPropagation());
+    btnLock.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+      toggleLock(e);
+    }, { passive: false });
+
     bar.appendChild(btnLock);
 
     // Delete button (always accessible even when element is locked)

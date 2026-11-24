@@ -562,13 +562,27 @@ export class UIController {
           this.setStatus('Eraser active: tap any annotation or drag across ink to erase');
         } else if (tool === 'underline') {
           closeAllSheets();
-          const ok = this.app.annotator.toggleUnderline();
-          this.setStatus(ok ? 'Applied underline markup to selected text' : 'Select text on the PDF to underline');
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount > 0 && !sel.isCollapsed && sel.toString().trim().length > 0) {
+            this.app.annotator.toggleUnderline();
+            this.setStatus('Applied underline markup to selected text');
+          } else {
+            this.setAnnotationTool('underline');
+            this.app.annotator.setTool('underline');
+            this.setStatus('Underline active: drag across any text on the page to underline it');
+          }
           return;
         } else if (tool === 'strikethrough') {
           closeAllSheets();
-          const ok = this.app.annotator.toggleStrikethrough();
-          this.setStatus(ok ? 'Applied strikethrough markup to selected text' : 'Select text on the PDF to strikethrough');
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount > 0 && !sel.isCollapsed && sel.toString().trim().length > 0) {
+            this.app.annotator.toggleStrikethrough();
+            this.setStatus('Applied strikethrough markup to selected text');
+          } else {
+            this.setAnnotationTool('strikethrough');
+            this.app.annotator.setTool('strikethrough');
+            this.setStatus('Strikethrough active: drag across any text on the page to strike through it');
+          }
           return;
         } else if (tool === 'pen' || tool === 'highlighter') {
           const s = tool === 'highlighter' ? this.app.annotator.highlighterSettings : this.app.annotator.penSettings;
@@ -2661,7 +2675,7 @@ export class UIController {
   }
 
   setAnnotationTool(toolName) {
-    const tools = ['select', 'pen', 'highlighter', 'eraser', 'note', 'text', 'rect', 'circle', 'line'];
+    const tools = ['select', 'pen', 'highlighter', 'eraser', 'note', 'text', 'rect', 'circle', 'line', 'underline', 'strikethrough'];
     tools.forEach(t => {
       const btn = document.getElementById(`tool-${t}`);
       if (btn) btn.classList.toggle('active', t === toolName);

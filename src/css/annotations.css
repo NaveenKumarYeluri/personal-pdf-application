@@ -471,20 +471,97 @@ body.mode-view .textbox-drag-bar {
   color: #ffffff;
 }
 
+.element-bar-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.element-bar-btn.btn-lock {
+  gap: 4px;
+  font-weight: 500;
+  font-size: 11px;
+}
+
 .element-bar-btn.btn-lock.is-locked {
   background: rgba(234, 179, 8, 0.25);
   color: #fde047;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+}
+
+.element-bar-btn.btn-lock.is-unlocked {
+  color: #94a3b8;
+}
+
+.lock-btn-text {
+  font-size: 11px;
+}
+
+.element-bar-select {
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.element-bar-select:focus {
+  border-color: #3b82f6;
+}
+
+.element-bar-sep {
+  display: inline-block;
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 2px;
+}
+
+.element-bar-color {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  padding: 0;
+}
+
+.element-bar-color::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.element-bar-color::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+#in-place-floating-bar {
+  display: flex !important;
+  z-index: 1000;
+}
+
+#in-place-floating-bar.hidden {
+  display: none !important;
 }
 
 /* Locked Element State: Pinned in place, clicks pass through */
 .element-locked {
   cursor: default !important;
+  user-select: none;
 }
 
 .element-locked .element-resize-handle,
 .element-locked .element-rotate-handle,
-.element-locked .element-rotate-line {
+.element-locked .element-rotate-line,
+.element-locked .textbox-drag-bar {
   display: none !important;
+  pointer-events: none !important;
 }
 
 /* Legacy single handle compatibility */

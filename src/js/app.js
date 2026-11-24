@@ -53,7 +53,8 @@ class PersonalPDFApp {
     this._setupTauriFileDrop();
     this._initBackButton();
     this._initAppStatePersistence();
-    this._restoreSession();
+    // Do not automatically reopen previously opened document on fresh application startup.
+    // Let user open document as and when needed.
 
     // Check if running in native desktop shell
     if (window.__TAURI__) {
@@ -1169,6 +1170,9 @@ class PersonalPDFApp {
     cleanSpanContent();
     this._reflowEditedPage(pageNum, pageWrapper);
 
+    // Show floating formatting toolbar directly on top of the text block being edited
+    this._showInPlaceFloatingBar(span, pageNum, pageWrapper);
+
     // Place caret at clicked coordinates if available
     span.focus();
     if (editData.clientX !== undefined && editData.clientY !== undefined) {
@@ -1223,6 +1227,7 @@ class PersonalPDFApp {
         span._fullReflowHtml = span.innerHTML;
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
         this._scheduleReflow(pageNum);
+        if (this._activeInPlaceBarUpdate) this._activeInPlaceBarUpdate();
       });
 
       span.addEventListener('input', (e) => {
@@ -1235,6 +1240,7 @@ class PersonalPDFApp {
         span._overflowReflowText = null;
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
         this._scheduleReflow(pageNum);
+        if (this._activeInPlaceBarUpdate) this._activeInPlaceBarUpdate();
       });
 
       span.addEventListener('paste', (e) => {
@@ -1268,6 +1274,7 @@ class PersonalPDFApp {
       span.addEventListener('keydown', (kEvt) => {
         if (kEvt.key === 'Escape') {
           kEvt.preventDefault();
+          this._hideInPlaceFloatingBar();
           this.annotator.revertInPlaceEdit(span, pageNum);
           document.body.classList.remove('in-place-editing-active');
           const tLayer = span.closest('.textLayer');
@@ -1340,6 +1347,7 @@ class PersonalPDFApp {
       });
 
       span.addEventListener('blur', () => {
+        this._hideInPlaceFloatingBar();
         span._isComposing = false;
         span._fullReflowText = this._getEditorText(span);
         span._fullReflowHtml = span.innerHTML;
@@ -1349,7 +1357,7 @@ class PersonalPDFApp {
         document.body.classList.remove('in-place-editing-active');
         const tLayer = span.closest('.textLayer');
         if (tLayer) tLayer.classList.remove('editing-active');
-        const curText = span._fullReflowText || span.innerText || span.textContent || '';
+        const curText = span._fullReflowText !== undefined ? span._fullReflowText : (span.innerText !== undefined ? span.innerText : (span.textContent || ''));
         if (curText !== span._originalText) {
           span.classList.add('in-place-modified');
           if (tLayer) tLayer.classList.add('has-modifications');
@@ -1954,7 +1962,7 @@ class PersonalPDFApp {
       let matchedSpan = null;
       const matchRect = edit.matchRect || edit.normRect;
 
-      // 1. First try matching by the clicked fragment's position proximity.
+      // 1. First try matching by the clicked fragment's position proximity (relaxed for multi-line paragraphs).
       if (matchRect && pageWrapper) {
         const wrapW = pageWrapper.clientWidth || 1;
         const wrapH = pageWrapper.clientHeight || 1;
@@ -1962,7 +1970,15 @@ class PersonalPDFApp {
           const sLeft = s.offsetLeft / wrapW;
           const sTop = s.offsetTop / wrapH;
           const dist = Math.hypot(sLeft - matchRect.x, sTop - matchRect.y);
-          if (dist < 0.05 && (s.textContent === edit.originalText || (edit.originalText && s.textContent.includes(edit.originalText)))) {
+          const st = (s.textContent || '').trim();
+          if (dist < 0.08 && (
+            !edit.originalText ||
+            s.textContent === edit.originalText ||
+            s.textContent === edit.originalFragmentText ||
+            (edit.originalText && edit.originalText.includes(st)) ||
+            (edit.originalFragmentText && edit.originalFragmentText.includes(st)) ||
+            (st && edit.originalText.includes(st))
+          )) {
             matchedSpan = s;
             break;
           }
@@ -1971,7 +1987,19 @@ class PersonalPDFApp {
 
       // 2. Fallback to text match
       if (!matchedSpan) {
-        matchedSpan = spans.find(s => s.textContent === edit.originalText || (edit.originalText && s.textContent.includes(edit.originalText)));
+        matchedSpan = spans.find(s => {
+          const st = (s.textContent || '').trim();
+          if (!st) return false;
+          return s.textContent === edit.originalText ||
+            s.textContent === edit.originalFragmentText ||
+            (edit.originalText && edit.originalText.includes(st)) ||
+            (edit.originalFragmentText && edit.originalFragmentText.includes(st));
+        });
+      }
+
+      // 3. Fallback: if origSpan is already in this page's DOM, keep it!
+      if (!matchedSpan && origSpan && (pageWrapper.contains(origSpan) || document.body.contains(origSpan))) {
+        matchedSpan = origSpan;
       }
 
       if (matchedSpan) {
@@ -1985,11 +2013,13 @@ class PersonalPDFApp {
           matchedSpan._originalInlineStyle = edit.originalInlineStyle;
         }
 
-        if (edit.htmlContent) {
+        if (edit.htmlContent !== undefined && edit.htmlContent !== null) {
           matchedSpan.innerHTML = edit.htmlContent;
         } else {
-          matchedSpan.textContent = edit.newText;
+          matchedSpan.textContent = edit.newText !== undefined ? edit.newText : '';
         }
+        matchedSpan._fullReflowText = edit.newText !== undefined ? edit.newText : (matchedSpan.textContent || '');
+        matchedSpan._fullReflowHtml = edit.htmlContent !== undefined ? edit.htmlContent : matchedSpan.innerHTML;
         if (edit.fontWeight) {
           matchedSpan.style.fontWeight = edit.fontWeight;
           matchedSpan._customFontWeight = edit.fontWeight;
@@ -2056,13 +2086,190 @@ class PersonalPDFApp {
           canvasCtx.restore();
         }
 
-        pageEdits.delete(origSpan);
-        pageEdits.set(matchedSpan, edit);
+        if (origSpan !== matchedSpan) {
+          pageEdits.delete(origSpan);
+          pageEdits.set(matchedSpan, edit);
+        }
       }
     }
 
     // Re-apply canvas reflow after the text layer has been rebuilt.
     this._reflowEditedPage(pageNum, pageWrapper);
+  }
+
+  _showInPlaceFloatingBar(span, pageNum, pageWrapper) {
+    let bar = document.getElementById('in-place-floating-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'in-place-floating-bar';
+      bar.className = 'element-floating-bar in-place-bar';
+      document.body.appendChild(bar);
+
+      // Prevent mousedown on the toolbar buttons from blurring the active editable text block!
+      bar.addEventListener('mousedown', (e) => {
+        if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'INPUT') {
+          e.preventDefault();
+        }
+        e.stopPropagation();
+      });
+      bar.addEventListener('pointerdown', (e) => e.stopPropagation());
+      bar.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+
+      window.addEventListener('scroll', () => { if (this._activeInPlaceBarUpdate) this._activeInPlaceBarUpdate(); }, { passive: true });
+      window.addEventListener('resize', () => { if (this._activeInPlaceBarUpdate) this._activeInPlaceBarUpdate(); }, { passive: true });
+    }
+
+    bar.innerHTML = `
+      <select class="element-bar-select in-place-font" title="Font Family">
+        <option value="Arial, sans-serif">Arial</option>
+        <option value="'Times New Roman', serif">Times</option>
+        <option value="'Courier New', monospace">Courier</option>
+        <option value="Georgia, serif">Georgia</option>
+        <option value="Verdana, sans-serif">Verdana</option>
+        <option value="Calibri, sans-serif">Calibri</option>
+      </select>
+      <select class="element-bar-select in-place-size" title="Font Size">
+        <option value="9">9</option>
+        <option value="10">10</option>
+        <option value="11">11</option>
+        <option value="12">12</option>
+        <option value="14">14</option>
+        <option value="16">16</option>
+        <option value="18">18</option>
+        <option value="20">20</option>
+        <option value="24">24</option>
+        <option value="28">28</option>
+        <option value="36">36</option>
+      </select>
+      <span class="element-bar-sep"></span>
+      <button class="element-bar-btn in-place-btn-bold" title="Bold (Ctrl+B)"><b>B</b></button>
+      <button class="element-bar-btn in-place-btn-italic" title="Italic (Ctrl+I)"><i>I</i></button>
+      <button class="element-bar-btn in-place-btn-underline" title="Underline (Ctrl+U)"><u>U</u></button>
+      <button class="element-bar-btn in-place-btn-strike" title="Strikethrough"><s>S</s></button>
+      <span class="element-bar-sep"></span>
+      <input type="color" class="element-bar-color in-place-color" title="Text Color" value="#111827">
+      <span class="element-bar-sep"></span>
+      <button class="element-bar-btn in-place-btn-done" title="Done Editing (Save)" style="color:#22c55e; font-weight:700;">✓</button>
+    `;
+
+    const selFont = bar.querySelector('.in-place-font');
+    const selSize = bar.querySelector('.in-place-size');
+    const btnBold = bar.querySelector('.in-place-btn-bold');
+    const btnItalic = bar.querySelector('.in-place-btn-italic');
+    const btnUnder = bar.querySelector('.in-place-btn-underline');
+    const btnStrike = bar.querySelector('.in-place-btn-strike');
+    const inputColor = bar.querySelector('.in-place-color');
+    const btnDone = bar.querySelector('.in-place-btn-done');
+
+    const cs = window.getComputedStyle(span);
+    const fs = Math.round(parseFloat(cs.fontSize) || 16);
+    if (selSize.querySelector(`option[value="${fs}"]`)) selSize.value = String(fs);
+    btnBold.classList.toggle('active', cs.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 600);
+    btnItalic.classList.toggle('active', cs.fontStyle === 'italic');
+    btnUnder.classList.toggle('active', (cs.textDecoration || '').includes('underline'));
+    btnStrike.classList.toggle('active', (cs.textDecoration || '').includes('line-through'));
+
+    btnBold.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      document.execCommand('bold', false, null);
+      span._fullReflowText = this._getEditorText(span);
+      span._fullReflowHtml = span.innerHTML;
+      this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+      btnBold.classList.toggle('active', document.queryCommandState('bold'));
+      span.focus();
+    };
+
+    btnItalic.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      document.execCommand('italic', false, null);
+      span._fullReflowText = this._getEditorText(span);
+      span._fullReflowHtml = span.innerHTML;
+      this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+      btnItalic.classList.toggle('active', document.queryCommandState('italic'));
+      span.focus();
+    };
+
+    btnUnder.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      document.execCommand('underline', false, null);
+      span._fullReflowText = this._getEditorText(span);
+      span._fullReflowHtml = span.innerHTML;
+      this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+      btnUnder.classList.toggle('active', document.queryCommandState('underline'));
+      span.focus();
+    };
+
+    btnStrike.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      document.execCommand('strikeThrough', false, null);
+      span._fullReflowText = this._getEditorText(span);
+      span._fullReflowHtml = span.innerHTML;
+      this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+      btnStrike.classList.toggle('active', document.queryCommandState('strikeThrough'));
+      span.focus();
+    };
+
+    selFont.onchange = (e) => {
+      document.execCommand('fontName', false, selFont.value);
+      span.style.fontFamily = selFont.value;
+      span._customFontStack = selFont.value;
+      span._fullReflowText = this._getEditorText(span);
+      span._fullReflowHtml = span.innerHTML;
+      this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+      this._scheduleReflow(pageNum);
+      span.focus();
+    };
+
+    selSize.onchange = (e) => {
+      const val = parseFloat(selSize.value);
+      if (val > 0) {
+        span.style.fontSize = `${val}px`;
+        span._baseFontSize = val;
+        span._fullReflowText = this._getEditorText(span);
+        span._fullReflowHtml = span.innerHTML;
+        this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+        this._scheduleReflow(pageNum);
+      }
+      span.focus();
+    };
+
+    inputColor.oninput = (e) => {
+      document.execCommand('foreColor', false, inputColor.value);
+      span.style.color = inputColor.value;
+      span._customColor = inputColor.value;
+      span._fullReflowText = this._getEditorText(span);
+      span._fullReflowHtml = span.innerHTML;
+      this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+      span.focus();
+    };
+
+    btnDone.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      span.blur();
+    };
+
+    const updatePos = () => {
+      if (!span.isConnected || !span.classList.contains('inline-editing')) {
+        bar.style.display = 'none';
+        return;
+      }
+      bar.style.display = 'flex';
+      const r = span.getBoundingClientRect();
+      const top = r.top < 50 ? (r.bottom + 6) : (r.top - 42);
+      bar.style.position = 'fixed';
+      bar.style.top = `${Math.round(top)}px`;
+      bar.style.left = `${Math.round(Math.max(160, Math.min(window.innerWidth - 160, r.left + r.width / 2)))}px`;
+      bar.style.transform = 'translateX(-50%)';
+      bar.style.zIndex = '9999';
+    };
+    updatePos();
+    this._activeInPlaceBarUpdate = updatePos;
+  }
+
+  _hideInPlaceFloatingBar() {
+    const bar = document.getElementById('in-place-floating-bar');
+    if (bar) bar.style.display = 'none';
+    this._activeInPlaceBarUpdate = null;
   }
 
   /**
@@ -3686,11 +3893,11 @@ class PersonalPDFApp {
     const handleResume = async () => {
       try {
         if (!this.currentPdfBytes) {
-          console.log('[Session] Resumed with empty memory: restoring full document session');
-          await this._restoreSession();
+          // Keep empty on fresh start or unpersisted resume
         } else if (this.viewer && this.viewer.pdfDoc) {
-          console.log('[Session] Resumed from background: re-rendering pages to restore GPU surfaces');
-          await this.viewer.renderAllPages();
+          // Do not re-render all pages on simple visibility/dialog change:
+          // re-rendering wipes in-place DOM edits, canvas overlays, and resets modified paragraphs!
+          console.log('[Session] Resumed from background: preserving active DOM state and canvases');
         }
       } catch (e) {
         console.warn('[Session] Failed to recover session on resume:', e);
