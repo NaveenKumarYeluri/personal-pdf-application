@@ -809,6 +809,10 @@ export class PDFViewerEngine {
     }
 
     textLayer.addEventListener('mousedown', (e) => {
+      // Do not snap selection to other spans if user is actively in-place editing
+      if (document.body.classList.contains('in-place-editing-active')) {
+        return;
+      }
       // If user clicked directly on the textLayer background or endOfContent spacer (e.g. whitespace or margins)
       if (e.target === textLayer || e.target === endOfContent) {
         const clickX = e.clientX;
@@ -1038,10 +1042,12 @@ export class PDFViewerEngine {
     const curr = document.getElementById(`thumb-${pageNum}`);
     if (!curr) return;
     curr.classList.add('active');
-    // Only scroll the sidebar when the thumbnails pane is actually visible.
-    // Calling scrollIntoView while another tab is open caused surprise jumps.
+    // Only scroll sidebar if sidebar is actually present and visible on screen.
+    // Calling scrollIntoView while hidden or on mobile causes surprise viewport page jumps.
+    const sidebar = document.querySelector('.sidebar');
+    const isSidebarVisible = sidebar && sidebar.offsetParent !== null && window.innerWidth > 768;
     const pane = document.getElementById('tab-thumbnails');
-    if (!pane || pane.classList.contains('active')) {
+    if (isSidebarVisible && pane && pane.classList.contains('active')) {
       curr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }

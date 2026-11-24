@@ -234,10 +234,28 @@ html, body, #app, #viewer-container, .page-wrapper, .textLayer, .textLayer span 
 
 /* While an in-place span is actively being edited, restrict text selection strictly to the active editor
    so keyboard Select All (Ctrl+A / Cmd+A) and soft keyboard Select All cannot leak into other spans or jump the viewport */
-body.in-place-editing-active .textLayer span:not(.inline-editing),
-.textLayer.editing-active span:not(.inline-editing) {
+body.in-place-editing-active {
   user-select: none !important;
   -webkit-user-select: none !important;
+}
+
+body.in-place-editing-active .textLayer {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+body.in-place-editing-active .page-wrapper:not(.editing-page),
+body.in-place-editing-active .textLayer span:not(.inline-editing) {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  pointer-events: none !important;
+}
+
+body.in-place-editing-active .textLayer span.inline-editing,
+body.in-place-editing-active .textLayer span.inline-editing * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  pointer-events: auto !important;
 }
 
 .page-wrapper.editing-content .textLayer span.reflow-overflow-span,

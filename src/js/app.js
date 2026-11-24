@@ -638,9 +638,9 @@ class PersonalPDFApp {
           e.preventDefault();
           this.viewer.setZoom('custom', this.viewer.scale * 0.8);
         }
-      } else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+      } else if ((e.key === 'ArrowRight' || e.key === 'PageDown') && !document.body.classList.contains('in-place-editing-active')) {
         this.viewer.goToPage(this.viewer.currentPage + 1);
-      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      } else if ((e.key === 'ArrowLeft' || e.key === 'PageUp') && !document.body.classList.contains('in-place-editing-active')) {
         this.viewer.goToPage(this.viewer.currentPage - 1);
       }
     });
@@ -1206,11 +1206,49 @@ class PersonalPDFApp {
     if (!span._hasDirectEditListeners) {
       span._hasDirectEditListeners = true;
 
-      // When caret moves within span, sync toolbar controls to the style under the caret
+      // Contain touch gestures within the editable paragraph so swiping does not fling the PDF viewer across pages
+      span.addEventListener('touchstart', (tEvt) => {
+        if (tEvt.touches && tEvt.touches.length === 1) {
+          tEvt.stopPropagation();
+        }
+      }, { passive: true });
+
+      span.addEventListener('touchmove', (tEvt) => {
+        if (tEvt.touches && tEvt.touches.length === 1) {
+          tEvt.stopPropagation();
+        }
+      }, { passive: true });
+
+      span.addEventListener('touchend', (tEvt) => {
+        if (tEvt.changedTouches && tEvt.changedTouches.length === 1) {
+          tEvt.stopPropagation();
+        }
+      }, { passive: true });
+
+      // Clamp selection strictly within span so swiping to the end of the paragraph never leaks
+      // into surrounding textLayer spans, other pages, or top app bar buttons.
       document.addEventListener('selectionchange', () => {
-        if (span.classList.contains('inline-editing') && this.ui) {
+        if (span.classList.contains('inline-editing')) {
           const sel = window.getSelection();
-          if (sel && sel.anchorNode && span.contains(sel.anchorNode)) {
+          if (sel && sel.rangeCount > 0) {
+            const range = sel.getRangeAt(0);
+            const insideStart = span === range.startContainer || span.contains(range.startContainer);
+            const insideEnd = span === range.endContainer || span.contains(range.endContainer);
+            if (insideStart && !insideEnd) {
+              try {
+                range.setEnd(span, span.childNodes.length);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              } catch (_) {}
+            } else if (!insideStart && insideEnd) {
+              try {
+                range.setStart(span, 0);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              } catch (_) {}
+            }
+          }
+          if (this.ui) {
             this.ui.syncInPlaceSpan(span);
           }
         }
@@ -2117,6 +2155,14 @@ class PersonalPDFApp {
 
       window.addEventListener('scroll', () => { if (this._activeInPlaceBarUpdate) this._activeInPlaceBarUpdate(); }, { passive: true });
       window.addEventListener('resize', () => { if (this._activeInPlaceBarUpdate) this._activeInPlaceBarUpdate(); }, { passive: true });
+
+      const vContainer = document.getElementById('viewer-container');
+      if (vContainer && !vContainer._hasInPlaceBarScrollListener) {
+        vContainer._hasInPlaceBarScrollListener = true;
+        vContainer.addEventListener('scroll', () => {
+          if (this._activeInPlaceBarUpdate) this._activeInPlaceBarUpdate();
+        }, { passive: true });
+      }
     }
 
     bar.innerHTML = `
@@ -2255,10 +2301,13 @@ class PersonalPDFApp {
       }
       bar.style.display = 'flex';
       const r = span.getBoundingClientRect();
-      const top = r.top < 50 ? (r.bottom + 6) : (r.top - 42);
+      const minTopThreshold = (window.innerWidth <= 768) ? 116 : 56;
+      const top = r.top < minTopThreshold ? (r.bottom + 8) : (r.top - 44);
       bar.style.position = 'fixed';
       bar.style.top = `${Math.round(top)}px`;
-      bar.style.left = `${Math.round(Math.max(160, Math.min(window.innerWidth - 160, r.left + r.width / 2)))}px`;
+      const barW = bar.offsetWidth || 300;
+      const left = Math.max(barW / 2 + 8, Math.min(window.innerWidth - barW / 2 - 8, r.left + r.width / 2));
+      bar.style.left = `${Math.round(left)}px`;
       bar.style.transform = 'translateX(-50%)';
       bar.style.zIndex = '9999';
     };

@@ -97,6 +97,9 @@ body.theme-light {
     border-bottom: 1px solid var(--m3-sys-outline-variant);
     z-index: 100;
     flex-shrink: 0;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-touch-callout: none !important;
   }
 
   .m3-app-bar-left {
@@ -105,6 +108,16 @@ body.theme-light {
     gap: 12px;
     flex: 1;
     overflow: hidden;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+  }
+
+  .m3-app-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    user-select: none !important;
+    -webkit-user-select: none !important;
   }
 
   .m3-icon-btn {
@@ -120,6 +133,9 @@ body.theme-light {
     cursor: pointer;
     transition: background-color 0.15s ease;
     flex-shrink: 0;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-touch-callout: none !important;
   }
 
   .m3-icon-btn:active {
