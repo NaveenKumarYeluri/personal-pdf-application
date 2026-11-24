@@ -1168,7 +1168,17 @@ export class UIController {
     document.body.classList.add(`mode-${mode}`);
 
     // Deselect any active text box or editor when switching modes
+    if (this.app._hideInPlaceFloatingBar) {
+      this.app._hideInPlaceFloatingBar();
+    }
+    const activeEditSpan = document.querySelector('.textLayer span.inline-editing');
+    if (activeEditSpan) {
+      activeEditSpan.blur();
+    }
     if (this.app.annotator) {
+      if (typeof this.app.annotator.clearActiveEditing === 'function') {
+        this.app.annotator.clearActiveEditing();
+      }
       if (typeof this.app.annotator._deselectAllElements === 'function') {
         this.app.annotator._deselectAllElements();
       }

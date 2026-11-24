@@ -192,6 +192,14 @@ class PersonalPDFApp {
 
     // Deselect annotations, stamps, images, signatures, and whiteouts when clicking outside
     document.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.inline-editing, #in-place-floating-bar, .in-place-bar')) {
+        return;
+      }
+      const activeSpan = document.querySelector('.textLayer span.inline-editing');
+      if (activeSpan) {
+        activeSpan.blur();
+        this._hideInPlaceFloatingBar();
+      }
       if (e.target.closest('#dynamic-mode-tools, .annotation-textbox, .textbox-drag-bar, .textbox-content, .sticky-note-container, .sticky-note-marker, .sticky-note-popup, .btn-delete-note, .placed-stamp, .placed-image-box, .placed-signature-box, .whiteout-box, .element-floating-bar, .element-resize-handle, .element-rotate-handle, .element-rotate-line, .textbox-delete-btn')) {
         return;
       }
@@ -789,6 +797,25 @@ class PersonalPDFApp {
     return '#000000';
   }
 
+  _colorToHex(col) {
+    if (!col) return '#000000';
+    col = String(col).trim();
+    if (col.startsWith('#')) {
+      if (col.length === 4) {
+        return '#' + col[1] + col[1] + col[2] + col[2] + col[3] + col[3];
+      }
+      return col.substring(0, 7);
+    }
+    const match = col.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if (match) {
+      const r = Math.min(255, Math.max(0, parseInt(match[1], 10))).toString(16).padStart(2, '0');
+      const g = Math.min(255, Math.max(0, parseInt(match[2], 10))).toString(16).padStart(2, '0');
+      const b = Math.min(255, Math.max(0, parseInt(match[3], 10))).toString(16).padStart(2, '0');
+      return `#${r}${g}${b}`;
+    }
+    return '#000000';
+  }
+
   /**
    * Build a rich, metric-compatible font stack ensuring subpixel typography match.
    */
@@ -1036,25 +1063,30 @@ class PersonalPDFApp {
     const isDirectTimes = /times|cambria|georgia|garamond|serif/i.test(directFont) && !/sans/i.test(directFont);
     const isMonospace = isDirectMono || /mono|courier|consolas|code/i.test(compStyle.fontFamily || '');
     const isSerif = isDirectTimes || (/(?<!sans-)serif|times|georgia|cambria|garamond/i.test(compStyle.fontFamily || '') && !/sans/i.test(compStyle.fontFamily || ''));
+    const isSansSerif = !isMonospace && !isSerif;
 
-    const docFonts = Array.from(this.viewer.documentFonts || []);
-    const matchingDocFont = (directFont && !/sans-serif|serif|monospace/i.test(directFont))
+    const docFonts = Array.from(this.viewer?.documentFonts || []);
+    const matchingDocFont = (directFont && !/^(?:sans-serif|serif|monospace)$/i.test(directFont))
       ? directFont
       : (docFonts.find(f => {
           const fl = f.toLowerCase();
           if (isMonospace) return fl.includes('consolas') || fl.includes('courier') || fl.includes('mono');
-          if (isSerif) return fl.includes('times') || fl.includes('cambria') || (fl.includes('serif') && !fl.includes('sans'));
-          return fl.includes('calibri') || fl.includes('arial') || fl.includes('helvetica') || fl.includes('sans');
+          if (isSerif) return fl.includes('times') || fl.includes('cambria') || fl.includes('georgia') || fl.includes('garamond') || (fl.includes('serif') && !fl.includes('sans'));
+          return /sans-serif|calibri|arial|helvetica|verdana|tahoma|trebuchet/i.test(fl) || fl.includes('verdana') || fl.includes('calibri') || fl.includes('arial') || fl.includes('helvetica') || fl.includes('sans');
         }) || directFont || docFonts[0]);
 
-    const fontStack = span._paragraphMerge?.dominantFontStack || this._resolveFontStack(matchingDocFont, isMonospace, isSerif);
+    let fontStack = span._paragraphMerge?.dominantFontStack || this._resolveFontStack(matchingDocFont, isMonospace, isSerif);
+    if (!fontStack) {
+      fontStack = `'Calibri', 'Carlito', 'Roboto', 'Segoe UI', Arial, sans-serif`;
+    }
     span.style.fontFamily = fontStack;
     span._customFontStack = fontStack;
 
     // Use dominant paragraph weight and style if merged, otherwise span's own
-    const fontWeight = span._paragraphMerge?.dominantWeight || (span._pdfIsBold || parseInt(compStyle.fontWeight, 10) >= 600 || /bold/i.test(compStyle.fontWeight) ? '700' : '400');
+    const isBold = span._pdfIsBold || parseInt(compStyle.fontWeight, 10) >= 600 || /bold/i.test(compStyle.fontWeight);
+    span._customFontWeight = isBold ? '700' : '400';
+    const fontWeight = span._paragraphMerge?.dominantWeight || span._customFontWeight;
     span.style.fontWeight = fontWeight;
-    span._customFontWeight = fontWeight;
 
     const fontStyle = span._paragraphMerge?.dominantStyle || (span._pdfIsItalic || compStyle.fontStyle === 'italic' || /italic|oblique/i.test(compStyle.fontStyle) ? 'italic' : 'normal');
     span.style.fontStyle = fontStyle;
@@ -2165,14 +2197,41 @@ class PersonalPDFApp {
       }
     }
 
+    const standardFonts = [
+      { name: 'Calibri', value: "'Calibri', 'Carlito', sans-serif" },
+      { name: 'Arial', value: "Arial, sans-serif" },
+      { name: 'Verdana', value: "'Verdana', sans-serif" },
+      { name: 'Tahoma', value: "'Tahoma', sans-serif" },
+      { name: 'Trebuchet MS', value: "'Trebuchet MS', sans-serif" },
+      { name: 'Times New Roman', value: "'Times New Roman', serif" },
+      { name: 'Georgia', value: "Georgia, serif" },
+      { name: 'Garamond', value: "'Garamond', serif" },
+      { name: 'Cambria', value: "'Cambria', serif" },
+      { name: 'Courier New', value: "'Courier New', monospace" },
+      { name: 'Consolas', value: "'Consolas', monospace" },
+      { name: 'Segoe UI', value: "'Segoe UI', sans-serif" },
+      { name: 'Roboto', value: "'Roboto', sans-serif" },
+      { name: 'Helvetica', value: "'Helvetica Neue', Helvetica, sans-serif" },
+      { name: 'Palatino', value: "'Palatino Linotype', 'Palatino', serif" },
+      { name: 'Comic Sans MS', value: "'Comic Sans MS', cursive" },
+      { name: 'Impact', value: "Impact, sans-serif" }
+    ];
+
+    const allFontList = [...standardFonts];
+    if (this.viewer?.documentFonts) {
+      this.viewer.documentFonts.forEach(df => {
+        if (!allFontList.some(f => f.name.toLowerCase() === df.toLowerCase())) {
+          allFontList.unshift({ name: df, value: `'${df}', sans-serif` });
+        }
+      });
+    }
+
+    const curFont = (span.style.fontFamily || span._customFontStack || '').toLowerCase();
+    const curColor = this._colorToHex(span.style.color || span._customColor || span._originalColor || '#000000');
+
     bar.innerHTML = `
       <select class="element-bar-select in-place-font" title="Font Family">
-        <option value="Arial, sans-serif">Arial</option>
-        <option value="'Times New Roman', serif">Times</option>
-        <option value="'Courier New', monospace">Courier</option>
-        <option value="Georgia, serif">Georgia</option>
-        <option value="Verdana, sans-serif">Verdana</option>
-        <option value="Calibri, sans-serif">Calibri</option>
+        ${allFontList.map(f => `<option value="${f.value}">${f.name}</option>`).join('')}
       </select>
       <select class="element-bar-select in-place-size" title="Font Size">
         <option value="9">9</option>
@@ -2193,7 +2252,7 @@ class PersonalPDFApp {
       <button class="element-bar-btn in-place-btn-underline" title="Underline (Ctrl+U)"><u>U</u></button>
       <button class="element-bar-btn in-place-btn-strike" title="Strikethrough"><s>S</s></button>
       <span class="element-bar-sep"></span>
-      <input type="color" class="element-bar-color in-place-color" title="Text Color" value="#111827">
+      <input type="color" class="element-bar-color in-place-color" title="Text Color" value="${curColor}">
       <span class="element-bar-sep"></span>
       <button class="element-bar-btn in-place-btn-done" title="Done Editing (Save)" style="color:#22c55e; font-weight:700;">✓</button>
     `;
@@ -2206,6 +2265,28 @@ class PersonalPDFApp {
     const btnStrike = bar.querySelector('.in-place-btn-strike');
     const inputColor = bar.querySelector('.in-place-color');
     const btnDone = bar.querySelector('.in-place-btn-done');
+
+    // Auto-select the matching font in selFont
+    let fontMatched = false;
+    for (const opt of selFont.options) {
+      const optName = opt.textContent.toLowerCase();
+      const optVal = opt.value.toLowerCase();
+      if (curFont.includes(optName) || curFont.includes(optVal.split(',')[0].replace(/['"]/g, '').trim().toLowerCase())) {
+        selFont.value = opt.value;
+        fontMatched = true;
+        break;
+      }
+    }
+    if (!fontMatched && span.style.fontFamily) {
+      const firstFont = span.style.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
+      if (firstFont) {
+        const customOpt = document.createElement('option');
+        customOpt.value = span.style.fontFamily;
+        customOpt.textContent = firstFont;
+        customOpt.selected = true;
+        selFont.prepend(customOpt);
+      }
+    }
 
     let savedRange = null;
 
@@ -2258,6 +2339,15 @@ class PersonalPDFApp {
       const fs = Math.round(parseFloat(tcs.fontSize) || 16);
       if (selSize.querySelector(`option[value="${fs}"]`)) {
         selSize.value = String(fs);
+      }
+      const targetColor = target.style.color || tcs.color || curColor;
+      inputColor.value = this._colorToHex(targetColor);
+      const targetFont = (target.style.fontFamily || tcs.fontFamily || curFont).toLowerCase();
+      for (const opt of selFont.options) {
+        if (targetFont.includes(opt.textContent.toLowerCase())) {
+          selFont.value = opt.value;
+          break;
+        }
       }
     };
     syncToolbarState();
@@ -2407,21 +2497,29 @@ class PersonalPDFApp {
     };
 
     const updatePos = () => {
-      if (!span.isConnected || !span.classList.contains('inline-editing')) {
+      if (!span.isConnected || !span.classList.contains('inline-editing') || !document.body.classList.contains('in-place-editing-active')) {
         bar.style.display = 'none';
         return;
       }
       bar.style.display = 'flex';
-      const r = span.getBoundingClientRect();
-      const minTopThreshold = (window.innerWidth <= 768) ? 116 : 56;
-      const top = r.top < minTopThreshold ? (r.bottom + 8) : (r.top - 44);
-      bar.style.position = 'fixed';
-      bar.style.top = `${Math.round(top)}px`;
-      const barW = bar.offsetWidth || 300;
-      const left = Math.max(barW / 2 + 8, Math.min(window.innerWidth - barW / 2 - 8, r.left + r.width / 2));
-      bar.style.left = `${Math.round(left)}px`;
-      bar.style.transform = 'translateX(-50%)';
-      bar.style.zIndex = '9999';
+      if (window.innerWidth <= 768) {
+        bar.style.position = 'fixed';
+        bar.style.top = '68px';
+        bar.style.left = '50%';
+        bar.style.transform = 'translateX(-50%)';
+        bar.style.maxWidth = 'calc(100vw - 12px)';
+        bar.style.zIndex = '9999';
+      } else {
+        const r = span.getBoundingClientRect();
+        const top = r.top < 64 ? (r.bottom + 8) : (r.top - 46);
+        bar.style.position = 'fixed';
+        bar.style.top = `${Math.round(top)}px`;
+        const barW = bar.offsetWidth || 340;
+        const left = Math.max(barW / 2 + 8, Math.min(window.innerWidth - barW / 2 - 8, r.left + r.width / 2));
+        bar.style.left = `${Math.round(left)}px`;
+        bar.style.transform = 'translateX(-50%)';
+        bar.style.zIndex = '9999';
+      }
     };
     updatePos();
     this._activeInPlaceBarUpdate = updatePos;
@@ -2431,6 +2529,7 @@ class PersonalPDFApp {
     const bar = document.getElementById('in-place-floating-bar');
     if (bar) bar.style.display = 'none';
     this._activeInPlaceBarUpdate = null;
+    document.body.classList.remove('in-place-editing-active');
   }
 
   /**
@@ -2558,18 +2657,47 @@ class PersonalPDFApp {
   }
 
   /** Schedule reflow on the next frame (used after undo/redo/toolbar changes). */
-  _scheduleReflow(pageNum) {
-    if (typeof requestAnimationFrame !== 'function') {
-      this._reflowEditedPage(pageNum);
-      return;
-    }
+  _scheduleReflow(pageNum, immediate = false) {
     this._reflowPageNum = Math.min(this._reflowPageNum || pageNum || 1, pageNum || 1);
-    cancelAnimationFrame(this._reflowFrame);
-    this._reflowFrame = requestAnimationFrame(() => {
+    if (this._reflowTimer) {
+      clearTimeout(this._reflowTimer);
+      this._reflowTimer = null;
+    }
+    if (this._reflowFrame) {
+      cancelAnimationFrame(this._reflowFrame);
+      this._reflowFrame = null;
+    }
+    if (immediate || typeof requestAnimationFrame !== 'function') {
       const pending = this._reflowPageNum || 1;
       this._reflowPageNum = null;
       if (pending) this._reflowEditedPage(pending);
-    });
+      return;
+    }
+    this._reflowTimer = setTimeout(() => {
+      this._reflowFrame = requestAnimationFrame(() => {
+        const pending = this._reflowPageNum || 1;
+        this._reflowPageNum = null;
+        if (pending) this._reflowEditedPage(pending);
+      });
+    }, 180);
+  }
+
+  _getReflowMeasurer() {
+    if (!this._reflowMeasurer || !this._reflowMeasurer.isConnected) {
+      this._reflowMeasurer = document.createElement('div');
+      this._reflowMeasurer.id = 'reflow-text-measurer';
+      this._reflowMeasurer.style.position = 'absolute';
+      this._reflowMeasurer.style.visibility = 'hidden';
+      this._reflowMeasurer.style.pointerEvents = 'none';
+      this._reflowMeasurer.style.left = '-9999px';
+      this._reflowMeasurer.style.top = '-9999px';
+      this._reflowMeasurer.style.padding = '0';
+      this._reflowMeasurer.style.margin = '0';
+      this._reflowMeasurer.style.border = 'none';
+      this._reflowMeasurer.style.boxSizing = 'border-box';
+      document.body.appendChild(this._reflowMeasurer);
+    }
+    return this._reflowMeasurer;
   }
 
   _createOverflowPage(pageNum) {
@@ -2756,12 +2884,7 @@ class PersonalPDFApp {
     if (!text) {
       return { fits: true, fittingText: '', fittingHeight: 0, overflowText: '', overflowHeight: 0 };
     }
-    const measurer = document.createElement('div');
-    measurer.style.position = 'absolute';
-    measurer.style.visibility = 'hidden';
-    measurer.style.pointerEvents = 'none';
-    measurer.style.left = '-9999px';
-    measurer.style.top = '-9999px';
+    const measurer = this._getReflowMeasurer();
     measurer.style.fontFamily = styleObj.fontFamily || 'sans-serif';
     measurer.style.fontSize = styleObj.fontSize || '16px';
     measurer.style.lineHeight = styleObj.lineHeight || '1.2';
@@ -2772,17 +2895,11 @@ class PersonalPDFApp {
     measurer.style.overflowWrap = 'break-word';
     measurer.style.width = `${Math.max(20, Math.floor(maxWidth))}px`;
     measurer.style.maxWidth = `${Math.max(20, Math.floor(maxWidth))}px`;
-    measurer.style.padding = '0';
-    measurer.style.margin = '0';
-    measurer.style.border = 'none';
-    measurer.style.boxSizing = 'border-box';
-    document.body.appendChild(measurer);
 
     measurer.textContent = text;
     const fullHeight = measurer.offsetHeight;
 
     if (fullHeight <= availHeightCss + 2) {
-      measurer.remove();
       return {
         fits: true,
         fittingText: text,
@@ -2797,7 +2914,6 @@ class PersonalPDFApp {
     const singleLineH = Math.max(10, measurer.offsetHeight);
 
     if (availHeightCss < singleLineH) {
-      measurer.remove();
       return {
         fits: false,
         fittingText: '',
@@ -2829,8 +2945,6 @@ class PersonalPDFApp {
     measurer.textContent = overflowText;
     const overflowHeight = overflowText ? measurer.offsetHeight : 0;
 
-    measurer.remove();
-
     return {
       fits: false,
       fittingText,
@@ -2851,7 +2965,9 @@ class PersonalPDFApp {
    */
   _reflowEditedPage(pageNum, pageWrapperArg) {
     const totalPages = this.viewer?.totalPages || 1;
-    const maxPagesToCheck = Math.max(totalPages, this._lastReflowedMaxPage || totalPages, 1) + 20;
+    const editedPages = Array.from(this.annotator?.inPlaceEdits?.keys() || []);
+    const maxEditedPage = editedPages.length > 0 ? Math.max(...editedPages) : (pageNum || 1);
+    const maxPagesToCheck = Math.max(totalPages, this._lastReflowedMaxPage || totalPages, maxEditedPage) + 5;
 
     let incomingSlice = null;
     let highestReflowedPage = 1;
@@ -3012,6 +3128,9 @@ class PersonalPDFApp {
         });
         delete pageWrapper.dataset.hasReflow;
         incomingSlice = null;
+        if (p > maxEditedPage) {
+          break;
+        }
         continue;
       }
 

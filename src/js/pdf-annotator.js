@@ -54,6 +54,12 @@ export class PDFAnnotatorEngine {
 
   setTool(tool, props = {}) {
     this.currentTool = tool;
+    if (tool !== 'text') {
+      this.clearActiveEditing();
+      if (typeof window !== 'undefined' && window.app?._hideInPlaceFloatingBar) {
+        window.app._hideInPlaceFloatingBar();
+      }
+    }
     if (tool === 'pen') {
       this.lastAnnotTool = 'pen';
       if (props.color) this.penSettings.color = props.color;
@@ -1049,6 +1055,9 @@ export class PDFAnnotatorEngine {
         document.body.classList.remove('in-place-editing-active');
         document.querySelectorAll('.textLayer.editing-active').forEach(tl => tl.classList.remove('editing-active'));
       }
+    }
+    if (typeof window !== 'undefined' && window.app?._hideInPlaceFloatingBar) {
+      window.app._hideInPlaceFloatingBar();
     }
     if (this.activeStamp) {
       this.activeStamp.classList.remove('selected');
@@ -2510,6 +2519,9 @@ export class PDFAnnotatorEngine {
       if (except && bar === except._floatingBar) return;
       bar.style.display = 'none';
     });
+    if (!except && typeof window !== 'undefined' && window.app?._hideInPlaceFloatingBar) {
+      window.app._hideInPlaceFloatingBar();
+    }
     if (this.activeStamp && this.activeStamp !== except && !this.activeStamp.classList.contains('element-selected')) {
       this.setActiveStamp(null);
     }
@@ -2827,12 +2839,23 @@ export class PDFAnnotatorEngine {
       selFont.className = 'element-bar-select tb-font';
       selFont.title = 'Font Family';
       selFont.innerHTML = `
-        <option value="Inter, sans-serif">Sans-Serif</option>
+        <option value="'Calibri', 'Carlito', sans-serif">Calibri</option>
         <option value="Arial, sans-serif">Arial</option>
+        <option value="'Verdana', sans-serif">Verdana</option>
+        <option value="'Tahoma', sans-serif">Tahoma</option>
+        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
         <option value="'Times New Roman', serif">Times</option>
-        <option value="'Courier New', monospace">Courier</option>
         <option value="'Georgia', serif">Georgia</option>
-        <option value="'Calibri', sans-serif">Calibri</option>
+        <option value="'Garamond', serif">Garamond</option>
+        <option value="'Cambria', serif">Cambria</option>
+        <option value="'Courier New', monospace">Courier</option>
+        <option value="'Consolas', monospace">Consolas</option>
+        <option value="'Segoe UI', sans-serif">Segoe UI</option>
+        <option value="'Roboto', sans-serif">Roboto</option>
+        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+        <option value="'Palatino Linotype', 'Palatino', serif">Palatino</option>
+        <option value="'Comic Sans MS', cursive">Comic Sans</option>
+        <option value="Impact, sans-serif">Impact</option>
       `;
       selFont.onchange = (e) => {
         const fontVal = selFont.value;
@@ -3021,6 +3044,13 @@ export class PDFAnnotatorEngine {
         if (cs.fontSize) {
           const fs = Math.round(parseFloat(cs.fontSize));
           if (selSize.querySelector(`option[value="${fs}"]`)) selSize.value = String(fs);
+        }
+        const curFont = (contentArea.style.fontFamily || cs.fontFamily || '').toLowerCase();
+        for (const opt of selFont.options) {
+          if (curFont.includes(opt.textContent.toLowerCase())) {
+            selFont.value = opt.value;
+            break;
+          }
         }
       };
     } else {

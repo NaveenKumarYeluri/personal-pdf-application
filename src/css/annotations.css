@@ -787,3 +787,20 @@ body.mode-view .textbox-delete-btn {
   transform: scale(1.2);
 }
 
+/* Mobile dock for in-place floating rich-text bar to never collide with Android contextual action menu */
+@media (max-width: 768px) {
+  #in-place-floating-bar {
+    position: fixed !important;
+    top: 68px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    max-width: calc(100vw - 12px) !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25) !important;
+    z-index: 9999 !important;
+    overflow-x: auto;
+    padding: 4px 6px;
+    gap: 4px;
+  }
+}
+
+
