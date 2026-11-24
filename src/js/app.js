@@ -2207,85 +2207,197 @@ class PersonalPDFApp {
     const inputColor = bar.querySelector('.in-place-color');
     const btnDone = bar.querySelector('.in-place-btn-done');
 
-    const cs = window.getComputedStyle(span);
-    const fs = Math.round(parseFloat(cs.fontSize) || 16);
-    if (selSize.querySelector(`option[value="${fs}"]`)) selSize.value = String(fs);
-    btnBold.classList.toggle('active', cs.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 600);
-    btnItalic.classList.toggle('active', cs.fontStyle === 'italic');
-    btnUnder.classList.toggle('active', (cs.textDecoration || '').includes('underline'));
-    btnStrike.classList.toggle('active', (cs.textDecoration || '').includes('line-through'));
+    let savedRange = null;
+
+    const captureRange = () => {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const r = sel.getRangeAt(0);
+        if (span.contains(r.commonAncestorContainer) || span === r.commonAncestorContainer) {
+          savedRange = r.cloneRange();
+        }
+      }
+    };
+
+    const restoreRange = () => {
+      span.focus();
+      if (savedRange) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(savedRange);
+        return true;
+      }
+      return false;
+    };
+
+    const hasSpecificSelection = () => {
+      return Boolean(savedRange && !savedRange.collapsed && savedRange.toString().length > 0);
+    };
+
+    const isAllSelected = () => {
+      if (!savedRange || savedRange.collapsed) return false;
+      const full = (span.textContent || '').trim();
+      const selText = savedRange.toString().trim();
+      return full.length > 0 && selText.length > 0 && selText === full;
+    };
+
+    // Ensure we capture selection whenever selection changes or user begins clicking on toolbar
+    bar.addEventListener('mousedown', () => captureRange());
+    bar.addEventListener('touchstart', () => captureRange(), { passive: true });
+
+    const syncToolbarState = () => {
+      captureRange();
+      const sel = window.getSelection();
+      const node = (sel && sel.anchorNode) ? (sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode) : span;
+      const target = (node && span.contains(node)) ? node : span;
+      const tcs = window.getComputedStyle(target);
+      btnBold.classList.toggle('active', document.queryCommandState('bold') || tcs.fontWeight === 'bold' || parseInt(tcs.fontWeight, 10) >= 600);
+      btnItalic.classList.toggle('active', document.queryCommandState('italic') || tcs.fontStyle === 'italic');
+      btnUnder.classList.toggle('active', document.queryCommandState('underline') || (tcs.textDecoration || '').includes('underline'));
+      btnStrike.classList.toggle('active', document.queryCommandState('strikeThrough') || (tcs.textDecoration || '').includes('line-through'));
+      const fs = Math.round(parseFloat(tcs.fontSize) || 16);
+      if (selSize.querySelector(`option[value="${fs}"]`)) {
+        selSize.value = String(fs);
+      }
+    };
+    syncToolbarState();
 
     btnBold.onclick = (e) => {
       e.preventDefault(); e.stopPropagation();
+      restoreRange();
       document.execCommand('bold', false, null);
+      if (isAllSelected() || !hasSpecificSelection()) {
+        const curW = span.style.fontWeight;
+        const willBold = !(curW === 'bold' || curW === '700' || parseInt(curW, 10) >= 600);
+        span.style.fontWeight = willBold ? '700' : 'normal';
+        span._customFontWeight = span.style.fontWeight;
+      }
       span._fullReflowText = this._getEditorText(span);
       span._fullReflowHtml = span.innerHTML;
       this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
       btnBold.classList.toggle('active', document.queryCommandState('bold'));
+      captureRange();
       span.focus();
     };
 
     btnItalic.onclick = (e) => {
       e.preventDefault(); e.stopPropagation();
+      restoreRange();
       document.execCommand('italic', false, null);
+      if (isAllSelected() || !hasSpecificSelection()) {
+        const willItalic = span.style.fontStyle !== 'italic';
+        span.style.fontStyle = willItalic ? 'italic' : 'normal';
+        span._customFontStyle = span.style.fontStyle;
+      }
       span._fullReflowText = this._getEditorText(span);
       span._fullReflowHtml = span.innerHTML;
       this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
       btnItalic.classList.toggle('active', document.queryCommandState('italic'));
+      captureRange();
       span.focus();
     };
 
     btnUnder.onclick = (e) => {
       e.preventDefault(); e.stopPropagation();
+      restoreRange();
       document.execCommand('underline', false, null);
+      if (isAllSelected() || !hasSpecificSelection()) {
+        const cur = span.style.textDecoration || '';
+        span.style.textDecoration = cur.includes('underline') ? cur.replace(/underline/g, '').trim() : `${cur} underline`.trim();
+      }
       span._fullReflowText = this._getEditorText(span);
       span._fullReflowHtml = span.innerHTML;
       this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
       btnUnder.classList.toggle('active', document.queryCommandState('underline'));
+      captureRange();
       span.focus();
     };
 
     btnStrike.onclick = (e) => {
       e.preventDefault(); e.stopPropagation();
+      restoreRange();
       document.execCommand('strikeThrough', false, null);
+      if (isAllSelected() || !hasSpecificSelection()) {
+        const cur = span.style.textDecoration || '';
+        span.style.textDecoration = cur.includes('line-through') ? cur.replace(/line-through/g, '').trim() : `${cur} line-through`.trim();
+      }
       span._fullReflowText = this._getEditorText(span);
       span._fullReflowHtml = span.innerHTML;
       this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
       btnStrike.classList.toggle('active', document.queryCommandState('strikeThrough'));
+      captureRange();
       span.focus();
     };
 
     selFont.onchange = (e) => {
-      document.execCommand('fontName', false, selFont.value);
-      span.style.fontFamily = selFont.value;
-      span._customFontStack = selFont.value;
+      const fontVal = selFont.value;
+      if (hasSpecificSelection() && !isAllSelected()) {
+        restoreRange();
+        document.execCommand('fontName', false, fontVal);
+        span.querySelectorAll('font[face]').forEach(fEl => {
+          fEl.style.fontFamily = fEl.getAttribute('face');
+          fEl.removeAttribute('face');
+        });
+      } else {
+        span.style.fontFamily = fontVal;
+        span._customFontStack = fontVal;
+        restoreRange();
+        document.execCommand('fontName', false, fontVal);
+      }
       span._fullReflowText = this._getEditorText(span);
       span._fullReflowHtml = span.innerHTML;
       this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
       this._scheduleReflow(pageNum);
+      captureRange();
       span.focus();
     };
 
     selSize.onchange = (e) => {
       const val = parseFloat(selSize.value);
       if (val > 0) {
-        span.style.fontSize = `${val}px`;
-        span._baseFontSize = val;
+        if (hasSpecificSelection() && !isAllSelected()) {
+          restoreRange();
+          document.execCommand('fontSize', false, '7');
+          span.querySelectorAll('font[size="7"]').forEach(fEl => {
+            fEl.removeAttribute('size');
+            fEl.style.fontSize = `${val}px`;
+            fEl.style.lineHeight = '1.2';
+          });
+        } else {
+          span.style.fontSize = `${val}px`;
+          span._baseFontSize = val;
+          span.querySelectorAll('*').forEach(child => {
+            child.style.fontSize = '';
+          });
+        }
         span._fullReflowText = this._getEditorText(span);
         span._fullReflowHtml = span.innerHTML;
         this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
         this._scheduleReflow(pageNum);
       }
+      captureRange();
       span.focus();
     };
 
     inputColor.oninput = (e) => {
-      document.execCommand('foreColor', false, inputColor.value);
-      span.style.color = inputColor.value;
-      span._customColor = inputColor.value;
+      const colorVal = inputColor.value;
+      if (hasSpecificSelection() && !isAllSelected()) {
+        restoreRange();
+        document.execCommand('foreColor', false, colorVal);
+        span.querySelectorAll('font[color]').forEach(fEl => {
+          fEl.style.color = fEl.getAttribute('color');
+          fEl.removeAttribute('color');
+        });
+      } else {
+        span.style.color = colorVal;
+        span._customColor = colorVal;
+        restoreRange();
+        document.execCommand('foreColor', false, colorVal);
+      }
       span._fullReflowText = this._getEditorText(span);
       span._fullReflowHtml = span.innerHTML;
       this.annotator.recordInPlaceEdit(span, pageNum, pageWrapper);
+      captureRange();
       span.focus();
     };
 

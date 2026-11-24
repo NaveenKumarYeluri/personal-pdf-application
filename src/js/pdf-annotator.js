@@ -2782,6 +2782,46 @@ export class PDFAnnotatorEngine {
     } else if (isTextBox) {
       const contentArea = element.querySelector('.textbox-content') || element;
 
+      let savedRange = null;
+
+      const captureRange = () => {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const r = sel.getRangeAt(0);
+          if (contentArea.contains(r.commonAncestorContainer) || contentArea === r.commonAncestorContainer) {
+            savedRange = r.cloneRange();
+          }
+        }
+      };
+
+      const restoreRange = () => {
+        contentArea.focus();
+        if (savedRange) {
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(savedRange);
+          return true;
+        }
+        return false;
+      };
+
+      const hasSpecificSelection = () => {
+        return Boolean(savedRange && !savedRange.collapsed && savedRange.toString().length > 0);
+      };
+
+      const isAllSelected = () => {
+        if (!savedRange || savedRange.collapsed) return false;
+        const full = (contentArea.textContent || '').trim();
+        const selText = savedRange.toString().trim();
+        return full.length > 0 && selText.length > 0 && selText === full;
+      };
+
+      contentArea.addEventListener('keyup', captureRange);
+      contentArea.addEventListener('mouseup', captureRange);
+      contentArea.addEventListener('touchend', captureRange, { passive: true });
+      bar.addEventListener('mousedown', () => captureRange());
+      bar.addEventListener('touchstart', () => captureRange(), { passive: true });
+
       // Font Family
       const selFont = document.createElement('select');
       selFont.className = 'element-bar-select tb-font';
@@ -2795,7 +2835,20 @@ export class PDFAnnotatorEngine {
         <option value="'Calibri', sans-serif">Calibri</option>
       `;
       selFont.onchange = (e) => {
-        contentArea.style.fontFamily = selFont.value;
+        const fontVal = selFont.value;
+        if (hasSpecificSelection() && !isAllSelected()) {
+          restoreRange();
+          document.execCommand('fontName', false, fontVal);
+          contentArea.querySelectorAll('font[face]').forEach(fEl => {
+            fEl.style.fontFamily = fEl.getAttribute('face');
+            fEl.removeAttribute('face');
+          });
+        } else {
+          contentArea.style.fontFamily = fontVal;
+          restoreRange();
+          document.execCommand('fontName', false, fontVal);
+        }
+        captureRange();
         contentArea.focus();
       };
       bar.appendChild(selFont);
@@ -2816,7 +2869,24 @@ export class PDFAnnotatorEngine {
         <option value="36">36</option>
       `;
       selSize.onchange = (e) => {
-        contentArea.style.fontSize = `${selSize.value}px`;
+        const val = parseFloat(selSize.value);
+        if (val > 0) {
+          if (hasSpecificSelection() && !isAllSelected()) {
+            restoreRange();
+            document.execCommand('fontSize', false, '7');
+            contentArea.querySelectorAll('font[size="7"]').forEach(fEl => {
+              fEl.removeAttribute('size');
+              fEl.style.fontSize = `${val}px`;
+              fEl.style.lineHeight = '1.2';
+            });
+          } else {
+            contentArea.style.fontSize = `${val}px`;
+            contentArea.querySelectorAll('*').forEach(child => {
+              child.style.fontSize = '';
+            });
+          }
+        }
+        captureRange();
         contentArea.focus();
       };
       bar.appendChild(selSize);
@@ -2833,11 +2903,15 @@ export class PDFAnnotatorEngine {
       btnBold.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
       btnBold.onclick = (e) => {
         e.preventDefault(); e.stopPropagation();
+        restoreRange();
         document.execCommand('bold', false, null);
-        const curW = contentArea.style.fontWeight;
-        const willBold = !(curW === 'bold' || curW === '700' || parseInt(curW, 10) >= 600);
-        contentArea.style.fontWeight = willBold ? '700' : 'normal';
-        btnBold.classList.toggle('active', willBold);
+        if (isAllSelected() || !hasSpecificSelection()) {
+          const curW = contentArea.style.fontWeight;
+          const willBold = !(curW === 'bold' || curW === '700' || parseInt(curW, 10) >= 600);
+          contentArea.style.fontWeight = willBold ? '700' : 'normal';
+        }
+        btnBold.classList.toggle('active', document.queryCommandState('bold'));
+        captureRange();
         contentArea.focus();
       };
       bar.appendChild(btnBold);
@@ -2850,10 +2924,14 @@ export class PDFAnnotatorEngine {
       btnItalic.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
       btnItalic.onclick = (e) => {
         e.preventDefault(); e.stopPropagation();
+        restoreRange();
         document.execCommand('italic', false, null);
-        const willItalic = contentArea.style.fontStyle !== 'italic';
-        contentArea.style.fontStyle = willItalic ? 'italic' : 'normal';
-        btnItalic.classList.toggle('active', willItalic);
+        if (isAllSelected() || !hasSpecificSelection()) {
+          const willItalic = contentArea.style.fontStyle !== 'italic';
+          contentArea.style.fontStyle = willItalic ? 'italic' : 'normal';
+        }
+        btnItalic.classList.toggle('active', document.queryCommandState('italic'));
+        captureRange();
         contentArea.focus();
       };
       bar.appendChild(btnItalic);
@@ -2866,11 +2944,15 @@ export class PDFAnnotatorEngine {
       btnUnder.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
       btnUnder.onclick = (e) => {
         e.preventDefault(); e.stopPropagation();
+        restoreRange();
         document.execCommand('underline', false, null);
-        const cur = contentArea.style.textDecoration || '';
-        const willUnder = !cur.includes('underline');
-        contentArea.style.textDecoration = willUnder ? `${cur} underline`.trim() : cur.replace(/underline/g, '').trim();
-        btnUnder.classList.toggle('active', willUnder);
+        if (isAllSelected() || !hasSpecificSelection()) {
+          const cur = contentArea.style.textDecoration || '';
+          const willUnder = !cur.includes('underline');
+          contentArea.style.textDecoration = willUnder ? `${cur} underline`.trim() : cur.replace(/underline/g, '').trim();
+        }
+        btnUnder.classList.toggle('active', document.queryCommandState('underline'));
+        captureRange();
         contentArea.focus();
       };
       bar.appendChild(btnUnder);
@@ -2883,11 +2965,15 @@ export class PDFAnnotatorEngine {
       btnStrike.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
       btnStrike.onclick = (e) => {
         e.preventDefault(); e.stopPropagation();
+        restoreRange();
         document.execCommand('strikeThrough', false, null);
-        const cur = contentArea.style.textDecoration || '';
-        const willStrike = !cur.includes('line-through');
-        contentArea.style.textDecoration = willStrike ? `${cur} line-through`.trim() : cur.replace(/line-through/g, '').trim();
-        btnStrike.classList.toggle('active', willStrike);
+        if (isAllSelected() || !hasSpecificSelection()) {
+          const cur = contentArea.style.textDecoration || '';
+          const willStrike = !cur.includes('line-through');
+          contentArea.style.textDecoration = willStrike ? `${cur} line-through`.trim() : cur.replace(/line-through/g, '').trim();
+        }
+        btnStrike.classList.toggle('active', document.queryCommandState('strikeThrough'));
+        captureRange();
         contentArea.focus();
       };
       bar.appendChild(btnStrike);
@@ -2903,19 +2989,35 @@ export class PDFAnnotatorEngine {
       inputColor.title = 'Text Color';
       inputColor.value = '#000000';
       inputColor.oninput = (e) => {
-        document.execCommand('foreColor', false, inputColor.value);
-        contentArea.style.color = inputColor.value;
+        const colorVal = inputColor.value;
+        if (hasSpecificSelection() && !isAllSelected()) {
+          restoreRange();
+          document.execCommand('foreColor', false, colorVal);
+          contentArea.querySelectorAll('font[color]').forEach(fEl => {
+            fEl.style.color = fEl.getAttribute('color');
+            fEl.removeAttribute('color');
+          });
+        } else {
+          contentArea.style.color = colorVal;
+          restoreRange();
+          document.execCommand('foreColor', false, colorVal);
+        }
+        captureRange();
         contentArea.focus();
       };
       bar.appendChild(inputColor);
 
       // Synchronize in updateBar
       element._syncTextBoxControls = () => {
-        const cs = window.getComputedStyle(contentArea);
-        btnBold.classList.toggle('active', cs.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 600);
-        btnItalic.classList.toggle('active', cs.fontStyle === 'italic');
-        btnUnder.classList.toggle('active', (cs.textDecoration || '').includes('underline'));
-        btnStrike.classList.toggle('active', (cs.textDecoration || '').includes('line-through'));
+        captureRange();
+        const sel = window.getSelection();
+        const node = (sel && sel.anchorNode) ? (sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode) : contentArea;
+        const target = (node && contentArea.contains(node)) ? node : contentArea;
+        const cs = window.getComputedStyle(target);
+        btnBold.classList.toggle('active', document.queryCommandState('bold') || cs.fontWeight === 'bold' || parseInt(cs.fontWeight, 10) >= 600);
+        btnItalic.classList.toggle('active', document.queryCommandState('italic') || cs.fontStyle === 'italic');
+        btnUnder.classList.toggle('active', document.queryCommandState('underline') || (cs.textDecoration || '').includes('underline'));
+        btnStrike.classList.toggle('active', document.queryCommandState('strikeThrough') || (cs.textDecoration || '').includes('line-through'));
         if (cs.fontSize) {
           const fs = Math.round(parseFloat(cs.fontSize));
           if (selSize.querySelector(`option[value="${fs}"]`)) selSize.value = String(fs);
